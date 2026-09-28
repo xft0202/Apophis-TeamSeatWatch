@@ -1,0 +1,3339 @@
+---
+openapi: 3.1.0
+info:
+  title: Apophis-TeamSeatWatch Owner API
+  version: 1.0.0
+  description: Owner authentication and login-security operations.
+paths:
+  /api/owner/v1/csrf:
+    get:
+      operationId: getOwnerCsrf
+      responses:
+        '200':
+          description: CSRF token and matching secure cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CsrfToken'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/login:
+    post:
+      operationId: loginOwner
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '204':
+          description: Authenticated with a newly issued session cookie
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/logout:
+    post:
+      operationId: logoutOwner
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '204':
+          description: Current session revoked
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/auth-status:
+    get:
+      operationId: getOwnerAuthStatus
+      security:
+        - ownerSession: []
+      responses:
+        '200':
+          description: Current Owner authentication status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/session/refresh:
+    post:
+      operationId: refreshOwnerSession
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '204':
+          description: >-
+            Idle deadline refreshed within the absolute session lifetime
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/sessions:
+    get:
+      operationId: listOwnerSessions
+      security:
+        - ownerSession: []
+      responses:
+        '200':
+          description: Active Owner sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionList'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/sessions/{sessionId}:
+    delete:
+      operationId: revokeOwnerSession
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: >-
+            Target session revoked; a surviving current session is rotated
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/mother-accounts:
+    get:
+      operationId: listMotherAccounts
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/AccountSort'
+      responses:
+        '200':
+          description: Paginated administrator accounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotherAccountList'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createMotherAccount
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMotherAccount'
+      responses:
+        '201':
+          description: Administrator account created
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotherAccount'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/mother-accounts/{accountId}:
+    patch:
+      operationId: updateMotherAccount
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/AccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMotherAccount'
+      responses:
+        '200':
+          description: Administrator account updated
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotherAccount'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/workspaces:
+    get:
+      operationId: listWorkspaces
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/WorkspaceSort'
+        - $ref: '#/components/parameters/WorkspaceStateFilter'
+      responses:
+        '200':
+          description: Paginated Workspace projections
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceList'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createWorkspace
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkspace'
+      responses:
+        '201':
+          description: Workspace created
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/workspaces/needs-attention:
+    get:
+      operationId: listWorkspacesNeedingAttention
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Projection-only attention list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceList'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/workspaces/{workspaceId}:
+    get:
+      operationId: getWorkspace
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ObservationPage'
+        - $ref: '#/components/parameters/ObservationPageSize'
+        - $ref: '#/components/parameters/MemberPage'
+        - $ref: '#/components/parameters/MemberPageSize'
+      responses:
+        '200':
+          description: Workspace fact detail
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceDetail'
+        default:
+          $ref: '#/components/responses/Problem'
+    patch:
+      operationId: updateWorkspace
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkspace'
+      responses:
+        '200':
+          description: Workspace updated
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/bindings:
+    post:
+      operationId: createMotherWorkspaceBinding
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBinding'
+      responses:
+        '201':
+          description: Current account-Workspace relationship created
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Binding'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/workspaces/{workspaceId}/refresh:
+    post:
+      operationId: refreshWorkspaceFacts
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshWorkspaceRequest'
+      responses:
+        '202':
+          description: Stable asynchronous read status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceReadStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/workspace-reads/{readId}:
+    get:
+      operationId: getWorkspaceReadStatus
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/ReadId'
+      responses:
+        '200':
+          description: Pure read of asynchronous status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceReadStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/workspaces/{workspaceId}/manual-verification:
+    post:
+      operationId: createWorkspaceManualVerification
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualVerificationRequest'
+      responses:
+        '200':
+          description: Manual verification and recomputed projection
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/target-accounts:
+    get:
+      operationId: listTargetAccounts
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/TargetSort'
+        - $ref: '#/components/parameters/TargetStatusFilter'
+        - $ref: '#/components/parameters/TargetProbeStatusFilter'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Paginated target accounts without secret values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetAccountList'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createTargetAccount
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTargetAccount'
+      responses:
+        '201':
+          description: Target account saved; secret values are never returned
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetAccount'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/target-accounts/import-preview:
+    post:
+      operationId: previewTargetAccountImport
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetAccountImportRequest'
+      responses:
+        '200':
+          description: Parsed target-account import without secret values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetAccountImportPreview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/target-accounts/import:
+    post:
+      operationId: importTargetAccounts
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetAccountImportRequest'
+      responses:
+        '200':
+          description: Import result without secret values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetAccountImportResult'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/target-accounts/{targetAccountId}:
+    get:
+      operationId: getTargetAccount
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/TargetAccountId'
+      responses:
+        '200':
+          description: Target account and independent Workspace plans
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetAccountDetail'
+        default:
+          $ref: '#/components/responses/Problem'
+    patch:
+      operationId: updateTargetAccount
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/TargetAccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTargetAccount'
+      responses:
+        '200':
+          description: Target account and optional credentials updated
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetAccount'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/target-account-probes:
+    post:
+      operationId: createTargetAccountProbes
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTargetAccountProbes'
+      responses:
+        '202':
+          description: >-
+            Durable target probes queued using the current server filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetProbeBatch'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/target-account-probes/{probeId}:
+    get:
+      operationId: getTargetAccountProbe
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/ProbeId'
+      responses:
+        '200':
+          description: Pure read of a durable target probe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetProbeStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches:
+    get:
+      operationId: listBatches
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/BindingId'
+      responses:
+        '200':
+          description: Paginated batches for one current binding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchList'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createBatch
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveBatch'
+      responses:
+        '201':
+          description: Side-effect-free batch plan saved
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}:
+    get:
+      operationId: getBatch
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - $ref: '#/components/parameters/TargetPage'
+        - $ref: '#/components/parameters/TargetPageSize'
+      responses:
+        '200':
+          description: Batch plan and persisted paged target selection
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchDetail'
+        default:
+          $ref: '#/components/responses/Problem'
+    put:
+      operationId: updateBatch
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBatch'
+      responses:
+        '200':
+          description: Unconfirmed plan updated without platform side effects
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/preview:
+    get:
+      operationId: getBatchPreview
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - $ref: '#/components/parameters/TargetPage'
+        - $ref: '#/components/parameters/TargetPageSize'
+      responses:
+        '200':
+          description: >-
+            Current evidence and capacity preview; this endpoint is read-only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchPreview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/join-preview:
+    get:
+      operationId: getBatchJoinPreview
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: >-
+            Current evidence for the entire planned batch before authorization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinPreview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/join:
+    post:
+      operationId: createJoinOperation
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinRequest'
+      responses:
+        '202':
+          description: Durable whole-batch join operation queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinOperation'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/join-reconcile:
+    post:
+      operationId: createJoinReconciliation
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshJoinRequest'
+      responses:
+        '202':
+          description: Read-only Join reconciliation queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinOperation'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/join-operation:
+    get:
+      operationId: getJoinOperation
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - $ref: '#/components/parameters/TargetPage'
+        - $ref: '#/components/parameters/TargetPageSize'
+      responses:
+        '200':
+          description: Durable whole-batch join operation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinOperation'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/join-operations/needs-attention:
+    get:
+      operationId: listJoinOperationsNeedingAttention
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Join operations requiring Owner review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinOperationList'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/remove-preview:
+    get:
+      operationId: getBatchRemovalPreview
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: >-
+            Exact current-batch removal scope and latest persisted member
+            differences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemovalPreview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/remove:
+    post:
+      operationId: createRemovalOperation
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveRequest'
+      responses:
+        '202':
+          description: Owner-authorized precise removal operation queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemovalOperation'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/remove-reconcile:
+    post:
+      operationId: createRemovalReconciliation
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshJoinRequest'
+      responses:
+        '202':
+          description: Read-only precise-removal reconciliation queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemovalOperation'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/remove-operation:
+    get:
+      operationId: getRemovalOperation
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - $ref: '#/components/parameters/TargetPage'
+        - $ref: '#/components/parameters/TargetPageSize'
+      responses:
+        '200':
+          description: Durable precise-removal operation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemovalOperation'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/removal-operations/needs-attention:
+    get:
+      operationId: listRemovalOperationsNeedingAttention
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Removal operations requiring current fact review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemovalOperationList'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/deliveries:
+    get:
+      operationId: listDeliveryRecords
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/DeliveryServiceStatusQuery'
+        - $ref: '#/components/parameters/DeliveryCardStatusQuery'
+        - $ref: '#/components/parameters/DeliveryOrderStatusQuery'
+      responses:
+        '200':
+          description: Relationship-scoped customer delivery records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryRecordList'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/deliveries/{membershipId}:
+    get:
+      operationId: getDeliveryRecord
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/MembershipId'
+      responses:
+        '200':
+          description: Customer delivery record and redacted reclaim timeline
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryRecord'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/deliveries/{membershipId}/card/revoke:
+    post:
+      operationId: revokeDeliveryCard
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/MembershipId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeDeliveryCardRequest'
+      responses:
+        '200':
+          description: >-
+            The card and all public tokens for this delivery unit are revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeDeliveryCardResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/deliveries/{membershipId}/reclaim:
+    post:
+      operationId: authorizeDeliveryReclaim
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/MembershipId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizeDeliveryReclaimRequest'
+      responses:
+        '202':
+          description: Explicit Owner authorization accepted or
+            idempotently replayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizeDeliveryReclaimResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/deliveries:
+    get:
+      operationId: getBatchDeliveries
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Relationship-scoped OAuth delivery status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryList'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/batches/{batchId}/deliveries/probe:
+    post:
+      operationId: probeBatchDeliveries
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProbeDeliveryRequest'
+      responses:
+        '202':
+          description: Read-only OAuth probes queued for the batch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProbeDeliveryResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/memberships/{membershipId}/card:
+    post:
+      operationId: activateMembershipCard
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/MembershipId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivateCardRequest'
+      responses:
+        '201':
+          description: Card activated without returning the original secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardActivation'
+        '200':
+          description: Idempotent retry of the same card activation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardActivation'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/audit-events:
+    get:
+      operationId: listAuditEvents
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: actor
+          in: query
+          schema:
+            type: string
+            enum: [owner, system, anonymous]
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            maxLength: 128
+        - name: outcome
+          in: query
+          schema:
+            type: string
+            enum: [succeeded, failed, denied]
+        - name: workspace_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: batch_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: membership_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: order_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: correlation_id
+          in: query
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '200':
+          description: Paginated redacted audit records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventList'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/audit-events/export:
+    get:
+      operationId: exportAuditEvents
+      security:
+        - ownerSession: []
+      parameters:
+        - name: format
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [json, csv]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: actor
+          in: query
+          schema:
+            type: string
+            enum: [owner, system, anonymous]
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            maxLength: 128
+        - name: outcome
+          in: query
+          schema:
+            type: string
+            enum: [succeeded, failed, denied]
+        - name: workspace_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: batch_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: membership_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: order_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: correlation_id
+          in: query
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '200':
+          description: Direct redacted export; never persisted by the service
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventList'
+            text/csv:
+              schema:
+                type: string
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/data-protection:
+    get:
+      operationId: getDataProtectionStatus
+      security:
+        - ownerSession: []
+      responses:
+        '200':
+          description: Retention and recovery gate status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataProtectionStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/data-protection/recovery-open:
+    post:
+      operationId: openRecoveryGate
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenRecoveryGateRequest'
+      responses:
+        '200':
+          description: Recovery gate opened after retention verification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataProtectionStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /api/owner/v1/exit-pool:
+    get:
+      operationId: getExitPoolStatus
+      security:
+        - ownerSession: []
+      responses:
+        '200':
+          description: Redacted pool status without endpoints or IPs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExitPoolStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    ownerSession:
+      type: apiKey
+      in: cookie
+      name: tsw_session
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    AccountSort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum:
+          - created_desc
+          - name_asc
+    WorkspaceSort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum:
+          - updated_desc
+          - name_asc
+          - active_until_asc
+    WorkspaceStateFilter:
+      name: operational_state
+      in: query
+      schema:
+        type: string
+        enum:
+          - unknown
+          - operational
+          - deactivated
+          - not_found
+    ObservationPage:
+      name: observation_page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    ObservationPageSize:
+      name: observation_page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    MemberPage:
+      name: member_page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    MemberPageSize:
+      name: member_page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    TargetSort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum:
+          - created_desc
+          - identifier_asc
+          - probed_desc
+    TargetStatusFilter:
+      name: status
+      in: query
+      schema:
+        type: string
+        enum:
+          - active
+          - disabled
+    TargetProbeStatusFilter:
+      name: probe_status
+      in: query
+      schema:
+        type: string
+        enum:
+          - available
+          - credential_invalid
+          - account_problem
+          - definitely_unavailable
+          - transient_failure
+          - unknown
+          - unprobed
+    Search:
+      name: search
+      in: query
+      schema:
+        type: string
+        maxLength: 254
+    BindingId:
+      name: binding_id
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TargetPage:
+      name: target_page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    TargetPageSize:
+      name: target_page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema:
+        type: string
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ReadId:
+      name: readId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TargetAccountId:
+      name: targetAccountId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProbeId:
+      name: probeId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BatchId:
+      name: batchId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TargetAccountIdQuery:
+      name: target_account_id
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DeliveryServiceStatusQuery:
+      name: service_status
+      in: query
+      schema:
+        $ref: '#/components/schemas/DeliveryServiceFilter'
+    DeliveryCardStatusQuery:
+      name: card_status
+      in: query
+      schema:
+        $ref: '#/components/schemas/DeliveryCardFilter'
+    DeliveryOrderStatusQuery:
+      name: order_status
+      in: query
+      schema:
+        $ref: '#/components/schemas/DeliveryOrderFilter'
+    MembershipId:
+      name: membershipId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CsrfHeader:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 43
+        maxLength: 43
+  responses:
+    Problem:
+      description: RFC 9457 problem detail
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    CsrfToken:
+      type: object
+      additionalProperties: false
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          minLength: 43
+          maxLength: 43
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 254
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    AuthStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - authenticated
+        - username
+        - passwordChangedAt
+      properties:
+        authenticated:
+          type: boolean
+          const: true
+        username:
+          type: string
+        passwordChangedAt:
+          type: string
+          format: date-time
+    SessionList:
+      type: object
+      additionalProperties: false
+      required:
+        - sessions
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+    Session:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - current
+        - createdAt
+        - lastSeenAt
+        - idleExpiresAt
+        - absoluteExpiresAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        current:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+        idleExpiresAt:
+          type: string
+          format: date-time
+        absoluteExpiresAt:
+          type: string
+          format: date-time
+    MotherAccount:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - displayName
+        - status
+        - version
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        platformAccountRef:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+        version:
+          type: integer
+          format: int64
+        updatedAt:
+          type: string
+          format: date-time
+    MotherAccountList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MotherAccount'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    CreateMotherAccount:
+      type: object
+      additionalProperties: false
+      required:
+        - displayName
+        - loginIdentifier
+        - password
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        platformAccountRef:
+          type: string
+          maxLength: 255
+        loginIdentifier:
+          type: string
+          minLength: 1
+          maxLength: 254
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        totpSecret:
+          type: string
+          maxLength: 1024
+    UpdateMotherAccount:
+      type: object
+      additionalProperties: false
+      required:
+        - displayName
+        - status
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+    Workspace:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - displayName
+        - platformWorkspaceId
+        - operationalState
+        - version
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        platformWorkspaceId:
+          type: string
+        operationalState:
+          type: string
+          enum:
+            - unknown
+            - operational
+            - deactivated
+            - not_found
+        activeUntil:
+          type: string
+          format: date-time
+        seatLimit:
+          type: integer
+          minimum: 0
+        memberCount:
+          type: integer
+          minimum: 0
+        pendingInviteCount:
+          type: integer
+          minimum: 0
+        evidenceExpiresAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        updatedAt:
+          type: string
+          format: date-time
+    WorkspaceDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - workspace
+        - observations
+        - observationPage
+        - observationPageSize
+        - observationTotal
+        - members
+        - memberPage
+        - memberPageSize
+        - memberTotal
+        - snapshotCompleteness
+      properties:
+        workspace:
+          $ref: '#/components/schemas/Workspace'
+        binding:
+          $ref: '#/components/schemas/WorkspaceBinding'
+        platformActiveUntil:
+          type: string
+          format: date-time
+        manualActiveUntil:
+          type: string
+          format: date-time
+        manualConclusion:
+          type: string
+        manualSource:
+          type: string
+        manualObservedAt:
+          type: string
+          format: date-time
+        manualExpiresAt:
+          type: string
+          format: date-time
+        observations:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceObservation'
+        observationPage:
+          type: integer
+        observationPageSize:
+          type: integer
+        observationTotal:
+          type: integer
+          format: int64
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceMember'
+        memberPage:
+          type: integer
+        memberPageSize:
+          type: integer
+        memberTotal:
+          type: integer
+          format: int64
+        snapshotCompleteness:
+          type: string
+        snapshotSourceKind:
+          type: string
+        snapshotSourceEndpoint:
+          type: string
+        snapshotObservedAt:
+          type: string
+          format: date-time
+        snapshotExpiresAt:
+          type: string
+          format: date-time
+    WorkspaceBinding:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - motherAccountId
+        - motherAccountName
+        - startedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        motherAccountId:
+          type: string
+          format: uuid
+        motherAccountName:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+    WorkspaceObservation:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - sourceKind
+        - sourceEndpoint
+        - outcomeCode
+        - observedAt
+        - expiresAt
+      properties:
+        type:
+          type: string
+        sourceKind:
+          type: string
+        sourceEndpoint:
+          type: string
+        outcomeCode:
+          type: string
+        activeUntil:
+          type: string
+          format: date-time
+        observedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    WorkspaceMember:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - identifier
+        - status
+      properties:
+        kind:
+          type: string
+        identifier:
+          type: string
+        status:
+          type: string
+        role:
+          type: string
+    WorkspaceList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    CreateWorkspace:
+      type: object
+      additionalProperties: false
+      required:
+        - displayName
+        - platformWorkspaceId
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        platformWorkspaceId:
+          type: string
+          minLength: 1
+          maxLength: 255
+    UpdateWorkspace:
+      type: object
+      additionalProperties: false
+      required:
+        - displayName
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+    CreateBinding:
+      type: object
+      additionalProperties: false
+      required:
+        - motherAccountId
+        - workspaceId
+      properties:
+        motherAccountId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+    Binding:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - motherAccountId
+        - workspaceId
+        - status
+        - startedAt
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        motherAccountId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - active
+            - ended
+        startedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+    RefreshWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - idempotencyKey
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+    WorkspaceReadStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - status
+        - workspaceId
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - retry_wait
+            - succeeded
+            - failed
+            - interrupted
+        workspaceId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
+    ManualVerificationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - conclusion
+        - source
+        - observedAt
+      properties:
+        conclusion:
+          type: string
+          enum:
+            - deactivated
+            - recovered
+            - expiration_corrected
+        source:
+          type: string
+          enum:
+            - platform_ui
+            - platform_subscription_page
+        observedAt:
+          type: string
+          format: date-time
+        activeUntil:
+          type: string
+          format: date-time
+    TargetProbeClassification:
+      type: string
+      enum:
+        - available
+        - credential_invalid
+        - account_problem
+        - definitely_unavailable
+        - transient_failure
+        - unknown
+    TargetAccount:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - identifier
+        - displayLabel
+        - status
+        - hasPassword
+        - hasTotp
+        - hasRecovery
+        - secretRevision
+        - version
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        identifier:
+          type: string
+        displayLabel:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+        hasPassword:
+          type: boolean
+        hasTotp:
+          type: boolean
+        hasRecovery:
+          type: boolean
+        secretRevision:
+          type: integer
+          format: int64
+        latestProbeStatus:
+          $ref: '#/components/schemas/TargetProbeClassification'
+        latestProbeHttpStatus:
+          type: integer
+          minimum: 100
+          maximum: 599
+        latestProbeErrorCode:
+          type: string
+        latestProbeEndpoint:
+          type: string
+        latestProbeOrigin:
+          type: string
+        latestProbedAt:
+          type: string
+          format: date-time
+        lastVerifiedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        updatedAt:
+          type: string
+          format: date-time
+    TargetAccountList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TargetAccount'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    CreateTargetAccount:
+      type: object
+      additionalProperties: false
+      required:
+        - identifier
+        - password
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          maxLength: 254
+        displayLabel:
+          type: string
+          minLength: 1
+          maxLength: 120
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        totpSecret:
+          type: string
+          maxLength: 1024
+        recoverySecret:
+          type: string
+          maxLength: 4096
+        platformSubjectId:
+          type: string
+          maxLength: 255
+    UpdateTargetAccount:
+      type: object
+      additionalProperties: false
+      required:
+        - displayLabel
+        - status
+      properties:
+        displayLabel:
+          type: string
+          minLength: 1
+          maxLength: 120
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        totpSecret:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        recoverySecret:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        platformSubjectId:
+          type: string
+          minLength: 1
+          maxLength: 255
+    TargetWorkspacePlan:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - workspaceName
+        - batchId
+        - sequenceNo
+        - batchStatus
+        - plannedAt
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        workspaceName:
+          type: string
+        batchId:
+          type: string
+          format: uuid
+        sequenceNo:
+          type: integer
+          format: int64
+        batchStatus:
+          type: string
+        plannedAt:
+          type: string
+          format: date-time
+    TargetAccountDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - targetAccount
+        - workspacePlans
+      properties:
+        targetAccount:
+          $ref: '#/components/schemas/TargetAccount'
+        workspacePlans:
+          type: array
+          items:
+            $ref: '#/components/schemas/TargetWorkspacePlan'
+    TargetAccountImportRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4194304
+    TargetAccountImportRow:
+      type: object
+      additionalProperties: false
+      required:
+        - line
+        - identifier
+        - displayLabel
+        - hasPassword
+        - hasTotp
+        - hasRecovery
+        - existing
+      properties:
+        line:
+          type: integer
+          minimum: 2
+        identifier:
+          type: string
+        displayLabel:
+          type: string
+        hasPassword:
+          type: boolean
+        hasTotp:
+          type: boolean
+        hasRecovery:
+          type: boolean
+        existing:
+          type: boolean
+    TargetAccountImportPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - total
+        - newCount
+        - existingCount
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TargetAccountImportRow'
+        total:
+          type: integer
+        newCount:
+          type: integer
+        existingCount:
+          type: integer
+    TargetAccountImportResult:
+      type: object
+      additionalProperties: false
+      required:
+        - created
+        - existing
+      properties:
+        created:
+          type: integer
+        existing:
+          type: integer
+    CreateTargetAccountProbes:
+      type: object
+      additionalProperties: false
+      required:
+        - idempotencyKey
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+        targetAccountIds:
+          type: array
+          maxItems: 10000
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        search:
+          type: string
+          maxLength: 254
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+        probeStatus:
+          type: string
+          enum:
+            - available
+            - credential_invalid
+            - account_problem
+            - definitely_unavailable
+            - transient_failure
+            - unknown
+            - unprobed
+    TargetProbeStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - targetAccountId
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        targetAccountId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - retry_wait
+            - succeeded
+            - failed
+            - interrupted
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
+    TargetProbeBatch:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TargetProbeStatus'
+        total:
+          type: integer
+    Batch:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - bindingId
+        - workspaceId
+        - workspaceName
+        - motherAccountName
+        - sequenceNo
+        - status
+        - plannedAt
+        - targetCount
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        bindingId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        workspaceName:
+          type: string
+        motherAccountName:
+          type: string
+        sequenceNo:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+            - draft
+            - planned
+            - joining
+            - serving
+            - removing
+            - ended
+        plannedAt:
+          type: string
+          format: date-time
+        serviceStartedAt:
+          type: string
+          format: date-time
+        serviceEndedAt:
+          type: string
+          format: date-time
+        blockingReason:
+          type: string
+        targetCount:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    BatchList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Batch'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    SaveBatch:
+      type: object
+      additionalProperties: false
+      required:
+        - bindingId
+        - plannedAt
+        - targetAccountIds
+      properties:
+        bindingId:
+          type: string
+          format: uuid
+        plannedAt:
+          type: string
+          format: date-time
+        targetAccountIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+    UpdateBatch:
+      type: object
+      additionalProperties: false
+      required:
+        - plannedAt
+        - targetAccountIds
+      properties:
+        plannedAt:
+          type: string
+          format: date-time
+        targetAccountIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+    BatchDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - batch
+        - targets
+        - targetPage
+        - targetPageSize
+        - targetTotal
+      properties:
+        batch:
+          $ref: '#/components/schemas/Batch'
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/TargetAccount'
+        targetPage:
+          type: integer
+        targetPageSize:
+          type: integer
+        targetTotal:
+          type: integer
+          format: int64
+    PreviewBlocker:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    JoinRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - idempotencyKey
+        - confirm
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+        confirm:
+          type: boolean
+          const: true
+    RefreshJoinRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - idempotencyKey
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 64
+    JoinOperationStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - succeeded
+        - failed
+        - blocked
+    JoinTargetStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - succeeded
+        - failed
+        - blocked
+        - unknown
+    JoinPreflightStatus:
+      type: string
+      enum:
+        - pending
+        - available
+        - credential_invalid
+        - account_problem
+        - definitely_unavailable
+        - transient_failure
+        - unknown
+    JoinOperationTarget:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - targetAccountId
+        - status
+        - preflightStatus
+      properties:
+        id:
+          type: string
+          format: uuid
+        targetAccountId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JoinTargetStatus'
+        preflightStatus:
+          $ref: '#/components/schemas/JoinPreflightStatus'
+        preflightAt:
+          type: string
+          format: date-time
+        outcomeCode:
+          type: string
+        diagnosticCode:
+          type: string
+        lastAttemptAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+    JoinOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - batchId
+        - workspaceId
+        - status
+        - authorizedAt
+        - correlationId
+        - targets
+        - targetPage
+        - targetPageSize
+        - targetTotal
+        - succeededCount
+        - failedCount
+        - blockedCount
+        - pendingCount
+      properties:
+        id:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JoinOperationStatus'
+        authorizedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/JoinOperationTarget'
+        targetPage:
+          type: integer
+        targetPageSize:
+          type: integer
+        targetTotal:
+          type: integer
+          format: int64
+        succeededCount:
+          type: integer
+        failedCount:
+          type: integer
+        blockedCount:
+          type: integer
+        pendingCount:
+          type: integer
+    JoinOperationList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/JoinOperation'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    JoinPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - batch
+        - operationalState
+        - snapshotCompleteness
+        - canProceed
+        - blockers
+      properties:
+        batch:
+          $ref: '#/components/schemas/Batch'
+        operationalState:
+          type: string
+        seatLimit:
+          type: integer
+          minimum: 0
+        memberCount:
+          type: integer
+          minimum: 0
+        pendingInviteCount:
+          type: integer
+          minimum: 0
+        availableSeats:
+          type: integer
+          minimum: 0
+        evidenceObservedAt:
+          type: string
+          format: date-time
+        evidenceSource:
+          type: string
+        snapshotObservedAt:
+          type: string
+          format: date-time
+        snapshotSource:
+          type: string
+        snapshotCompleteness:
+          type: string
+        canProceed:
+          type: boolean
+        blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreviewBlocker'
+    RemoveRequest:
+      type: object
+      additionalProperties: false
+      required: [idempotencyKey, confirm]
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+        confirm:
+          type: boolean
+          const: true
+    RemovalPreviewTarget:
+      type: object
+      additionalProperties: false
+      required: [membershipId, targetAccountId, displayLabel, identifier, state]
+      properties:
+        membershipId:
+          type: string
+          format: uuid
+        targetAccountId:
+          type: string
+          format: uuid
+        displayLabel:
+          type: string
+        identifier:
+          type: string
+        state:
+          type: string
+          enum: [present, absent, ambiguous, protected_owner, removed]
+    RemovalDifference:
+      type: object
+      additionalProperties: false
+      required: [identifier, role, reason]
+      properties:
+        identifier:
+          type: string
+        role:
+          type: string
+        reason:
+          type: string
+          enum: [workspace_owner, other_batch_member, unknown_member]
+    RemovalPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - batch
+        - targets
+        - differences
+        - snapshotCompleteness
+        - canProceed
+        - blockers
+      properties:
+        batch:
+          $ref: '#/components/schemas/Batch'
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemovalPreviewTarget'
+        differences:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemovalDifference'
+        snapshotObservedAt:
+          type: string
+          format: date-time
+        snapshotSource:
+          type: string
+        snapshotCompleteness:
+          type: string
+        declaredMemberCount:
+          type: integer
+          minimum: 0
+        canProceed:
+          type: boolean
+        blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreviewBlocker'
+    RemovalOperationTarget:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - membershipId
+        - targetAccountId
+        - displayLabel
+        - status
+        - attemptCount
+      properties:
+        id:
+          type: string
+          format: uuid
+        membershipId:
+          type: string
+          format: uuid
+        targetAccountId:
+          type: string
+          format: uuid
+        displayLabel:
+          type: string
+        status:
+          $ref: '#/components/schemas/JoinTargetStatus'
+        outcomeCode:
+          type: string
+        diagnosticCode:
+          type: string
+        attemptCount:
+          type: integer
+          minimum: 0
+          maximum: 3
+        lastAttemptAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+    RemovalOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - batchId
+        - workspaceId
+        - status
+        - authorizedAt
+        - correlationId
+        - targets
+        - targetPage
+        - targetPageSize
+        - targetTotal
+        - succeededCount
+        - blockedCount
+        - pendingCount
+      properties:
+        id:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JoinOperationStatus'
+        authorizedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemovalOperationTarget'
+        targetPage:
+          type: integer
+        targetPageSize:
+          type: integer
+        targetTotal:
+          type: integer
+          format: int64
+        succeededCount:
+          type: integer
+        blockedCount:
+          type: integer
+        pendingCount:
+          type: integer
+    RemovalOperationList:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemovalOperation'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    BatchPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - batch
+        - targets
+        - targetPage
+        - targetPageSize
+        - targetTotal
+        - operationalState
+        - snapshotCompleteness
+        - canProceed
+        - blockers
+      properties:
+        batch:
+          $ref: '#/components/schemas/Batch'
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/TargetAccount'
+        targetPage:
+          type: integer
+        targetPageSize:
+          type: integer
+        targetTotal:
+          type: integer
+          format: int64
+        operationalState:
+          type: string
+        seatLimit:
+          type: integer
+          minimum: 0
+        memberCount:
+          type: integer
+          minimum: 0
+        pendingInviteCount:
+          type: integer
+          minimum: 0
+        availableSeats:
+          type: integer
+          minimum: 0
+        evidenceObservedAt:
+          type: string
+          format: date-time
+        evidenceSource:
+          type: string
+        snapshotObservedAt:
+          type: string
+          format: date-time
+        snapshotSource:
+          type: string
+        snapshotCompleteness:
+          type: string
+        canProceed:
+          type: boolean
+        blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreviewBlocker'
+    DeliveryStatus:
+      type: string
+      enum:
+        - pending
+        - generating
+        - ready
+        - unavailable
+    Delivery:
+      type: object
+      additionalProperties: false
+      required:
+        - membershipId
+        - targetAccountId
+        - status
+        - generation
+      properties:
+        membershipId:
+          type: string
+          format: uuid
+        targetAccountId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/DeliveryStatus'
+        generation:
+          type: integer
+          format: int64
+        livenessStatus:
+          type: string
+        livenessHttpStatus:
+          type: integer
+          minimum: 100
+          maximum: 599
+        livenessErrorCode:
+          type: string
+        probedAt:
+          type: string
+          format: date-time
+        cardStatus:
+          type: string
+          enum:
+            - active
+            - revoked
+        cardDisplaySuffix:
+          type: string
+        redemptionDeadline:
+          type: string
+          format: date-time
+        cardActivated:
+          type: boolean
+    DeliveryList:
+      type: object
+      additionalProperties: false
+      required:
+        - batchId
+        - items
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Delivery'
+    DeliveryRecordEvent:
+      type: object
+      additionalProperties: false
+      required: [occurredAt, action, result]
+      properties:
+        occurredAt:
+          type: string
+          format: date-time
+        action:
+          type: string
+        result:
+          type: string
+        tier:
+          type: string
+        origin:
+          type: string
+        status:
+          type: string
+        httpStatus:
+          type: integer
+          minimum: 100
+          maximum: 599
+        reason:
+          type: string
+    DeliveryRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - membershipId
+        - targetAccountId
+        - workspaceId
+        - batchId
+        - workspaceName
+        - assetStatus
+        - generation
+      properties:
+        membershipId:
+          type: string
+          format: uuid
+        targetAccountId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+        workspaceName:
+          type: string
+        assetStatus:
+          type: string
+        generation:
+          type: integer
+          format: int64
+        livenessStatus:
+          type: string
+        livenessOrigin:
+          type: string
+        livenessHttpStatus:
+          type: integer
+          minimum: 100
+          maximum: 599
+        livenessErrorCode:
+          type: string
+        probedAt:
+          type: string
+          format: date-time
+        cardStatus:
+          type: string
+        orderStatus:
+          type: string
+          enum: [unclaimed, claimed]
+        serviceStatus:
+          type: string
+          enum: [active, ended]
+        cardDisplaySuffix:
+          type: string
+        redemptionDeadline:
+          type: string
+          format: date-time
+        reclaimStatus:
+          type: string
+        reclaimTier:
+          type: string
+        reclaimResult:
+          type: string
+        timeline:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/DeliveryRecordEvent'
+    AuthorizeDeliveryReclaimRequest:
+      type: object
+      additionalProperties: false
+      required: [idempotencyKey]
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 64
+    AuthorizeDeliveryReclaimResponse:
+      type: object
+      additionalProperties: false
+      required: [membershipId, result]
+      properties:
+        membershipId:
+          type: string
+          format: uuid
+        result:
+          type: string
+          enum: [queued]
+    DeliveryServiceFilter:
+      type: string
+      enum: [active, ended]
+    DeliveryCardFilter:
+      type: string
+      enum: [unactivated, active, revoked]
+    DeliveryOrderFilter:
+      type: string
+      enum: [unclaimed, claimed]
+    RevokeDeliveryCardRequest:
+      type: object
+      additionalProperties: false
+      required: [confirm]
+      properties:
+        confirm:
+          type: boolean
+          const: true
+    RevokeDeliveryCardResponse:
+      type: object
+      additionalProperties: false
+      required: [membershipId, cardId, status, revokedTokenCount]
+      properties:
+        membershipId:
+          type: string
+          format: uuid
+        cardId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: revoked
+        revokedTokenCount:
+          type: integer
+          minimum: 0
+    DeliveryRecordList:
+      type: object
+      additionalProperties: false
+      required: [page, pageSize, total, items]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeliveryRecord'
+    ProbeDeliveryRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - idempotencyKey
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+    ProbeDeliveryResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - batchId
+        - queued
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        queued:
+          type: integer
+          minimum: 0
+    ActivateCardRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - cardSecret
+        - idempotencyKey
+      properties:
+        cardSecret:
+          type: string
+          minLength: 30
+          maxLength: 128
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+    CardActivation:
+      type: object
+      additionalProperties: false
+      required:
+        - cardId
+        - membershipId
+        - status
+        - displaySuffix
+        - redemptionDeadline
+      properties:
+        cardId:
+          type: string
+          format: uuid
+        membershipId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - active
+            - revoked
+        displaySuffix:
+          type: string
+        redemptionDeadline:
+          type: string
+          format: date-time
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - occurredAt
+        - actor
+        - eventType
+        - outcome
+        - entityType
+        - correlationId
+        - details
+      properties:
+        occurredAt:
+          type: string
+          format: date-time
+        actor:
+          type: string
+          enum: [owner, system, anonymous]
+        eventType:
+          type: string
+        outcome:
+          type: string
+          enum: [succeeded, failed, denied]
+        entityType:
+          type: string
+        correlationId:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    AuditEventList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+    DataProtectionStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - recoveryGate
+        - retentionReady
+        - pendingRelationships
+        - backupRetentionDays
+      properties:
+        recoveryGate:
+          type: string
+          enum: [closed, open]
+        lastCleanupAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastCleanupCycle:
+          type: string
+          nullable: true
+        retentionReady:
+          type: boolean
+        pendingRelationships:
+          type: integer
+          minimum: 0
+        backupRetentionDays:
+          type: integer
+          const: 7
+    OpenRecoveryGateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - restoredAt
+      properties:
+        restoredAt:
+          type: string
+          format: date-time
+    Problem:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - title
+        - status
+        - code
+        - request_id
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          type: string
+        request_id:
+          type: string
+        detail:
+          type: string
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
+    ExitPoolStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - mode
+        - capacity
+        - inUse
+        - available
+        - validatedAt
+      properties:
+        mode:
+          type: string
+          enum:
+            - proxy_required
+            - direct
+        capacity:
+          type: integer
+          minimum: 0
+          description: Deduplicated verified exits after admission
+        inUse:
+          type: integer
+          minimum: 0
+          description: Currently leased exits
+        available:
+          type: integer
+          minimum: 0
+          description: Capacity minus currently leased exits
+        validatedAt:
+          type: string
+          format: date-time
+          description: When the pool was last verified by bounded admission
+        failureCount:
+          type: integer
+          minimum: 0
+          description: Endpoints that failed admission validation
+        failureClasses:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: Redacted admission failure codes and counts
