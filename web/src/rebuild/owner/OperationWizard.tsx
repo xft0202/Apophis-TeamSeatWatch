@@ -200,13 +200,13 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
           <Alert color={rotation.status === 'ready' || rotation.status === 'authorized' ? 'green' : 'yellow'} role="status">{rotationStatus(rotation)}</Alert>
           <Text size="sm">核验 #{rotation.verificationId} · 到期 {rotation.activeUntil} · 来源 {rotation.source} · 证据截止 {rotation.expiresAt}</Text>
           <Text size="sm">目标空间 {rotation.workspaceId} · 母号 {rotation.motherAccountId} · 来源批次 {rotation.batchId}（修订 {rotation.batchVersion}） · 交付去向 {rotation.destinationId}（修订 {rotation.destinationRevision}）</Text>
-          <Text size="sm">席位类型计数：{Object.entries(rotation.seatTypeCounts).map(([kind, count]) => `${kind} ${count}`).join(' · ') || '待核验'}</Text>
+          <Text size="sm">订阅付费 default 配额：{rotation.paidDefaultEntitlement ?? '待核验'}；独立席位类型占用：{Object.entries(rotation.seatTypeCounts).map(([kind, count]) => `${kind} ${count}`).join(' · ') || '待核验'}。付费配额不等于可替换席位数。</Text>
           <Text size="sm">成员快照（{rotation.members.length}）：{rotation.members.join('；') || '无'}</Text>
           <Text size="sm">发出邀请快照（{rotation.invitations.length}）：{rotation.invitations.join('；') || '无'}</Text>
           <Title order={4}>原席位逐项处理</Title>
-          {rotation.slots.map((slot) => <Text size="sm" key={slot.platformMemberId}>{slot.identifier} · {slot.platformMemberId} · {slot.seatType || '类型待核验'} · {slot.decision} · {slot.reason}</Text>)}
+          {rotation.slots.map((slot) => <Text size="sm" key={slot.platformMemberId}>{slot.identifier} · {slot.platformMemberId} · {slot.seatType || '类型待核验'} · 使用 {slot.usageState}{slot.everUsed ? '（曾使用）' : ''} · 全局保护 {slot.protectionStatus} · {slot.decision} · {slot.reason}</Text>)}
           <Title order={4}>候选与排除原因</Title>
-          {rotation.candidates.map((child) => <Text size="sm" key={child.accountId}>{child.identifier} · {child.accountId} · {child.seatType || '类型待核验'} · {child.decision} · {child.reason}</Text>)}
+          {rotation.candidates.map((child) => <Text size="sm" key={child.accountId}>{child.identifier} · {child.accountId} · {child.seatType || '类型待核验'} · 使用 {child.usageState}{child.everUsed ? '（曾使用）' : ''} · 全局保护 {child.protectionStatus} · {child.decision} · {child.reason}</Text>)}
           <Text size="xs">预览指纹：{rotation.digest}。缺少邀请的候选仅标记“需邀请”；任何新邀请是独立的明确准备步骤，本阶段不会发出邀请。</Text>
           {rotation.status === 'authorized' ? <Button variant="light" color="red" loading={pending} onClick={() => void rotationAction('revoke')}>撤销授权（尚未执行）</Button> : null}
           {rotation.status === 'authorized' ? <Text size="sm">明确匹配：{rotation.assignments.map((mapping) => `${mapping.platformMemberId} → ${mapping.accountId}`).join('；')} · 授权指纹 {rotation.authorizationDigest}</Text> : null}

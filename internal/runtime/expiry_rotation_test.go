@@ -8,6 +8,50 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
 )
 
+func TestExpiryRotationUsageAndGlobalProtectionAreScopedAndSticky(t *testing.T) {
+	now := time.Now().UTC()
+	workspace, account := uuid.New(), uuid.New()
+	source := rotationProof{Source: "mock_workspace_usage", EvidenceID: "usage-1", ObservedAt: now.Add(-time.Second), ExpiresAt: now.Add(time.Minute)}
+	never := rotationUsageProof{rotationProof: source, WorkspaceID: workspace, AccountID: account, State: "never_used", EverUsed: false}
+	if !validRotationUsage(never, workspace, account, now) {
+		t.Fatal("fresh scoped never-used evidence rejected")
+	}
+	never.EverUsed = true
+	if validRotationUsage(never, workspace, account, now) {
+		t.Fatal("sticky ever-used downgraded")
+	}
+	never.EverUsed = false
+	never.WorkspaceID = uuid.New()
+	if validRotationUsage(never, workspace, account, now) {
+		t.Fatal("other Workspace usage accepted")
+	}
+	never.WorkspaceID = workspace
+	never.AccountID = uuid.New()
+	if validRotationUsage(never, workspace, account, now) {
+		t.Fatal("other account usage accepted")
+	}
+	protection := rotationProtectionProof{rotationProof: rotationProof{Source: "mock_global_protection", EvidenceID: "global-1", ObservedAt: now.Add(-time.Second), ExpiresAt: now.Add(time.Minute)}, AccountID: account, Status: "none"}
+	if !validRotationProtection(protection, account, now) {
+		t.Fatal("fresh global protection source rejected")
+	}
+	for _, status := range []string{"sale_reserved", "delivery_pending", "suspected_sold", "unknown"} {
+		if !blockingRotationProtection(status) {
+			t.Fatalf("%s must block write", status)
+		}
+	}
+	for _, status := range []string{"delivered", "canceled_retired"} {
+		protection.Status = status
+		if !validRotationProtection(protection, account, now) || blockingRotationProtection(status) {
+			t.Fatalf("%s must retain rather than certify replaceability", status)
+		}
+	}
+	protection.Status = "none"
+	protection.AccountID = uuid.New()
+	if validRotationProtection(protection, account, now) {
+		t.Fatal("another account protection accepted")
+	}
+}
+
 func TestExpiryRotationDeadlineBoundary(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	if rotationExpired(now.Add(time.Nanosecond), now) || !rotationExpired(now, now) || !rotationExpired(now.Add(-time.Nanosecond), now) {

@@ -2302,8 +2302,19 @@ components:
     ExpiryRotationSlot:
       type: object
       additionalProperties: false
-      required: [identifier, platformMemberId, seatType, decision, reason]
+      required: [identifier, platformMemberId, accountId, seatType, usageState, everUsed, protectionStatus, decision, reason]
       properties:
+        accountId:
+          type: string
+          format: uuid
+        usageState:
+          type: string
+          enum: [unknown, used, never_used]
+        everUsed:
+          type: boolean
+        protectionStatus:
+          type: string
+          enum: [unknown, none, delivered, canceled_retired, sale_reserved, delivery_pending, suspected_sold]
         identifier:
           type: string
         platformMemberId:
@@ -2318,11 +2329,19 @@ components:
     ExpiryRotationCandidate:
       type: object
       additionalProperties: false
-      required: [accountId, identifier, seatType, decision, reason]
+      required: [accountId, identifier, seatType, usageState, everUsed, protectionStatus, decision, reason]
       properties:
         accountId:
           type: string
           format: uuid
+        usageState:
+          type: string
+          enum: [unknown, used, never_used]
+        everUsed:
+          type: boolean
+        protectionStatus:
+          type: string
+          enum: [unknown, none, delivered, canceled_retired, sale_reserved, delivery_pending, suspected_sold]
         identifier:
           type: string
         seatType:
@@ -2375,6 +2394,8 @@ components:
         activeUntil:
           type: string
           format: date-time
+        paidDefaultEntitlement:
+          type: integer
         seatTypeCounts:
           type: object
           additionalProperties:

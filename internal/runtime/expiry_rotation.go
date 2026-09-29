@@ -29,25 +29,61 @@ type rotationProof struct {
 	ObservedAt time.Time `json:"observedAt"`
 	ExpiresAt  time.Time `json:"expiresAt"`
 }
+type rotationUsageProof struct {
+	rotationProof
+	WorkspaceID uuid.UUID `json:"workspaceId"`
+	AccountID   uuid.UUID `json:"accountId"`
+	State       string    `json:"state"`
+	EverUsed    bool      `json:"everUsed"`
+}
+type rotationProtectionProof struct {
+	rotationProof
+	AccountID uuid.UUID `json:"accountId"`
+	Status    string    `json:"status"`
+}
 type rotationVerdict struct {
 	rotationProof
-	SeatType string `json:"seatType"`
-	Decision string `json:"decision"`
-	Reason   string `json:"reason"`
+	AccountID  uuid.UUID               `json:"accountId"`
+	SeatType   string                  `json:"seatType"`
+	Usage      rotationUsageProof      `json:"usage"`
+	Protection rotationProtectionProof `json:"protection"`
+	Decision   string                  `json:"decision"`
+	Reason     string                  `json:"reason"`
 }
 type rotationEvidence struct {
-	WorkspaceID        uuid.UUID                     `json:"workspaceId"`
-	MotherID           uuid.UUID                     `json:"motherId"`
-	VerificationID     int64                         `json:"verificationId"`
-	Permission         rotationProof                 `json:"permission"`
-	PermissionDecision string                        `json:"permissionDecision"`
-	Counts             rotationProof                 `json:"counts"`
-	SeatTypeCounts     map[string]int                `json:"seatTypeCounts"`
-	Slots              map[string]rotationVerdict    `json:"slots"`      // exact platform member IDs
-	Candidates         map[uuid.UUID]rotationVerdict `json:"candidates"` // exact selected account IDs
+	WorkspaceID            uuid.UUID                     `json:"workspaceId"`
+	MotherID               uuid.UUID                     `json:"motherId"`
+	VerificationID         int64                         `json:"verificationId"`
+	Permission             rotationProof                 `json:"permission"`
+	PermissionDecision     string                        `json:"permissionDecision"`
+	Counts                 rotationProof                 `json:"counts"`
+	PaidDefault            rotationProof                 `json:"paidDefault"`
+	PaidDefaultEntitlement int                           `json:"paidDefaultEntitlement"`
+	SeatTypeCounts         map[string]int                `json:"seatTypeCounts"`
+	Slots                  map[string]rotationVerdict    `json:"slots"`      // exact platform member IDs
+	Candidates             map[uuid.UUID]rotationVerdict `json:"candidates"` // exact selected account IDs
 }
 
 func rotationExpired(activeUntil, now time.Time) bool { return !activeUntil.After(now) }
+func validRotationUsage(u rotationUsageProof, workspaceID, accountID uuid.UUID, now time.Time) bool {
+	if !validRotationProof(u.rotationProof, "mock_workspace_usage", now) || u.WorkspaceID != workspaceID || u.AccountID != accountID {
+		return false
+	}
+	return u.State == "used" && u.EverUsed || u.State == "never_used" && !u.EverUsed || u.State == "unknown"
+}
+func validRotationProtection(p rotationProtectionProof, accountID uuid.UUID, now time.Time) bool {
+	if !validRotationProof(p.rotationProof, "mock_global_protection", now) || p.AccountID != accountID {
+		return false
+	}
+	switch p.Status {
+	case "none", "delivered", "canceled_retired", "sale_reserved", "delivery_pending", "suspected_sold", "unknown":
+		return true
+	}
+	return false
+}
+func blockingRotationProtection(status string) bool {
+	return status == "sale_reserved" || status == "delivery_pending" || status == "suspected_sold" || status == "unknown"
+}
 
 func validRotationProof(p rotationProof, source string, now time.Time) bool {
 	return p.Source == source && p.EvidenceID != "" && !p.ObservedAt.After(now) && !p.ObservedAt.Before(now.Add(-5*time.Minute)) && p.ExpiresAt.After(now) && p.ExpiresAt.After(p.ObservedAt) && !p.ExpiresAt.After(p.ObservedAt.Add(5*time.Minute))
@@ -72,6 +108,15 @@ func rotationDigest(p ownerapi.ExpiryRotationPreview) string {
 type rotationRow interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
+// A persisted used observation can never be downgraded to never_used for the
+// same account and Workspace by a later mock. This is a fixture-only guard,
+// not a production usage ledger or remote usage observation.
+func rotationPreviouslyUsed(ctx context.Context, db rotationRow, workspaceID, accountID uuid.UUID) (bool, error) {
+	var used bool
+	err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tsw_expiry_rotation_previews prior, LATERAL jsonb_array_elements(COALESCE(prior.facts->'slots','[]'::jsonb) || COALESCE(prior.facts->'candidates','[]'::jsonb)) item WHERE prior.workspace_id=$1 AND prior.facts->>'source'='mock_capability' AND item->>'accountId'=$2 AND item->>'everUsed'='true')`, workspaceID, accountID.String()).Scan(&used)
+	return used, err
 }
 
 func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, owner uuid.UUID) (ownerapi.ExpiryRotationPreview, error) {
@@ -152,7 +197,7 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 	if err != nil {
 		return p, err
 	}
-	if ambiguousMember || len(members) != memberCount || len(p.Invitations) != inviteCount || len(invitations) != inviteCount || seatLimit < memberCount || memberCount < 0 {
+	if ambiguousMember || len(members) != memberCount || len(p.Invitations) != inviteCount || len(invitations) != inviteCount || seatLimit < 0 || memberCount < 0 {
 		return p, nil
 	}
 	var selected []ownerapi.OperationDraftChild
@@ -203,14 +248,14 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 	}
 	pending := func() {
 		for _, e := range members {
-			p.Slots = append(p.Slots, ownerapi.ExpiryRotationSlot{Identifier: e.identifier, PlatformMemberId: e.id, Decision: "needs_verification", Reason: "protection_proof_missing"})
+			p.Slots = append(p.Slots, ownerapi.ExpiryRotationSlot{Identifier: e.identifier, PlatformMemberId: e.id, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "needs_verification", Reason: "protection_proof_missing"})
 		}
 		for _, c := range found {
 			reason := "eligibility_proof_missing"
 			if !invitations[strings.ToLower(c.identifier)] {
 				reason = "invitation_required"
 			}
-			p.Candidates = append(p.Candidates, ownerapi.ExpiryRotationCandidate{AccountId: c.id, Identifier: c.identifier, Decision: "excluded", Reason: reason})
+			p.Candidates = append(p.Candidates, ownerapi.ExpiryRotationCandidate{AccountId: c.id, Identifier: c.identifier, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "excluded", Reason: reason})
 		}
 	}
 	if h.rotationCapability == nil {
@@ -233,7 +278,7 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 		}
 		return p, nil
 	}
-	if !validRotationProof(ev.Counts, "mock_seat_type_counts", now) || len(ev.SeatTypeCounts) == 0 {
+	if !validRotationProof(ev.Counts, "mock_seat_type_counts", now) || !validRotationProof(ev.PaidDefault, "mock_paid_default_entitlement", now) || ev.PaidDefaultEntitlement != seatLimit || len(ev.SeatTypeCounts) == 0 {
 		pending()
 		return p, nil
 	}
@@ -250,23 +295,62 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 		return p, nil
 	}
 	p.SeatTypeCounts = ev.SeatTypeCounts
+	p.PaidDefaultEntitlement = &ev.PaidDefaultEntitlement
 	p.Source = "mock_capability"
 	p.EvidenceFingerprint = rotationHash(ev)
 	ready := true
 	replaceable, eligible := 0, 0
 	observedSeatTypes := make(map[string]int)
+	// No read or arbitrary fixture verdict is an eligibility grant. Independently
+	// sourced usage, seat typing and global protection must agree with each verdict.
 	for _, e := range members {
 		verdict, ok := ev.Slots[e.id]
-		slot := ownerapi.ExpiryRotationSlot{Identifier: e.identifier, PlatformMemberId: e.id, Decision: "needs_verification", Reason: "protection_proof_missing"}
-		if ok && validRotationProof(verdict.rotationProof, "mock_member_protection", now) && verdict.Reason != "" && verdict.SeatType != "" && (verdict.Decision == "replaceable" || verdict.Decision == "retained") {
-			slot.SeatType = verdict.SeatType
-			slot.Decision = ownerapi.ExpiryRotationSlotDecision(verdict.Decision)
-			slot.Reason = verdict.Reason
-			if slot.Decision == "replaceable" {
-				if verdict.SeatType != "default" {
-					slot.Decision = "needs_verification"
-					slot.Reason = "seat_type_unverified"
+		slot := ownerapi.ExpiryRotationSlot{Identifier: e.identifier, PlatformMemberId: e.id, AccountId: verdict.AccountID, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "needs_verification", Reason: "protection_proof_missing"}
+		var identityCount int
+		if ok && verdict.AccountID != uuid.Nil {
+			err = db.QueryRow(ctx, `SELECT count(*) FROM tsw_target_accounts WHERE id=$1 AND identifier=$2`, verdict.AccountID, e.identifier).Scan(&identityCount)
+			if err != nil {
+				return p, err
+			}
+		}
+		if ok && identityCount == 1 && verdict.SeatType == "prolite" && validRotationProof(verdict.rotationProof, "mock_member_protection", now) && validRotationUsage(verdict.Usage, p.WorkspaceId, verdict.AccountID, now) && validRotationProtection(verdict.Protection, verdict.AccountID, now) {
+			slot.SeatType = "prolite"
+			slot.UsageState = ownerapi.ExpiryRotationSlotUsageState(verdict.Usage.State)
+			slot.EverUsed = verdict.Usage.EverUsed
+			slot.ProtectionStatus = ownerapi.ExpiryRotationSlotProtectionStatus(verdict.Protection.Status)
+			switch {
+			case blockingRotationProtection(verdict.Protection.Status):
+				slot.Reason = "protection_blocks_rotation"
+				ready = false
+			case verdict.Protection.Status == "delivered" || verdict.Protection.Status == "canceled_retired":
+				slot.Decision = "retained"
+				slot.Reason = "global_delivery_protected"
+			case verdict.Usage.State == "used" && verdict.Usage.EverUsed:
+				slot.Decision = "replaceable"
+				slot.Reason = "fixture_used_unprotected"
+			case verdict.Usage.State == "never_used" && !verdict.Usage.EverUsed:
+				slot.Decision = "retained"
+				slot.Reason = "never_used_retained"
+			default:
+				slot.Reason = "usage_unknown"
+				ready = false
+			}
+			var previouslyUsed bool
+			if !verdict.Usage.EverUsed {
+				previouslyUsed, err = rotationPreviouslyUsed(ctx, db, p.WorkspaceId, verdict.AccountID)
+				if err != nil {
+					return p, err
 				}
+			}
+			if previouslyUsed {
+				slot.Decision = "needs_verification"
+				slot.Reason = "sticky_usage_conflict"
+				ready = false
+			}
+			if verdict.Decision != string(slot.Decision) {
+				slot.Decision = "needs_verification"
+				slot.Reason = "verdict_conflicts_with_evidence"
+				ready = false
 			}
 		} else {
 			ready = false
@@ -277,9 +361,12 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			return p, err
 		}
 		if delivered {
+			if verdict.Protection.Status == "none" {
+				ready = false
+			}
 			slot.Decision = "retained"
 			slot.Reason = "global_delivery_protected"
-			if verdict.SeatType == "" {
+			if slot.SeatType == "" {
 				ready = false
 			}
 		}
@@ -296,11 +383,39 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 	}
 	for _, c := range found {
 		verdict, ok := ev.Candidates[c.id]
-		candidate := ownerapi.ExpiryRotationCandidate{AccountId: c.id, Identifier: c.identifier, Decision: "excluded", Reason: "eligibility_proof_missing"}
-		if ok && validRotationProof(verdict.rotationProof, "mock_candidate_protection", now) && verdict.Reason != "" && verdict.SeatType != "" && (verdict.Decision == "eligible" || verdict.Decision == "excluded") {
-			candidate.Decision = ownerapi.ExpiryRotationCandidateDecision(verdict.Decision)
-			candidate.Reason = verdict.Reason
-			candidate.SeatType = verdict.SeatType
+		candidate := ownerapi.ExpiryRotationCandidate{AccountId: c.id, Identifier: c.identifier, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "excluded", Reason: "eligibility_proof_missing"}
+		if ok && verdict.AccountID == c.id && verdict.SeatType == "prolite" && validRotationProof(verdict.rotationProof, "mock_candidate_protection", now) && validRotationUsage(verdict.Usage, p.WorkspaceId, c.id, now) && validRotationProtection(verdict.Protection, c.id, now) {
+			candidate.SeatType = "prolite"
+			candidate.UsageState = ownerapi.ExpiryRotationCandidateUsageState(verdict.Usage.State)
+			candidate.EverUsed = verdict.Usage.EverUsed
+			candidate.ProtectionStatus = ownerapi.ExpiryRotationCandidateProtectionStatus(verdict.Protection.Status)
+			switch {
+			case blockingRotationProtection(verdict.Protection.Status):
+				candidate.Reason = "protection_blocks_rotation"
+				ready = false
+			case verdict.Protection.Status == "delivered" || verdict.Protection.Status == "canceled_retired":
+				candidate.Reason = "global_delivery_protected"
+			case verdict.Usage.State == "never_used" && !verdict.Usage.EverUsed:
+				candidate.Decision = "eligible"
+				candidate.Reason = "fixture_never_used_unprotected"
+			case verdict.Usage.State == "used" || verdict.Usage.EverUsed:
+				candidate.Reason = "sticky_usage_protected"
+			default:
+				candidate.Reason = "usage_unknown"
+				ready = false
+			}
+			var previouslyUsed bool
+			if !verdict.Usage.EverUsed {
+				previouslyUsed, err = rotationPreviouslyUsed(ctx, db, p.WorkspaceId, c.id)
+				if err != nil {
+					return p, err
+				}
+			}
+			if previouslyUsed {
+				candidate.Decision = "excluded"
+				candidate.Reason = "sticky_usage_conflict"
+				ready = false
+			}
 		} else {
 			ready = false
 		}
@@ -321,9 +436,12 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			candidate.Decision = "excluded"
 			candidate.Reason = "already_member"
 		}
-		if candidate.SeatType != "default" {
+		if verdict.Decision != string(candidate.Decision) {
 			candidate.Decision = "excluded"
-			candidate.Reason = "premium_seat_unverified"
+			if candidate.Reason == "eligibility_proof_missing" || candidate.Reason == "fixture_never_used_unprotected" {
+				candidate.Reason = "verdict_conflicts_with_evidence"
+			}
+			ready = false
 		}
 		if candidate.Decision == "eligible" {
 			eligible++
@@ -349,14 +467,21 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 	if ev.Counts.ExpiresAt.Before(p.ExpiresAt) {
 		p.ExpiresAt = ev.Counts.ExpiresAt
 	}
+	if ev.PaidDefault.ExpiresAt.Before(p.ExpiresAt) {
+		p.ExpiresAt = ev.PaidDefault.ExpiresAt
+	}
 	for _, v := range ev.Slots {
-		if v.ExpiresAt.Before(p.ExpiresAt) {
-			p.ExpiresAt = v.ExpiresAt
+		for _, expiry := range []time.Time{v.ExpiresAt, v.Usage.ExpiresAt, v.Protection.ExpiresAt} {
+			if expiry.Before(p.ExpiresAt) {
+				p.ExpiresAt = expiry
+			}
 		}
 	}
 	for _, v := range ev.Candidates {
-		if v.ExpiresAt.Before(p.ExpiresAt) {
-			p.ExpiresAt = v.ExpiresAt
+		for _, expiry := range []time.Time{v.ExpiresAt, v.Usage.ExpiresAt, v.Protection.ExpiresAt} {
+			if expiry.Before(p.ExpiresAt) {
+				p.ExpiresAt = expiry
+			}
 		}
 	}
 	// Scope the preview lifetime independently of Ticket07's seven-day read TTL.

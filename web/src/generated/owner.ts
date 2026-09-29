@@ -1251,6 +1251,13 @@ export interface components {
             assignments: components["schemas"]["ExpiryRotationAssignment"][];
         };
         ExpiryRotationSlot: {
+            /** Format: uuid */
+            accountId: string;
+            /** @enum {string} */
+            usageState: "unknown" | "used" | "never_used";
+            everUsed: boolean;
+            /** @enum {string} */
+            protectionStatus: "unknown" | "none" | "delivered" | "canceled_retired" | "sale_reserved" | "delivery_pending" | "suspected_sold";
             identifier: string;
             platformMemberId: string;
             seatType: string;
@@ -1261,6 +1268,11 @@ export interface components {
         ExpiryRotationCandidate: {
             /** Format: uuid */
             accountId: string;
+            /** @enum {string} */
+            usageState: "unknown" | "used" | "never_used";
+            everUsed: boolean;
+            /** @enum {string} */
+            protectionStatus: "unknown" | "none" | "delivered" | "canceled_retired" | "sale_reserved" | "delivery_pending" | "suspected_sold";
             identifier: string;
             seatType: string;
             /** @enum {string} */
@@ -1293,6 +1305,7 @@ export interface components {
             destinationRevision: number;
             /** Format: date-time */
             activeUntil: string;
+            paidDefaultEntitlement?: number;
             seatTypeCounts: {
                 [key: string]: number;
             };

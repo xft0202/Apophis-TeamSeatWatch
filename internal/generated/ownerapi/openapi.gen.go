@@ -495,6 +495,60 @@ func (e ExpiryRotationCandidateDecision) Valid() bool {
 	}
 }
 
+// Defines values for ExpiryRotationCandidateProtectionStatus.
+const (
+	ExpiryRotationCandidateProtectionStatusCanceledRetired ExpiryRotationCandidateProtectionStatus = "canceled_retired"
+	ExpiryRotationCandidateProtectionStatusDelivered       ExpiryRotationCandidateProtectionStatus = "delivered"
+	ExpiryRotationCandidateProtectionStatusDeliveryPending ExpiryRotationCandidateProtectionStatus = "delivery_pending"
+	ExpiryRotationCandidateProtectionStatusNone            ExpiryRotationCandidateProtectionStatus = "none"
+	ExpiryRotationCandidateProtectionStatusSaleReserved    ExpiryRotationCandidateProtectionStatus = "sale_reserved"
+	ExpiryRotationCandidateProtectionStatusSuspectedSold   ExpiryRotationCandidateProtectionStatus = "suspected_sold"
+	ExpiryRotationCandidateProtectionStatusUnknown         ExpiryRotationCandidateProtectionStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryRotationCandidateProtectionStatus enum.
+func (e ExpiryRotationCandidateProtectionStatus) Valid() bool {
+	switch e {
+	case ExpiryRotationCandidateProtectionStatusCanceledRetired:
+		return true
+	case ExpiryRotationCandidateProtectionStatusDelivered:
+		return true
+	case ExpiryRotationCandidateProtectionStatusDeliveryPending:
+		return true
+	case ExpiryRotationCandidateProtectionStatusNone:
+		return true
+	case ExpiryRotationCandidateProtectionStatusSaleReserved:
+		return true
+	case ExpiryRotationCandidateProtectionStatusSuspectedSold:
+		return true
+	case ExpiryRotationCandidateProtectionStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpiryRotationCandidateUsageState.
+const (
+	ExpiryRotationCandidateUsageStateNeverUsed ExpiryRotationCandidateUsageState = "never_used"
+	ExpiryRotationCandidateUsageStateUnknown   ExpiryRotationCandidateUsageState = "unknown"
+	ExpiryRotationCandidateUsageStateUsed      ExpiryRotationCandidateUsageState = "used"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryRotationCandidateUsageState enum.
+func (e ExpiryRotationCandidateUsageState) Valid() bool {
+	switch e {
+	case ExpiryRotationCandidateUsageStateNeverUsed:
+		return true
+	case ExpiryRotationCandidateUsageStateUnknown:
+		return true
+	case ExpiryRotationCandidateUsageStateUsed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ExpiryRotationPreviewStatus.
 const (
 	ExpiryRotationPreviewStatusAuthorized        ExpiryRotationPreviewStatus = "authorized"
@@ -543,6 +597,60 @@ func (e ExpiryRotationSlotDecision) Valid() bool {
 	case ExpiryRotationSlotDecisionReplaceable:
 		return true
 	case ExpiryRotationSlotDecisionRetained:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpiryRotationSlotProtectionStatus.
+const (
+	ExpiryRotationSlotProtectionStatusCanceledRetired ExpiryRotationSlotProtectionStatus = "canceled_retired"
+	ExpiryRotationSlotProtectionStatusDelivered       ExpiryRotationSlotProtectionStatus = "delivered"
+	ExpiryRotationSlotProtectionStatusDeliveryPending ExpiryRotationSlotProtectionStatus = "delivery_pending"
+	ExpiryRotationSlotProtectionStatusNone            ExpiryRotationSlotProtectionStatus = "none"
+	ExpiryRotationSlotProtectionStatusSaleReserved    ExpiryRotationSlotProtectionStatus = "sale_reserved"
+	ExpiryRotationSlotProtectionStatusSuspectedSold   ExpiryRotationSlotProtectionStatus = "suspected_sold"
+	ExpiryRotationSlotProtectionStatusUnknown         ExpiryRotationSlotProtectionStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryRotationSlotProtectionStatus enum.
+func (e ExpiryRotationSlotProtectionStatus) Valid() bool {
+	switch e {
+	case ExpiryRotationSlotProtectionStatusCanceledRetired:
+		return true
+	case ExpiryRotationSlotProtectionStatusDelivered:
+		return true
+	case ExpiryRotationSlotProtectionStatusDeliveryPending:
+		return true
+	case ExpiryRotationSlotProtectionStatusNone:
+		return true
+	case ExpiryRotationSlotProtectionStatusSaleReserved:
+		return true
+	case ExpiryRotationSlotProtectionStatusSuspectedSold:
+		return true
+	case ExpiryRotationSlotProtectionStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpiryRotationSlotUsageState.
+const (
+	ExpiryRotationSlotUsageStateNeverUsed ExpiryRotationSlotUsageState = "never_used"
+	ExpiryRotationSlotUsageStateUnknown   ExpiryRotationSlotUsageState = "unknown"
+	ExpiryRotationSlotUsageStateUsed      ExpiryRotationSlotUsageState = "used"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryRotationSlotUsageState enum.
+func (e ExpiryRotationSlotUsageState) Valid() bool {
+	switch e {
+	case ExpiryRotationSlotUsageStateNeverUsed:
+		return true
+	case ExpiryRotationSlotUsageStateUnknown:
+		return true
+	case ExpiryRotationSlotUsageStateUsed:
 		return true
 	default:
 		return false
@@ -2485,15 +2593,24 @@ type ExpiryRotationAssignment struct {
 
 // ExpiryRotationCandidate defines model for ExpiryRotationCandidate.
 type ExpiryRotationCandidate struct {
-	AccountId  openapi_types.UUID              `json:"accountId"`
-	Decision   ExpiryRotationCandidateDecision `json:"decision"`
-	Identifier string                          `json:"identifier"`
-	Reason     string                          `json:"reason"`
-	SeatType   string                          `json:"seatType"`
+	AccountId        openapi_types.UUID                      `json:"accountId"`
+	Decision         ExpiryRotationCandidateDecision         `json:"decision"`
+	EverUsed         bool                                    `json:"everUsed"`
+	Identifier       string                                  `json:"identifier"`
+	ProtectionStatus ExpiryRotationCandidateProtectionStatus `json:"protectionStatus"`
+	Reason           string                                  `json:"reason"`
+	SeatType         string                                  `json:"seatType"`
+	UsageState       ExpiryRotationCandidateUsageState       `json:"usageState"`
 }
 
 // ExpiryRotationCandidateDecision defines model for ExpiryRotationCandidate.Decision.
 type ExpiryRotationCandidateDecision string
+
+// ExpiryRotationCandidateProtectionStatus defines model for ExpiryRotationCandidate.ProtectionStatus.
+type ExpiryRotationCandidateProtectionStatus string
+
+// ExpiryRotationCandidateUsageState defines model for ExpiryRotationCandidate.UsageState.
+type ExpiryRotationCandidateUsageState string
 
 // ExpiryRotationConfirmation defines model for ExpiryRotationConfirmation.
 type ExpiryRotationConfirmation struct {
@@ -2505,35 +2622,36 @@ type ExpiryRotationConfirmation struct {
 
 // ExpiryRotationPreview defines model for ExpiryRotationPreview.
 type ExpiryRotationPreview struct {
-	ActiveUntil         time.Time                   `json:"activeUntil"`
-	Assignments         []ExpiryRotationAssignment  `json:"assignments"`
-	AuthorizationDigest *string                     `json:"authorizationDigest,omitempty"`
-	Authorized          bool                        `json:"authorized"`
-	AuthorizedAt        *time.Time                  `json:"authorizedAt,omitempty"`
-	AuthorizedBy        *openapi_types.UUID         `json:"authorizedBy,omitempty"`
-	BatchId             openapi_types.UUID          `json:"batchId"`
-	BatchVersion        int64                       `json:"batchVersion"`
-	Candidates          []ExpiryRotationCandidate   `json:"candidates"`
-	DestinationId       openapi_types.UUID          `json:"destinationId"`
-	DestinationRevision int64                       `json:"destinationRevision"`
-	Digest              string                      `json:"digest"`
-	DraftId             openapi_types.UUID          `json:"draftId"`
-	DraftVersion        int64                       `json:"draftVersion"`
-	EvidenceFingerprint string                      `json:"evidenceFingerprint"`
-	ExpiresAt           time.Time                   `json:"expiresAt"`
-	Id                  openapi_types.UUID          `json:"id"`
-	Invitations         []string                    `json:"invitations"`
-	Members             []string                    `json:"members"`
-	MotherAccountId     openapi_types.UUID          `json:"motherAccountId"`
-	ObservedAt          time.Time                   `json:"observedAt"`
-	RevokedAt           *time.Time                  `json:"revokedAt,omitempty"`
-	SeatTypeCounts      map[string]int              `json:"seatTypeCounts"`
-	Slots               []ExpiryRotationSlot        `json:"slots"`
-	Source              string                      `json:"source"`
-	SourceRevisions     map[string]int64            `json:"sourceRevisions"`
-	Status              ExpiryRotationPreviewStatus `json:"status"`
-	VerificationId      int64                       `json:"verificationId"`
-	WorkspaceId         openapi_types.UUID          `json:"workspaceId"`
+	ActiveUntil            time.Time                   `json:"activeUntil"`
+	Assignments            []ExpiryRotationAssignment  `json:"assignments"`
+	AuthorizationDigest    *string                     `json:"authorizationDigest,omitempty"`
+	Authorized             bool                        `json:"authorized"`
+	AuthorizedAt           *time.Time                  `json:"authorizedAt,omitempty"`
+	AuthorizedBy           *openapi_types.UUID         `json:"authorizedBy,omitempty"`
+	BatchId                openapi_types.UUID          `json:"batchId"`
+	BatchVersion           int64                       `json:"batchVersion"`
+	Candidates             []ExpiryRotationCandidate   `json:"candidates"`
+	DestinationId          openapi_types.UUID          `json:"destinationId"`
+	DestinationRevision    int64                       `json:"destinationRevision"`
+	Digest                 string                      `json:"digest"`
+	DraftId                openapi_types.UUID          `json:"draftId"`
+	DraftVersion           int64                       `json:"draftVersion"`
+	EvidenceFingerprint    string                      `json:"evidenceFingerprint"`
+	ExpiresAt              time.Time                   `json:"expiresAt"`
+	Id                     openapi_types.UUID          `json:"id"`
+	Invitations            []string                    `json:"invitations"`
+	Members                []string                    `json:"members"`
+	MotherAccountId        openapi_types.UUID          `json:"motherAccountId"`
+	ObservedAt             time.Time                   `json:"observedAt"`
+	PaidDefaultEntitlement *int                        `json:"paidDefaultEntitlement,omitempty"`
+	RevokedAt              *time.Time                  `json:"revokedAt,omitempty"`
+	SeatTypeCounts         map[string]int              `json:"seatTypeCounts"`
+	Slots                  []ExpiryRotationSlot        `json:"slots"`
+	Source                 string                      `json:"source"`
+	SourceRevisions        map[string]int64            `json:"sourceRevisions"`
+	Status                 ExpiryRotationPreviewStatus `json:"status"`
+	VerificationId         int64                       `json:"verificationId"`
+	WorkspaceId            openapi_types.UUID          `json:"workspaceId"`
 }
 
 // ExpiryRotationPreviewStatus defines model for ExpiryRotationPreview.Status.
@@ -2541,15 +2659,25 @@ type ExpiryRotationPreviewStatus string
 
 // ExpiryRotationSlot defines model for ExpiryRotationSlot.
 type ExpiryRotationSlot struct {
-	Decision         ExpiryRotationSlotDecision `json:"decision"`
-	Identifier       string                     `json:"identifier"`
-	PlatformMemberId string                     `json:"platformMemberId"`
-	Reason           string                     `json:"reason"`
-	SeatType         string                     `json:"seatType"`
+	AccountId        openapi_types.UUID                 `json:"accountId"`
+	Decision         ExpiryRotationSlotDecision         `json:"decision"`
+	EverUsed         bool                               `json:"everUsed"`
+	Identifier       string                             `json:"identifier"`
+	PlatformMemberId string                             `json:"platformMemberId"`
+	ProtectionStatus ExpiryRotationSlotProtectionStatus `json:"protectionStatus"`
+	Reason           string                             `json:"reason"`
+	SeatType         string                             `json:"seatType"`
+	UsageState       ExpiryRotationSlotUsageState       `json:"usageState"`
 }
 
 // ExpiryRotationSlotDecision defines model for ExpiryRotationSlot.Decision.
 type ExpiryRotationSlotDecision string
+
+// ExpiryRotationSlotProtectionStatus defines model for ExpiryRotationSlot.ProtectionStatus.
+type ExpiryRotationSlotProtectionStatus string
+
+// ExpiryRotationSlotUsageState defines model for ExpiryRotationSlot.UsageState.
+type ExpiryRotationSlotUsageState string
 
 // ExportMotherAccounts defines model for ExportMotherAccounts.
 type ExportMotherAccounts struct {

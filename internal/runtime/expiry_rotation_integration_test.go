@@ -67,7 +67,7 @@ func rotationResult(t *testing.T, w *httptest.ResponseRecorder, status int) owne
 func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	pool, h, owner, session, csrf := childReviewFixture(t)
 	ctx := context.Background()
-	mother, space, batch, child, dest, draft := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	mother, space, batch, child, original, dest, draft := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	run, generation, exchange := uuid.New(), uuid.New(), uuid.New()
 	password, err := targetdomain.SealMaterial("password", h.keyRing)
 	if err != nil {
@@ -98,6 +98,7 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	seed(`INSERT INTO tsw_workspace_verification_entries(verification_id,kind,identifier,identifier_hmac,identifier_key_version,status,platform_member_id) VALUES($1,'member','old@rotate.test',decode(repeat('41',32),'hex'),1,'active','member-1'),($1,'pending_invite','child@rotate.test',decode(repeat('42',32),'hex'),1,'pending',NULL)`, verification)
 	seed(`INSERT INTO tsw_standby_child_batches(id,name) VALUES($1,'rotation batch')`, batch)
 	seed(`INSERT INTO tsw_target_accounts(id,identifier,identifier_hmac,identifier_key_version,display_label) VALUES($1,'child@rotate.test',decode(repeat('43',32),'hex'),1,'child')`, child)
+	seed(`INSERT INTO tsw_target_accounts(id,identifier,identifier_hmac,identifier_key_version,display_label) VALUES($1,'old@rotate.test',decode(repeat('45',32),'hex'),1,'original')`, original)
 	seed(`INSERT INTO tsw_target_credentials(target_account_id,password_secret,totp_secret,material_status,materials_sealed) VALUES($1,$2,$3,'complete',true)`, child, password, totp)
 	seed(`INSERT INTO tsw_standby_child_memberships(target_account_id,batch_id) VALUES($1,$2)`, child, batch)
 	seed(`INSERT INTO tsw_delivery_destinations(id,name,endpoint,target_group,secret_key_version,secret_nonce,secret_ciphertext,test_connection,test_target,test_revision,tested_at) VALUES($1,'delivery','https://hub.fixture.test/api/v1','42',1,decode(repeat('11',12),'hex'),decode(repeat('22',32),'hex'),'connected','connected',1,now())`, dest)
@@ -128,7 +129,15 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	proof := func(source, id string) rotationProof {
 		return rotationProof{Source: source, EvidenceID: id, ObservedAt: now, ExpiresAt: now.Add(3 * time.Minute)}
 	}
-	mock := &mockRotation{evidence: rotationEvidence{WorkspaceID: space, MotherID: mother, VerificationID: verification, Permission: proof("mock_write_permission", "write-1"), PermissionDecision: "manage", Counts: proof("mock_seat_type_counts", "seats-1"), SeatTypeCounts: map[string]int{"default": 2}, Slots: map[string]rotationVerdict{"member-1": {rotationProof: proof("mock_member_protection", "protection-1"), SeatType: "default", Decision: "replaceable", Reason: "fixture-verified-unprotected"}}, Candidates: map[uuid.UUID]rotationVerdict{child: {rotationProof: proof("mock_candidate_protection", "candidate-1"), SeatType: "default", Decision: "eligible", Reason: "fixture-invited-unprotected"}}}}
+	usage := func(id uuid.UUID, state string, ever bool) rotationUsageProof {
+		return rotationUsageProof{rotationProof: proof("mock_workspace_usage", "usage-"+id.String()), WorkspaceID: space, AccountID: id, State: state, EverUsed: ever}
+	}
+	protection := func(id uuid.UUID, status string) rotationProtectionProof {
+		return rotationProtectionProof{rotationProof: proof("mock_global_protection", "protection-"+id.String()), AccountID: id, Status: status}
+	}
+	usedSlot := rotationVerdict{rotationProof: proof("mock_member_protection", "member-1"), AccountID: original, SeatType: "prolite", Usage: usage(original, "used", true), Protection: protection(original, "none"), Decision: "replaceable", Reason: "fixture-used-unprotected"}
+	eligibleChild := rotationVerdict{rotationProof: proof("mock_candidate_protection", "candidate-1"), AccountID: child, SeatType: "prolite", Usage: usage(child, "never_used", false), Protection: protection(child, "none"), Decision: "eligible", Reason: "fixture-invited-unprotected"}
+	mock := &mockRotation{evidence: rotationEvidence{WorkspaceID: space, MotherID: mother, VerificationID: verification, Permission: proof("mock_write_permission", "write-1"), PermissionDecision: "manage", Counts: proof("mock_seat_type_counts", "seats-1"), PaidDefault: proof("mock_paid_default_entitlement", "paid-1"), PaidDefaultEntitlement: 2, SeatTypeCounts: map[string]int{"default": 0, "prolite": 1}, Slots: map[string]rotationVerdict{"member-1": usedSlot}, Candidates: map[uuid.UUID]rotationVerdict{child: eligibleChild}}}
 	h.rotationCapability = mock
 	mock.evidence.PermissionDecision = "read"
 	if p := preview(); p.Status != "pending_permission" {
@@ -144,21 +153,67 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	if p := preview(); p.Status != "needs_verification" || p.Slots[0].Decision != "needs_verification" {
 		t.Fatalf("unproved slot accepted: %+v", p)
 	}
-	mock.evidence.Slots["member-1"] = rotationVerdict{rotationProof: proof("mock_member_protection", "protection-1"), SeatType: "default", Decision: "retained", Reason: "fixture-protected"}
+	retainedSlot := usedSlot
+	retainedSlot.Usage = usage(original, "never_used", false)
+	retainedSlot.Decision = "retained"
+	mock.evidence.Slots["member-1"] = retainedSlot
 	if p := preview(); p.Status != "needs_verification" || p.Slots[0].Decision != "retained" {
 		t.Fatalf("retained slot not preserved: %+v", p)
 	}
-	mock.evidence.Slots["member-1"] = rotationVerdict{rotationProof: proof("mock_member_protection", "protection-1"), SeatType: "default", Decision: "replaceable", Reason: "fixture-verified-unprotected"}
+	for _, status := range []string{"delivered", "canceled_retired"} {
+		protected := usedSlot
+		protected.Protection = protection(original, status)
+		protected.Decision = "retained"
+		mock.evidence.Slots["member-1"] = protected
+		if p := preview(); p.Status != "needs_verification" || p.Slots[0].Decision != "retained" {
+			t.Fatalf("%s original slot unprotected: %+v", status, p)
+		}
+	}
+	for _, status := range []string{"sale_reserved", "delivery_pending", "suspected_sold", "unknown"} {
+		protected := usedSlot
+		protected.Protection = protection(original, status)
+		protected.Decision = "needs_verification"
+		mock.evidence.Slots["member-1"] = protected
+		if p := preview(); p.Status != "needs_verification" || p.Slots[0].Decision != "needs_verification" {
+			t.Fatalf("%s original slot authorized: %+v", status, p)
+		}
+	}
+	mock.evidence.Slots["member-1"] = usedSlot
 	mock.evidence.SeatTypeCounts = map[string]int{"usage_based": 2}
 	if p := preview(); p.Status != "needs_verification" {
 		t.Fatalf("mismatched seat type counts accepted: %+v", p)
 	}
-	mock.evidence.SeatTypeCounts = map[string]int{"default": 2}
-	mock.evidence.Candidates[child] = rotationVerdict{rotationProof: proof("mock_candidate_protection", "candidate-1"), SeatType: "default", Decision: "excluded", Reason: "fixture-protected"}
+	mock.evidence.SeatTypeCounts = map[string]int{"default": 0, "prolite": 1}
+	mock.evidence.PaidDefaultEntitlement = 1
+	if p := preview(); p.Status != "facts_incomplete" {
+		t.Fatalf("paid default entitlement drift accepted: %+v", p)
+	}
+	mock.evidence.PaidDefaultEntitlement = 2
+	protectedChild := eligibleChild
+	protectedChild.Protection = protection(child, "delivered")
+	protectedChild.Decision = "excluded"
+	mock.evidence.Candidates[child] = protectedChild
 	if p := preview(); p.Status != "needs_verification" || p.Candidates[0].Decision != "excluded" {
 		t.Fatalf("protected candidate accepted: %+v", p)
 	}
-	mock.evidence.Candidates[child] = rotationVerdict{rotationProof: proof("mock_candidate_protection", "candidate-1"), SeatType: "default", Decision: "eligible", Reason: "fixture-invited-unprotected"}
+	for _, status := range []string{"sale_reserved", "delivery_pending", "suspected_sold", "unknown", "canceled_retired"} {
+		blocked := eligibleChild
+		blocked.Protection = protection(child, status)
+		blocked.Decision = "excluded"
+		mock.evidence.Candidates[child] = blocked
+		if p := preview(); p.Status != "needs_verification" || p.Candidates[0].Decision != "excluded" {
+			t.Fatalf("%s protection accepted: %+v", status, p)
+		}
+	}
+	mock.evidence.Candidates[child] = eligibleChild
+	unknownUsage := eligibleChild
+	unknownUsage.Usage = usage(child, "unknown", false)
+	unknownUsage.Decision = "excluded"
+	mock.evidence.Candidates[child] = unknownUsage
+	if p := preview(); p.Status != "needs_verification" {
+		t.Fatalf("unknown candidate usage accepted: %+v", p)
+	}
+	mock.evidence.Candidates[child] = eligibleChild
 	ready := preview()
 	if ready.Status != "ready" || len(ready.Slots) != 1 || len(ready.Candidates) != 1 || ready.Candidates[0].Decision != "eligible" {
 		t.Fatalf("ready evidence rejected: %+v", ready)
@@ -241,6 +296,17 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	mock.evidence.VerificationID = futureVerification
 	if p := preview(); p.Status != "not_expired" {
 		t.Fatalf("future expiry accepted: %s", p.Status)
+	}
+	wasUsed := eligibleChild
+	wasUsed.Usage = usage(child, "used", true)
+	wasUsed.Decision = "excluded"
+	mock.evidence.Candidates[child] = wasUsed
+	if p := preview(); p.Candidates[0].EverUsed != true {
+		t.Fatalf("used observation not persisted: %+v", p)
+	}
+	mock.evidence.Candidates[child] = eligibleChild
+	if p := preview(); p.Candidates[0].Reason != "sticky_usage_conflict" {
+		t.Fatalf("sticky usage downgraded: %+v", p)
 	}
 	seed(`UPDATE tsw_owner_sessions SET revoked_at=now(),revocation_reason='owner_test' WHERE owner_id=$1 AND revoked_at IS NULL`, owner)
 	if w := rotationRequest(h, session, csrf, "POST", path, nil); w.Code != 401 {
