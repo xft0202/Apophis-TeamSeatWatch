@@ -147,10 +147,6 @@ function LoginView({
           <Title className="auth-title" order={1} size="h2">
             Owner 登录
           </Title>
-          <Text className="auth-subtitle" size="sm">
-            使用本机 Owner 账号进入席位运营控制台。此入口不提供公网注册。
-          </Text>
-
           {notice ? (
             <Alert color="red" title="无法登录" mt="xl">
               {notice}
@@ -162,6 +158,7 @@ function LoginView({
               <TextInput
                 label="用户名"
                 placeholder="输入 Owner 用户名"
+                radius={6}
                 autoComplete="username"
                 autoFocus
                 maxLength={254}
@@ -172,13 +169,14 @@ function LoginView({
               <PasswordInput
                 label="密码"
                 placeholder="输入密码"
+                radius={6}
                 autoComplete="current-password"
                 maxLength={1024}
                 required
                 value={fields.password}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => setFields({ ...fields, password: event.currentTarget.value })}
               />
-              <Button type="submit" loading={pending} fullWidth size="md">
+              <Button type="submit" loading={pending} fullWidth size="md" radius={6}>
                 登录
               </Button>
             </Stack>
@@ -247,7 +245,7 @@ function SignedInView({
             <span className="brand-mark" aria-hidden="true">TS</span>
             <span className="brand-name">Apophis-TeamSeatWatch</span>
           </div>
-          <Button variant="subtle" color="dark" onClick={logout} loading={pendingAction === 'logout'}>
+          <Button variant="subtle" color="dark" radius={6} onClick={logout} loading={pendingAction === 'logout'}>
             退出登录
           </Button>
         </Container>
@@ -267,7 +265,7 @@ function SignedInView({
               <Stack gap="lg">
                 <Group justify="space-between" align="flex-start" wrap="nowrap">
                   <div>
-                    <Text size="xs" tt="uppercase" fw={700} c="dimmed" lts="0.08em">
+                    <Text size="xs" tt="uppercase" fw={600} c="dimmed" lts="0.08em">
                       当前身份
                     </Text>
                     <Text className="session-username" size="lg" fw={600} mt={4}>
@@ -285,6 +283,7 @@ function SignedInView({
                   </Text>
                   <Button
                     variant="light"
+                    radius={6}
                     onClick={refresh}
                     loading={pendingAction === 'refresh'}
                     disabled={pendingAction !== null}

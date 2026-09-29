@@ -2,7 +2,9 @@ import { once } from 'node:events';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { URL } from 'node:url';
 
+const { fetch } = globalThis;
 let server;
 let baseUrl;
 let authenticated = false;
@@ -127,6 +129,14 @@ test('Owner authentication contract preserves CSRF and session boundaries', asyn
     cookie: csrfCookie,
     'x-csrf-token': 'contract-token',
   };
+
+  const rejectedCsrf = await fetch(`${baseUrl}/api/owner/v1/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: csrfCookie },
+    body: JSON.stringify({ username: 'owner', password: 'secret' }),
+  });
+  assert.equal(rejectedCsrf.status, 403);
+  assert.deepEqual(await rejectedCsrf.json(), { code: 'csrf_rejected' });
 
   const invalidLogin = await fetch(`${baseUrl}/api/owner/v1/login`, {
     method: 'POST',

@@ -61,24 +61,17 @@ input {
   color: #fafafa;
   font-family: 'General Sans', 'DM Sans', sans-serif;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .brand-name {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .auth-title {
   margin-top: 32px;
   letter-spacing: -0.04em;
-}
-
-.auth-subtitle {
-  max-width: 38ch;
-  margin-top: 8px;
-  color: #6b6b6b;
-  line-height: 1.6;
 }
 
 .auth-form {
@@ -124,7 +117,7 @@ input {
   gap: 8px;
   color: #047857;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .session-status::before {

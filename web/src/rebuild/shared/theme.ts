@@ -17,12 +17,12 @@ export const appTheme = createTheme({
   primaryColor: 'indigo',
   primaryShade: { light: 5, dark: 6 },
   colors: { indigo },
-  defaultRadius: 'sm',
+  defaultRadius: '6px',
   fontFamily: '"DM Sans", "Segoe UI", sans-serif',
   fontFamilyMonospace: '"JetBrains Mono", ui-monospace, monospace',
   headings: {
     fontFamily: '"General Sans", "DM Sans", "Segoe UI", sans-serif',
-    fontWeight: '700',
+    fontWeight: '600',
   },
   focusRing: 'auto',
 });
