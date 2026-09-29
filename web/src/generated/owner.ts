@@ -420,6 +420,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/standby-child-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listStandbyChildBatches"];
+        put?: never;
+        post: operations["createStandbyChildBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/standby-child-batches/selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["previewStandbyChildSelection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/standby-child-batches/{standbyBatchId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateStandbyChildBatch"];
+        trace?: never;
+    };
+    "/api/owner/v1/standby-child-batches/{standbyBatchId}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["exportStandbyChildBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/target-accounts": {
         parameters: {
             query?: never;
@@ -1196,6 +1260,55 @@ export interface components {
             expectedCount: number;
             confirmed: boolean;
         };
+        StandbyChildBatch: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: int64 */
+            version: number;
+            /** Format: int64 */
+            memberCount: number;
+            /** Format: int64 */
+            domainCount: number;
+            domains: string[];
+        };
+        StandbyChildSelectionRequest: {
+            /** @enum {string} */
+            scope: "selected" | "filtered" | "batch";
+            accountIds?: string[];
+            search?: string;
+            /** Format: uuid */
+            batchId?: string;
+        };
+        StandbyChildSelectionMember: {
+            /** Format: uuid */
+            accountId: string;
+            /** Format: int64 */
+            membershipVersion: number;
+        };
+        StandbyChildSelection: {
+            /** @enum {string} */
+            scope: "selected" | "filtered" | "batch";
+            members: components["schemas"]["StandbyChildSelectionMember"][];
+            count: number;
+        };
+        StandbyChildBatchChange: {
+            name: string;
+            selection: components["schemas"]["StandbyChildSelection"];
+            expectedCount: number;
+            confirmed: boolean;
+            /** Format: int64 */
+            expectedVersion?: number;
+            /** @enum {string} */
+            action?: "add" | "remove";
+        };
+        StandbyChildBatchExport: {
+            selection: components["schemas"]["StandbyChildSelection"];
+            expectedCount: number;
+            confirmed: boolean;
+            /** Format: int64 */
+            expectedVersion?: number;
+        };
         TargetAccount: {
             /** Format: uuid */
             id: string;
@@ -1820,6 +1933,7 @@ export interface components {
         AccountId: string;
         WorkspaceId: string;
         ReadId: string;
+        StandbyBatchId: string;
         TargetAccountId: string;
         ProbeId: string;
         BatchId: string;
@@ -2643,6 +2757,139 @@ export interface operations {
         };
         responses: {
             /** @description Three-field TXT; no session material */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listStandbyChildBatches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace-independent groups with distinct counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StandbyChildBatch"][];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createStandbyChildBatch: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StandbyChildBatchChange"];
+            };
+        };
+        responses: {
+            /** @description Named batch with frozen, confirmed members */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StandbyChildBatch"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    previewStandbyChildSelection: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StandbyChildSelectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Frozen account IDs and membership versions; maximum 10000 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StandbyChildSelection"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateStandbyChildBatch: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                standbyBatchId: components["parameters"]["StandbyBatchId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StandbyChildBatchChange"];
+            };
+        };
+        responses: {
+            /** @description Versioned name and member transfer/removal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StandbyChildBatch"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    exportStandbyChildBatch: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                standbyBatchId: components["parameters"]["StandbyBatchId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StandbyChildBatchExport"];
+            };
+        };
+        responses: {
+            /** @description Only account, password and 2FA in TXT */
             200: {
                 headers: {
                     [name: string]: unknown;

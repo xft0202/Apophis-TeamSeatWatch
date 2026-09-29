@@ -31,6 +31,7 @@ import { appTheme } from '../shared/theme';
 import MotherMaterialsView from './MotherMaterialsView';
 import ChildMaterialsView from './ChildMaterialsView';
 import WorkspaceDiscoveryView from './WorkspaceDiscoveryView';
+import StandbyChildBatchesView from './StandbyChildBatchesView';
 import {
   destinationApi,
   type Destination,
@@ -319,11 +320,13 @@ function SignedInView({
                 <Tabs.Tab value="workspaces">空间管理</Tabs.Tab>
                 <Tabs.Tab value="materials">母号资料</Tabs.Tab>
                 <Tabs.Tab value="child">子号资料</Tabs.Tab>
+                <Tabs.Tab value="standby">待用批次</Tabs.Tab>
                 <Tabs.Tab value="destinations">交付去向</Tabs.Tab>
               </Tabs.List>
               <Tabs.Panel value="workspaces" pt="xl"><WorkspaceDiscoveryView /></Tabs.Panel>
               <Tabs.Panel value="materials" pt="xl"><MotherMaterialsView /></Tabs.Panel>
               <Tabs.Panel value="child" pt="xl"><ChildMaterialsView /></Tabs.Panel>
+              <Tabs.Panel value="standby" pt="xl"><StandbyChildBatchesView /></Tabs.Panel>
               <Tabs.Panel value="destinations" pt="xl"><DeliveryDestinationPanel /></Tabs.Panel>
             </Tabs>
           </Stack>

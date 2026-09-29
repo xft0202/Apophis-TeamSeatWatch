@@ -644,6 +644,111 @@ paths:
                 type: string
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/standby-child-batches:
+    get:
+      operationId: listStandbyChildBatches
+      security:
+        - ownerSession: []
+      responses:
+        '200':
+          description: Workspace-independent groups with distinct counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StandbyChildBatch'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createStandbyChildBatch
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StandbyChildBatchChange'
+      responses:
+        '201':
+          description: Named batch with frozen, confirmed members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandbyChildBatch'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/standby-child-batches/selection:
+    post:
+      operationId: previewStandbyChildSelection
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StandbyChildSelectionRequest'
+      responses:
+        '200':
+          description: Frozen account IDs and membership versions; maximum 10000
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandbyChildSelection'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/standby-child-batches/{standbyBatchId}:
+    patch:
+      operationId: updateStandbyChildBatch
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/StandbyBatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StandbyChildBatchChange'
+      responses:
+        '200':
+          description: Versioned name and member transfer/removal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandbyChildBatch'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/standby-child-batches/{standbyBatchId}/export:
+    post:
+      operationId: exportStandbyChildBatch
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/StandbyBatchId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StandbyChildBatchExport'
+      responses:
+        '200':
+          description: Only account, password and 2FA in TXT
+          content:
+            text/plain:
+              schema:
+                type: string
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/target-accounts:
     get:
       operationId: listTargetAccounts
@@ -1636,6 +1741,13 @@ components:
       schema:
         type: string
         format: uuid
+    StandbyBatchId:
+      name: standbyBatchId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     TargetAccountId:
       name: targetAccountId
       in: path
@@ -2424,6 +2536,109 @@ components:
           minimum: 1
         confirmed:
           type: boolean
+    StandbyChildBatch:
+      type: object
+      additionalProperties: false
+      required: [id, name, version, memberCount, domainCount, domains]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        version:
+          type: integer
+          format: int64
+        memberCount:
+          type: integer
+          format: int64
+        domainCount:
+          type: integer
+          format: int64
+        domains:
+          type: array
+          items:
+            type: string
+    StandbyChildSelectionRequest:
+      type: object
+      additionalProperties: false
+      required: [scope]
+      properties:
+        scope:
+          type: string
+          enum: [selected, filtered, batch]
+        accountIds:
+          type: array
+          maxItems: 10000
+          items:
+            type: string
+            format: uuid
+        search:
+          type: string
+          maxLength: 254
+        batchId:
+          type: string
+          format: uuid
+    StandbyChildSelectionMember:
+      type: object
+      additionalProperties: false
+      required: [accountId, membershipVersion]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        membershipVersion:
+          type: integer
+          format: int64
+    StandbyChildSelection:
+      type: object
+      additionalProperties: false
+      required: [members, count, scope]
+      properties:
+        scope:
+          type: string
+          enum: [selected, filtered, batch]
+        members:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: '#/components/schemas/StandbyChildSelectionMember'
+        count:
+          type: integer
+    StandbyChildBatchChange:
+      type: object
+      additionalProperties: false
+      required: [name, selection, expectedCount, confirmed]
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        selection:
+          $ref: '#/components/schemas/StandbyChildSelection'
+        expectedCount:
+          type: integer
+        confirmed:
+          type: boolean
+        expectedVersion:
+          type: integer
+          format: int64
+        action:
+          type: string
+          enum: [add, remove]
+    StandbyChildBatchExport:
+      type: object
+      additionalProperties: false
+      required: [selection, expectedCount, confirmed]
+      properties:
+        selection:
+          $ref: '#/components/schemas/StandbyChildSelection'
+        expectedCount:
+          type: integer
+        confirmed:
+          type: boolean
+        expectedVersion:
+          type: integer
+          format: int64
     TargetAccount:
       type: object
       additionalProperties: false

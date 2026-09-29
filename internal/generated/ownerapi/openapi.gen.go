@@ -155,16 +155,16 @@ func (e CardActivationStatus) Valid() bool {
 
 // Defines values for ChildMaterialsExportScope.
 const (
-	Filtered ChildMaterialsExportScope = "filtered"
-	Selected ChildMaterialsExportScope = "selected"
+	ChildMaterialsExportScopeFiltered ChildMaterialsExportScope = "filtered"
+	ChildMaterialsExportScopeSelected ChildMaterialsExportScope = "selected"
 )
 
 // Valid indicates whether the value is a known member of the ChildMaterialsExportScope enum.
 func (e ChildMaterialsExportScope) Valid() bool {
 	switch e {
-	case Filtered:
+	case ChildMaterialsExportScopeFiltered:
 		return true
-	case Selected:
+	case ChildMaterialsExportScopeSelected:
 		return true
 	default:
 		return false
@@ -879,6 +879,66 @@ const (
 func (e RevokeDeliveryCardResponseStatus) Valid() bool {
 	switch e {
 	case RevokeDeliveryCardResponseStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StandbyChildBatchChangeAction.
+const (
+	Add    StandbyChildBatchChangeAction = "add"
+	Remove StandbyChildBatchChangeAction = "remove"
+)
+
+// Valid indicates whether the value is a known member of the StandbyChildBatchChangeAction enum.
+func (e StandbyChildBatchChangeAction) Valid() bool {
+	switch e {
+	case Add:
+		return true
+	case Remove:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StandbyChildSelectionScope.
+const (
+	StandbyChildSelectionScopeBatch    StandbyChildSelectionScope = "batch"
+	StandbyChildSelectionScopeFiltered StandbyChildSelectionScope = "filtered"
+	StandbyChildSelectionScopeSelected StandbyChildSelectionScope = "selected"
+)
+
+// Valid indicates whether the value is a known member of the StandbyChildSelectionScope enum.
+func (e StandbyChildSelectionScope) Valid() bool {
+	switch e {
+	case StandbyChildSelectionScopeBatch:
+		return true
+	case StandbyChildSelectionScopeFiltered:
+		return true
+	case StandbyChildSelectionScopeSelected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StandbyChildSelectionRequestScope.
+const (
+	StandbyChildSelectionRequestScopeBatch    StandbyChildSelectionRequestScope = "batch"
+	StandbyChildSelectionRequestScopeFiltered StandbyChildSelectionRequestScope = "filtered"
+	StandbyChildSelectionRequestScopeSelected StandbyChildSelectionRequestScope = "selected"
+)
+
+// Valid indicates whether the value is a known member of the StandbyChildSelectionRequestScope enum.
+func (e StandbyChildSelectionRequestScope) Valid() bool {
+	switch e {
+	case StandbyChildSelectionRequestScopeBatch:
+		return true
+	case StandbyChildSelectionRequestScopeFiltered:
+		return true
+	case StandbyChildSelectionRequestScopeSelected:
 		return true
 	default:
 		return false
@@ -2198,6 +2258,64 @@ type SessionList struct {
 	Sessions []Session `json:"sessions"`
 }
 
+// StandbyChildBatch defines model for StandbyChildBatch.
+type StandbyChildBatch struct {
+	DomainCount int64              `json:"domainCount"`
+	Domains     []string           `json:"domains"`
+	Id          openapi_types.UUID `json:"id"`
+	MemberCount int64              `json:"memberCount"`
+	Name        string             `json:"name"`
+	Version     int64              `json:"version"`
+}
+
+// StandbyChildBatchChange defines model for StandbyChildBatchChange.
+type StandbyChildBatchChange struct {
+	Action          *StandbyChildBatchChangeAction `json:"action,omitempty"`
+	Confirmed       bool                           `json:"confirmed"`
+	ExpectedCount   int                            `json:"expectedCount"`
+	ExpectedVersion *int64                         `json:"expectedVersion,omitempty"`
+	Name            string                         `json:"name"`
+	Selection       StandbyChildSelection          `json:"selection"`
+}
+
+// StandbyChildBatchChangeAction defines model for StandbyChildBatchChange.Action.
+type StandbyChildBatchChangeAction string
+
+// StandbyChildBatchExport defines model for StandbyChildBatchExport.
+type StandbyChildBatchExport struct {
+	Confirmed       bool                  `json:"confirmed"`
+	ExpectedCount   int                   `json:"expectedCount"`
+	ExpectedVersion *int64                `json:"expectedVersion,omitempty"`
+	Selection       StandbyChildSelection `json:"selection"`
+}
+
+// StandbyChildSelection defines model for StandbyChildSelection.
+type StandbyChildSelection struct {
+	Count   int                           `json:"count"`
+	Members []StandbyChildSelectionMember `json:"members"`
+	Scope   StandbyChildSelectionScope    `json:"scope"`
+}
+
+// StandbyChildSelectionScope defines model for StandbyChildSelection.Scope.
+type StandbyChildSelectionScope string
+
+// StandbyChildSelectionMember defines model for StandbyChildSelectionMember.
+type StandbyChildSelectionMember struct {
+	AccountId         openapi_types.UUID `json:"accountId"`
+	MembershipVersion int64              `json:"membershipVersion"`
+}
+
+// StandbyChildSelectionRequest defines model for StandbyChildSelectionRequest.
+type StandbyChildSelectionRequest struct {
+	AccountIds *[]openapi_types.UUID             `json:"accountIds,omitempty"`
+	BatchId    *openapi_types.UUID               `json:"batchId,omitempty"`
+	Scope      StandbyChildSelectionRequestScope `json:"scope"`
+	Search     *string                           `json:"search,omitempty"`
+}
+
+// StandbyChildSelectionRequestScope defines model for StandbyChildSelectionRequest.Scope.
+type StandbyChildSelectionRequestScope string
+
 // TargetAccount defines model for TargetAccount.
 type TargetAccount struct {
 	DisplayLabel          string                      `json:"displayLabel"`
@@ -2496,6 +2614,9 @@ type ReadId = openapi_types.UUID
 // Search defines model for Search.
 type Search = string
 
+// StandbyBatchId defines model for StandbyBatchId.
+type StandbyBatchId = openapi_types.UUID
+
 // TargetAccountId defines model for TargetAccountId.
 type TargetAccountId = openapi_types.UUID
 
@@ -2774,6 +2895,26 @@ type RevokeOwnerSessionParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// CreateStandbyChildBatchParams defines parameters for CreateStandbyChildBatch.
+type CreateStandbyChildBatchParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// PreviewStandbyChildSelectionParams defines parameters for PreviewStandbyChildSelection.
+type PreviewStandbyChildSelectionParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// UpdateStandbyChildBatchParams defines parameters for UpdateStandbyChildBatch.
+type UpdateStandbyChildBatchParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// ExportStandbyChildBatchParams defines parameters for ExportStandbyChildBatch.
+type ExportStandbyChildBatchParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // CreateTargetAccountProbesParams defines parameters for CreateTargetAccountProbes.
 type CreateTargetAccountProbesParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
@@ -2930,6 +3071,18 @@ type ImportMotherAccountsJSONRequestBody = ImportMotherAccounts
 
 // UpdateMotherAccountJSONRequestBody defines body for UpdateMotherAccount for application/json ContentType.
 type UpdateMotherAccountJSONRequestBody = UpdateMotherAccount
+
+// CreateStandbyChildBatchJSONRequestBody defines body for CreateStandbyChildBatch for application/json ContentType.
+type CreateStandbyChildBatchJSONRequestBody = StandbyChildBatchChange
+
+// PreviewStandbyChildSelectionJSONRequestBody defines body for PreviewStandbyChildSelection for application/json ContentType.
+type PreviewStandbyChildSelectionJSONRequestBody = StandbyChildSelectionRequest
+
+// UpdateStandbyChildBatchJSONRequestBody defines body for UpdateStandbyChildBatch for application/json ContentType.
+type UpdateStandbyChildBatchJSONRequestBody = StandbyChildBatchChange
+
+// ExportStandbyChildBatchJSONRequestBody defines body for ExportStandbyChildBatch for application/json ContentType.
+type ExportStandbyChildBatchJSONRequestBody = StandbyChildBatchExport
 
 // CreateTargetAccountProbesJSONRequestBody defines body for CreateTargetAccountProbes for application/json ContentType.
 type CreateTargetAccountProbesJSONRequestBody = CreateTargetAccountProbes
@@ -3113,6 +3266,21 @@ type ServerInterface interface {
 
 	// (DELETE /api/owner/v1/sessions/{sessionId})
 	RevokeOwnerSession(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID, params RevokeOwnerSessionParams)
+
+	// (GET /api/owner/v1/standby-child-batches)
+	ListStandbyChildBatches(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/owner/v1/standby-child-batches)
+	CreateStandbyChildBatch(w http.ResponseWriter, r *http.Request, params CreateStandbyChildBatchParams)
+
+	// (POST /api/owner/v1/standby-child-batches/selection)
+	PreviewStandbyChildSelection(w http.ResponseWriter, r *http.Request, params PreviewStandbyChildSelectionParams)
+
+	// (PATCH /api/owner/v1/standby-child-batches/{standbyBatchId})
+	UpdateStandbyChildBatch(w http.ResponseWriter, r *http.Request, standbyBatchId StandbyBatchId, params UpdateStandbyChildBatchParams)
+
+	// (POST /api/owner/v1/standby-child-batches/{standbyBatchId}/export)
+	ExportStandbyChildBatch(w http.ResponseWriter, r *http.Request, standbyBatchId StandbyBatchId, params ExportStandbyChildBatchParams)
 
 	// (POST /api/owner/v1/target-account-probes)
 	CreateTargetAccountProbes(w http.ResponseWriter, r *http.Request, params CreateTargetAccountProbesParams)
@@ -5729,6 +5897,218 @@ func (siw *ServerInterfaceWrapper) RevokeOwnerSession(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// ListStandbyChildBatches operation middleware
+func (siw *ServerInterfaceWrapper) ListStandbyChildBatches(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListStandbyChildBatches(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateStandbyChildBatch operation middleware
+func (siw *ServerInterfaceWrapper) CreateStandbyChildBatch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateStandbyChildBatchParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateStandbyChildBatch(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewStandbyChildSelection operation middleware
+func (siw *ServerInterfaceWrapper) PreviewStandbyChildSelection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreviewStandbyChildSelectionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewStandbyChildSelection(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateStandbyChildBatch operation middleware
+func (siw *ServerInterfaceWrapper) UpdateStandbyChildBatch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "standbyBatchId" -------------
+	var standbyBatchId StandbyBatchId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "standbyBatchId", r.PathValue("standbyBatchId"), &standbyBatchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "standbyBatchId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateStandbyChildBatchParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateStandbyChildBatch(w, r, standbyBatchId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExportStandbyChildBatch operation middleware
+func (siw *ServerInterfaceWrapper) ExportStandbyChildBatch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "standbyBatchId" -------------
+	var standbyBatchId StandbyBatchId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "standbyBatchId", r.PathValue("standbyBatchId"), &standbyBatchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "standbyBatchId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExportStandbyChildBatchParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportStandbyChildBatch(w, r, standbyBatchId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateTargetAccountProbes operation middleware
 func (siw *ServerInterfaceWrapper) CreateTargetAccountProbes(w http.ResponseWriter, r *http.Request) {
 
@@ -6743,6 +7123,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/manual-verification", wrapper.CreateWorkspaceManualVerification)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/child-materials/import", wrapper.ImportChildMaterials)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/child-materials/export", wrapper.ExportChildMaterials)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/standby-child-batches", wrapper.ListStandbyChildBatches)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/standby-child-batches", wrapper.CreateStandbyChildBatch)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/standby-child-batches/selection", wrapper.PreviewStandbyChildSelection)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/standby-child-batches/{standbyBatchId}", wrapper.UpdateStandbyChildBatch)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/standby-child-batches/{standbyBatchId}/export", wrapper.ExportStandbyChildBatch)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/target-accounts", wrapper.ListTargetAccounts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/target-accounts", wrapper.CreateTargetAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/target-accounts/import-preview", wrapper.PreviewTargetAccountImport)
