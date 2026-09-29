@@ -105,6 +105,74 @@ paths:
             Target session revoked; a surviving current session is rotated
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/operation-draft/batches/{standbyBatchId}/children:
+    get:
+      operationId: listOperationDraftBatchChildren
+      description: Paged identifiers for the wizard; not a frozen selection.
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/StandbyBatchId'
+        - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: Current standby batch child labels and versions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationDraftBatchChildren'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/operation-draft:
+    get:
+      operationId: getOperationDraft
+      security:
+        - ownerSession: []
+      responses:
+        '200':
+          description: Current selection-only draft; no operation queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationDraft'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: startOperationDraft
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: Resume existing draft or create an empty draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationDraft'
+        default:
+          $ref: '#/components/responses/Problem'
+    patch:
+      operationId: changeOperationDraft
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationDraftChange'
+      responses:
+        '200':
+          description: Versioned selection or backtracking; never executes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationDraft'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/mother-accounts:
     get:
       operationId: listMotherAccounts
@@ -2057,6 +2125,153 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    OperationDraftBatchChild:
+      type: object
+      additionalProperties: false
+      required: [accountId, identifier, membershipVersion, materialStatus]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        identifier:
+          type: string
+        membershipVersion:
+          type: integer
+          format: int64
+        materialStatus:
+          type: string
+          enum: [complete, needs_totp]
+    OperationDraftBatchChildren:
+      type: object
+      additionalProperties: false
+      required: [batchId, batchVersion, total, items]
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        batchVersion:
+          type: integer
+          format: int64
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationDraftBatchChild'
+    OperationDraftChild:
+      type: object
+      additionalProperties: false
+      required: [accountId, membershipVersion]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        membershipVersion:
+          type: integer
+          format: int64
+    OperationDraft:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - version
+        - step
+        - children
+        - motherCurrent
+        - workspaceCurrent
+        - batchCurrent
+        - destinationCurrent
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          format: int64
+        step:
+          type: string
+          enum: [mother, workspace, children, destination, complete]
+        motherAccountId:
+          type: string
+          format: uuid
+        motherRevision:
+          type: integer
+          format: int64
+        workspaceId:
+          type: string
+          format: uuid
+        visibilityRunId:
+          type: string
+          format: uuid
+        sessionGeneration:
+          type: string
+          format: uuid
+        verificationId:
+          type: integer
+          format: int64
+        batchId:
+          type: string
+          format: uuid
+        batchVersion:
+          type: integer
+          format: int64
+        children:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: '#/components/schemas/OperationDraftChild'
+        destinationId:
+          type: string
+          format: uuid
+        destinationRevision:
+          type: integer
+          format: int64
+        motherCurrent:
+          type: boolean
+        workspaceCurrent:
+          type: boolean
+        batchCurrent:
+          type: boolean
+        destinationCurrent:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+    OperationDraftChange:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, choice]
+      properties:
+        expectedVersion:
+          type: integer
+          format: int64
+        choice:
+          type: string
+          enum: [mother, workspace, children, destination, back]
+        motherAccountId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+        batchVersion:
+          type: integer
+          format: int64
+        children:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: '#/components/schemas/OperationDraftChild'
+        destinationId:
+          type: string
+          format: uuid
+        backTo:
+          type: string
+          enum: [mother, workspace, children, destination]
     CsrfToken:
       type: object
       additionalProperties: false

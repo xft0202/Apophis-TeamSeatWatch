@@ -792,6 +792,102 @@ func (e MotherVisibleWorkspaceAccessStatus) Valid() bool {
 	}
 }
 
+// Defines values for OperationDraftStep.
+const (
+	OperationDraftStepChildren    OperationDraftStep = "children"
+	OperationDraftStepComplete    OperationDraftStep = "complete"
+	OperationDraftStepDestination OperationDraftStep = "destination"
+	OperationDraftStepMother      OperationDraftStep = "mother"
+	OperationDraftStepWorkspace   OperationDraftStep = "workspace"
+)
+
+// Valid indicates whether the value is a known member of the OperationDraftStep enum.
+func (e OperationDraftStep) Valid() bool {
+	switch e {
+	case OperationDraftStepChildren:
+		return true
+	case OperationDraftStepComplete:
+		return true
+	case OperationDraftStepDestination:
+		return true
+	case OperationDraftStepMother:
+		return true
+	case OperationDraftStepWorkspace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperationDraftBatchChildMaterialStatus.
+const (
+	OperationDraftBatchChildMaterialStatusComplete  OperationDraftBatchChildMaterialStatus = "complete"
+	OperationDraftBatchChildMaterialStatusNeedsTotp OperationDraftBatchChildMaterialStatus = "needs_totp"
+)
+
+// Valid indicates whether the value is a known member of the OperationDraftBatchChildMaterialStatus enum.
+func (e OperationDraftBatchChildMaterialStatus) Valid() bool {
+	switch e {
+	case OperationDraftBatchChildMaterialStatusComplete:
+		return true
+	case OperationDraftBatchChildMaterialStatusNeedsTotp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperationDraftChangeBackTo.
+const (
+	OperationDraftChangeBackToChildren    OperationDraftChangeBackTo = "children"
+	OperationDraftChangeBackToDestination OperationDraftChangeBackTo = "destination"
+	OperationDraftChangeBackToMother      OperationDraftChangeBackTo = "mother"
+	OperationDraftChangeBackToWorkspace   OperationDraftChangeBackTo = "workspace"
+)
+
+// Valid indicates whether the value is a known member of the OperationDraftChangeBackTo enum.
+func (e OperationDraftChangeBackTo) Valid() bool {
+	switch e {
+	case OperationDraftChangeBackToChildren:
+		return true
+	case OperationDraftChangeBackToDestination:
+		return true
+	case OperationDraftChangeBackToMother:
+		return true
+	case OperationDraftChangeBackToWorkspace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperationDraftChangeChoice.
+const (
+	OperationDraftChangeChoiceBack        OperationDraftChangeChoice = "back"
+	OperationDraftChangeChoiceChildren    OperationDraftChangeChoice = "children"
+	OperationDraftChangeChoiceDestination OperationDraftChangeChoice = "destination"
+	OperationDraftChangeChoiceMother      OperationDraftChangeChoice = "mother"
+	OperationDraftChangeChoiceWorkspace   OperationDraftChangeChoice = "workspace"
+)
+
+// Valid indicates whether the value is a known member of the OperationDraftChangeChoice enum.
+func (e OperationDraftChangeChoice) Valid() bool {
+	switch e {
+	case OperationDraftChangeChoiceBack:
+		return true
+	case OperationDraftChangeChoiceChildren:
+		return true
+	case OperationDraftChangeChoiceDestination:
+		return true
+	case OperationDraftChangeChoiceMother:
+		return true
+	case OperationDraftChangeChoiceWorkspace:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PersonalProbeBatchScope.
 const (
 	PersonalProbeBatchScopeFiltered PersonalProbeBatchScope = "filtered"
@@ -2501,6 +2597,76 @@ type OpenRecoveryGateRequest struct {
 	RestoredAt time.Time `json:"restoredAt"`
 }
 
+// OperationDraft defines model for OperationDraft.
+type OperationDraft struct {
+	BatchCurrent        bool                  `json:"batchCurrent"`
+	BatchId             *openapi_types.UUID   `json:"batchId,omitempty"`
+	BatchVersion        *int64                `json:"batchVersion,omitempty"`
+	Children            []OperationDraftChild `json:"children"`
+	DestinationCurrent  bool                  `json:"destinationCurrent"`
+	DestinationId       *openapi_types.UUID   `json:"destinationId,omitempty"`
+	DestinationRevision *int64                `json:"destinationRevision,omitempty"`
+	Id                  openapi_types.UUID    `json:"id"`
+	MotherAccountId     *openapi_types.UUID   `json:"motherAccountId,omitempty"`
+	MotherCurrent       bool                  `json:"motherCurrent"`
+	MotherRevision      *int64                `json:"motherRevision,omitempty"`
+	SessionGeneration   *openapi_types.UUID   `json:"sessionGeneration,omitempty"`
+	Step                OperationDraftStep    `json:"step"`
+	UpdatedAt           time.Time             `json:"updatedAt"`
+	VerificationId      *int64                `json:"verificationId,omitempty"`
+	Version             int64                 `json:"version"`
+	VisibilityRunId     *openapi_types.UUID   `json:"visibilityRunId,omitempty"`
+	WorkspaceCurrent    bool                  `json:"workspaceCurrent"`
+	WorkspaceId         *openapi_types.UUID   `json:"workspaceId,omitempty"`
+}
+
+// OperationDraftStep defines model for OperationDraft.Step.
+type OperationDraftStep string
+
+// OperationDraftBatchChild defines model for OperationDraftBatchChild.
+type OperationDraftBatchChild struct {
+	AccountId         openapi_types.UUID                     `json:"accountId"`
+	Identifier        string                                 `json:"identifier"`
+	MaterialStatus    OperationDraftBatchChildMaterialStatus `json:"materialStatus"`
+	MembershipVersion int64                                  `json:"membershipVersion"`
+}
+
+// OperationDraftBatchChildMaterialStatus defines model for OperationDraftBatchChild.MaterialStatus.
+type OperationDraftBatchChildMaterialStatus string
+
+// OperationDraftBatchChildren defines model for OperationDraftBatchChildren.
+type OperationDraftBatchChildren struct {
+	BatchId      openapi_types.UUID         `json:"batchId"`
+	BatchVersion int64                      `json:"batchVersion"`
+	Items        []OperationDraftBatchChild `json:"items"`
+	Total        int                        `json:"total"`
+}
+
+// OperationDraftChange defines model for OperationDraftChange.
+type OperationDraftChange struct {
+	BackTo          *OperationDraftChangeBackTo `json:"backTo,omitempty"`
+	BatchId         *openapi_types.UUID         `json:"batchId,omitempty"`
+	BatchVersion    *int64                      `json:"batchVersion,omitempty"`
+	Children        *[]OperationDraftChild      `json:"children,omitempty"`
+	Choice          OperationDraftChangeChoice  `json:"choice"`
+	DestinationId   *openapi_types.UUID         `json:"destinationId,omitempty"`
+	ExpectedVersion int64                       `json:"expectedVersion"`
+	MotherAccountId *openapi_types.UUID         `json:"motherAccountId,omitempty"`
+	WorkspaceId     *openapi_types.UUID         `json:"workspaceId,omitempty"`
+}
+
+// OperationDraftChangeBackTo defines model for OperationDraftChange.BackTo.
+type OperationDraftChangeBackTo string
+
+// OperationDraftChangeChoice defines model for OperationDraftChange.Choice.
+type OperationDraftChangeChoice string
+
+// OperationDraftChild defines model for OperationDraftChild.
+type OperationDraftChild struct {
+	AccountId         openapi_types.UUID `json:"accountId"`
+	MembershipVersion int64              `json:"membershipVersion"`
+}
+
 // PersonalProbeBatch defines model for PersonalProbeBatch.
 type PersonalProbeBatch struct {
 	Canceled           int                     `json:"canceled"`
@@ -3455,6 +3621,21 @@ type RefreshMotherPersonalAccessParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// ChangeOperationDraftParams defines parameters for ChangeOperationDraft.
+type ChangeOperationDraftParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// StartOperationDraftParams defines parameters for StartOperationDraft.
+type StartOperationDraftParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// ListOperationDraftBatchChildrenParams defines parameters for ListOperationDraftBatchChildren.
+type ListOperationDraftBatchChildrenParams struct {
+	Page *Page `form:"page,omitempty" json:"page,omitempty"`
+}
+
 // CreatePersonalProbesParams defines parameters for CreatePersonalProbes.
 type CreatePersonalProbesParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
@@ -3688,6 +3869,9 @@ type ImportMotherAccountsJSONRequestBody = ImportMotherAccounts
 // UpdateMotherAccountJSONRequestBody defines body for UpdateMotherAccount for application/json ContentType.
 type UpdateMotherAccountJSONRequestBody = UpdateMotherAccount
 
+// ChangeOperationDraftJSONRequestBody defines body for ChangeOperationDraft for application/json ContentType.
+type ChangeOperationDraftJSONRequestBody = OperationDraftChange
+
 // CreatePersonalProbesJSONRequestBody defines body for CreatePersonalProbes for application/json ContentType.
 type CreatePersonalProbesJSONRequestBody = CreatePersonalProbes
 
@@ -3882,6 +4066,18 @@ type ServerInterface interface {
 
 	// (POST /api/owner/v1/mother-accounts/{accountId}/personal-session)
 	RefreshMotherPersonalAccess(w http.ResponseWriter, r *http.Request, accountId AccountId, params RefreshMotherPersonalAccessParams)
+
+	// (GET /api/owner/v1/operation-draft)
+	GetOperationDraft(w http.ResponseWriter, r *http.Request)
+
+	// (PATCH /api/owner/v1/operation-draft)
+	ChangeOperationDraft(w http.ResponseWriter, r *http.Request, params ChangeOperationDraftParams)
+
+	// (POST /api/owner/v1/operation-draft)
+	StartOperationDraft(w http.ResponseWriter, r *http.Request, params StartOperationDraftParams)
+
+	// (GET /api/owner/v1/operation-draft/batches/{standbyBatchId}/children)
+	ListOperationDraftBatchChildren(w http.ResponseWriter, r *http.Request, standbyBatchId StandbyBatchId, params ListOperationDraftBatchChildrenParams)
 
 	// (POST /api/owner/v1/personal-probes)
 	CreatePersonalProbes(w http.ResponseWriter, r *http.Request, params CreatePersonalProbesParams)
@@ -6399,6 +6595,152 @@ func (siw *ServerInterfaceWrapper) RefreshMotherPersonalAccess(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// GetOperationDraft operation middleware
+func (siw *ServerInterfaceWrapper) GetOperationDraft(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOperationDraft(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ChangeOperationDraft operation middleware
+func (siw *ServerInterfaceWrapper) ChangeOperationDraft(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ChangeOperationDraftParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ChangeOperationDraft(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartOperationDraft operation middleware
+func (siw *ServerInterfaceWrapper) StartOperationDraft(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StartOperationDraftParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartOperationDraft(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOperationDraftBatchChildren operation middleware
+func (siw *ServerInterfaceWrapper) ListOperationDraftBatchChildren(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "standbyBatchId" -------------
+	var standbyBatchId StandbyBatchId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "standbyBatchId", r.PathValue("standbyBatchId"), &standbyBatchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "standbyBatchId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListOperationDraftBatchChildrenParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOperationDraftBatchChildren(w, r, standbyBatchId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreatePersonalProbes operation middleware
 func (siw *ServerInterfaceWrapper) CreatePersonalProbes(w http.ResponseWriter, r *http.Request) {
 
@@ -8227,6 +8569,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/session/refresh", wrapper.RefreshOwnerSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/sessions", wrapper.ListOwnerSessions)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/owner/v1/sessions/{sessionId}", wrapper.RevokeOwnerSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/operation-draft/batches/{standbyBatchId}/children", wrapper.ListOperationDraftBatchChildren)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/operation-draft", wrapper.GetOperationDraft)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/operation-draft", wrapper.ChangeOperationDraft)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/operation-draft", wrapper.StartOperationDraft)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/mother-accounts", wrapper.ListMotherAccounts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts", wrapper.CreateMotherAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts/import", wrapper.ImportMotherAccounts)

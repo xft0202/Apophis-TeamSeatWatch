@@ -116,6 +116,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/operation-draft/batches/{standbyBatchId}/children": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Paged identifiers for the wizard; not a frozen selection. */
+        get: operations["listOperationDraftBatchChildren"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/operation-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getOperationDraft"];
+        put?: never;
+        post: operations["startOperationDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["changeOperationDraft"];
+        trace?: never;
+    };
     "/api/owner/v1/mother-accounts": {
         parameters: {
             query?: never;
@@ -1100,6 +1133,83 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        OperationDraftBatchChild: {
+            /** Format: uuid */
+            accountId: string;
+            identifier: string;
+            /** Format: int64 */
+            membershipVersion: number;
+            /** @enum {string} */
+            materialStatus: "complete" | "needs_totp";
+        };
+        OperationDraftBatchChildren: {
+            /** Format: uuid */
+            batchId: string;
+            /** Format: int64 */
+            batchVersion: number;
+            total: number;
+            items: components["schemas"]["OperationDraftBatchChild"][];
+        };
+        OperationDraftChild: {
+            /** Format: uuid */
+            accountId: string;
+            /** Format: int64 */
+            membershipVersion: number;
+        };
+        OperationDraft: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            version: number;
+            /** @enum {string} */
+            step: "mother" | "workspace" | "children" | "destination" | "complete";
+            /** Format: uuid */
+            motherAccountId?: string;
+            /** Format: int64 */
+            motherRevision?: number;
+            /** Format: uuid */
+            workspaceId?: string;
+            /** Format: uuid */
+            visibilityRunId?: string;
+            /** Format: uuid */
+            sessionGeneration?: string;
+            /** Format: int64 */
+            verificationId?: number;
+            /** Format: uuid */
+            batchId?: string;
+            /** Format: int64 */
+            batchVersion?: number;
+            children: components["schemas"]["OperationDraftChild"][];
+            /** Format: uuid */
+            destinationId?: string;
+            /** Format: int64 */
+            destinationRevision?: number;
+            motherCurrent: boolean;
+            workspaceCurrent: boolean;
+            batchCurrent: boolean;
+            destinationCurrent: boolean;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        OperationDraftChange: {
+            /** Format: int64 */
+            expectedVersion: number;
+            /** @enum {string} */
+            choice: "mother" | "workspace" | "children" | "destination" | "back";
+            /** Format: uuid */
+            motherAccountId?: string;
+            /** Format: uuid */
+            workspaceId?: string;
+            /** Format: uuid */
+            batchId?: string;
+            /** Format: int64 */
+            batchVersion?: number;
+            children?: components["schemas"]["OperationDraftChild"][];
+            /** Format: uuid */
+            destinationId?: string;
+            /** @enum {string} */
+            backTo?: "mother" | "workspace" | "children" | "destination";
+        };
         CsrfToken: {
             token: string;
         };
@@ -2364,6 +2474,102 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listOperationDraftBatchChildren: {
+        parameters: {
+            query?: {
+                page?: components["parameters"]["Page"];
+            };
+            header?: never;
+            path: {
+                standbyBatchId: components["parameters"]["StandbyBatchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current standby batch child labels and versions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationDraftBatchChildren"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getOperationDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current selection-only draft; no operation queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationDraft"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    startOperationDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resume existing draft or create an empty draft */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationDraft"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    changeOperationDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationDraftChange"];
+            };
+        };
+        responses: {
+            /** @description Versioned selection or backtracking; never executes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationDraft"];
+                };
             };
             default: components["responses"]["Problem"];
         };
