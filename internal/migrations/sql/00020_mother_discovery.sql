@@ -1,4 +1,13 @@
 -- +goose Up
+-- The runtime migrator exclusively locks the credential table and seals legacy
+-- materials before handlers/workers start. A committed marker forbids plaintext
+-- fallback after the first successful conversion.
+CREATE TABLE tsw_mother_material_crypto_state (
+    id boolean PRIMARY KEY CHECK (id),
+    migrated_at timestamptz NOT NULL DEFAULT now()
+);
+REVOKE ALL ON tsw_mother_material_crypto_state FROM PUBLIC;
+
 -- Discovery is a read-only visibility observation, not an operational binding or workspace fact.
 CREATE TABLE tsw_mother_discoveries (
     mother_account_id uuid PRIMARY KEY REFERENCES tsw_mother_accounts(id) ON DELETE RESTRICT,
@@ -44,3 +53,4 @@ DROP TABLE tsw_mother_personal_access;
 DROP TABLE tsw_mother_personal_sessions;
 DROP TABLE tsw_mother_workspace_visibility;
 DROP TABLE tsw_mother_discoveries;
+DROP TABLE tsw_mother_material_crypto_state;

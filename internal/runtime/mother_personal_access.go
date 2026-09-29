@@ -12,6 +12,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/mothersecret"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 )
 
@@ -50,7 +51,21 @@ func (h *OwnerAuthHandler) reservePersonalRefresh(ctx context.Context, id uuid.U
 	if err != nil || !active {
 		return attempt, active, err
 	}
-	attempt.material.Password, attempt.material.TOTPSecret = string(password), string(totp)
+	plainPassword, openErr := mothersecret.Open(h.keyRing, id, attempt.revision, mothersecret.Password, password)
+	if openErr != nil {
+		return attempt, active, openErr
+	}
+	var plainTOTP []byte
+	if totp != nil {
+		plainTOTP, openErr = mothersecret.Open(h.keyRing, id, attempt.revision, mothersecret.TOTP, totp)
+	}
+	if openErr != nil {
+		clear(plainPassword)
+		return attempt, active, openErr
+	}
+	attempt.material.Password, attempt.material.TOTPSecret = string(plainPassword), string(plainTOTP)
+	clear(plainPassword)
+	clear(plainTOTP)
 	err = tx.QueryRow(ctx, `INSERT INTO tsw_mother_personal_access(mother_account_id,secret_revision,status) VALUES ($1,$2,'verifying') ON CONFLICT(mother_account_id) DO UPDATE SET secret_revision=EXCLUDED.secret_revision,attempt=tsw_mother_personal_access.attempt+1,status='verifying',checked_at=now() RETURNING attempt`, id, attempt.revision).Scan(&attempt.attempt)
 	if err == nil {
 		_, err = tx.Exec(ctx, `DELETE FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, id)

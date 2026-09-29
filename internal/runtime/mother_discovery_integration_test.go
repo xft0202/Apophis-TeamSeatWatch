@@ -22,6 +22,7 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/migrations"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/mothersecret"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 )
 
@@ -88,6 +89,47 @@ func (f *sequencedDiscovery) Discover(ctx context.Context, _ platform.PersonalSe
 	return platform.DiscoveryResult{Status: "discovered", Workspaces: []platform.DiscoveredWorkspace{{PlatformID: "team-one", Name: "One", Access: "readable"}}}, nil
 }
 
+func rotateMotherFixture(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, password string) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var priorPassword, priorTOTP []byte
+	var revision int64
+	if err = tx.QueryRow(ctx, `SELECT password_secret,totp_secret,secret_revision FROM tsw_mother_account_credentials WHERE mother_account_id=$1 FOR UPDATE`, id).Scan(&priorPassword, &priorTOTP, &revision); err != nil {
+		return err
+	}
+	plain, err := mothersecret.Open(cardIntegrationKeyRing{}, id, revision, mothersecret.Password, priorPassword)
+	if err != nil {
+		return err
+	}
+	clear(plain)
+	var totp []byte
+	if priorTOTP != nil {
+		totp, err = mothersecret.Open(cardIntegrationKeyRing{}, id, revision, mothersecret.TOTP, priorTOTP)
+		if err != nil {
+			return err
+		}
+	}
+	sealedPassword, err := mothersecret.Seal(cardIntegrationKeyRing{}, id, revision+1, mothersecret.Password, []byte(password))
+	if err != nil {
+		return err
+	}
+	var sealedTOTP []byte
+	if totp != nil {
+		sealedTOTP, err = mothersecret.Seal(cardIntegrationKeyRing{}, id, revision+1, mothersecret.TOTP, totp)
+		clear(totp)
+		if err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec(ctx, `UPDATE tsw_mother_account_credentials SET password_secret=$2,totp_secret=$3,secret_revision=secret_revision+1,version=version+1 WHERE mother_account_id=$1`, id, sealedPassword, sealedTOTP); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelection(t *testing.T) {
 	dsn := os.Getenv("TSW_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -137,6 +179,9 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := mothersecret.Migrate(ctx, pool, cardIntegrationKeyRing{}); err != nil {
+		t.Fatal(err)
 	}
 	origins, _ := auth.ParseOriginPolicy("https://owner.test")
 	refresh := &fixturePersonalRefresh{result: platform.PersonalRefreshResult{Status: "ready", Session: platform.PersonalSession{AccessToken: "personal-token", DeviceID: "device-one", Cookies: []platform.SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "cookie-secret"}}, ExpiresAt: time.Now().Add(time.Hour)}}}
@@ -319,8 +364,7 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	if status, result := readDiscovery(http.MethodPost, secondID, true, true); status != 200 || result.Status != "unavailable" {
 		t.Fatalf("production default: %d %+v", status, result)
 	}
-	_, err = pool.Exec(ctx, `UPDATE tsw_mother_account_credentials SET password_secret='new-password',secret_revision=secret_revision+1,version=version+1 WHERE mother_account_id=$1`, secondID)
-	if err != nil {
+	if err = rotateMotherFixture(ctx, pool, secondID, "new-password"); err != nil {
 		t.Fatal(err)
 	}
 	if status, result := readAccess(http.MethodGet, secondID, true, false); status != 200 || result.Status != "not_verified" {
@@ -352,7 +396,7 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	result := startAsync()
 	<-first.entered
 	updateCtx, cancel := context.WithTimeout(ctx, time.Second)
-	_, err = pool.Exec(updateCtx, `UPDATE tsw_mother_account_credentials SET password_secret='rotated',secret_revision=secret_revision+1,version=version+1 WHERE mother_account_id=$1`, firstID)
+	err = rotateMotherFixture(updateCtx, pool, firstID, "rotated")
 	cancel()
 	if err != nil {
 		close(first.release)
@@ -365,8 +409,7 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	if status, state := readDiscovery(http.MethodGet, firstID, true, false); status != 200 || state.Status != "not_verified" || len(state.Workspaces) != 0 {
 		t.Fatalf("stale visibility: %d %+v", status, state)
 	}
-	_, err = pool.Exec(ctx, `UPDATE tsw_mother_account_credentials SET password_secret='password',secret_revision=secret_revision+1,version=version+1 WHERE mother_account_id=$1`, firstID)
-	if err != nil {
+	if err = rotateMotherFixture(ctx, pool, firstID, "password"); err != nil {
 		t.Fatal(err)
 	}
 	if status, _ := readAccess(http.MethodPost, firstID, true, true); status != 200 {

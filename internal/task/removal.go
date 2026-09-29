@@ -6,8 +6,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/audit"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/mothersecret"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 )
 
@@ -48,9 +50,11 @@ func (s *Store) ClaimRemovalReconciliation(ctx context.Context, worker string, d
 func (s *Store) RemovalTarget(ctx context.Context, item Task) (RemovalTarget, error) {
 	var target RemovalTarget
 	var ownerPassword []byte
+	var motherID uuid.UUID
+	var revision int64
 	err := s.pool.QueryRow(ctx, `SELECT operation.id,operation.batch_id,operation.workspace_id,task.membership_id,
 		membership.target_account_id,target.identifier,workspace.platform_workspace_id,
-		credentials.login_identifier,credentials.password_secret,operation_target.ordinal,
+		credentials.login_identifier,credentials.password_secret,credentials.mother_account_id,credentials.secret_revision,operation_target.ordinal,
 		operation_target.platform_request_may_have_reached,operation_target.remove_attempt_count
 		FROM tsw_tasks task
 		JOIN tsw_operation_targets operation_target ON operation_target.id=task.operation_target_id
@@ -65,13 +69,18 @@ func (s *Store) RemovalTarget(ctx context.Context, item Task) (RemovalTarget, er
 		WHERE task.id=$1 AND task.task_type IN ('remove','remove_reconcile')`, item.ID).Scan(
 		&target.OperationID, &target.BatchID, &target.WorkspaceID, &target.MembershipID,
 		&target.TargetAccountID, &target.TargetIdentifier, &target.PlatformWorkspace,
-		&target.OwnerIdentifier, &ownerPassword, &target.Ordinal,
+		&target.OwnerIdentifier, &ownerPassword, &motherID, &revision, &target.Ordinal,
 		&target.PlatformRequestMayHaveReached, &target.RemoveAttemptCount)
 	if err != nil {
 		return RemovalTarget{}, err
 	}
-	target.OwnerPassword = string(ownerPassword)
+	plaintext, err := mothersecret.Open(s.keyRing, motherID, revision, mothersecret.Password, ownerPassword)
 	clear(ownerPassword)
+	if err != nil {
+		return RemovalTarget{}, err
+	}
+	target.OwnerPassword = string(plaintext)
+	clear(plaintext)
 	rows, err := s.pool.Query(ctx, `SELECT operation_target.membership_id,membership_target.identifier,operation_target.ordinal
 		FROM tsw_operation_targets operation_target
 		JOIN tsw_batch_memberships membership ON membership.id=operation_target.membership_id

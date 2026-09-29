@@ -12,10 +12,12 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/egress"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/migrations"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/mothersecret"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/runtime"
 )
 
@@ -245,6 +247,14 @@ func runMigrate(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
+	keyFile, err := required(getenv, totpKeyringFileEnv)
+	if err != nil {
+		return err
+	}
+	ring, err := auth.LoadKeyRingFile(keyFile)
+	if err != nil {
+		return fmt.Errorf("invalid mother material key ring: %w", err)
+	}
 	connection, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return err
@@ -253,7 +263,15 @@ func runMigrate(ctx context.Context, getenv func(string) string) error {
 	if err := connection.PingContext(ctx); err != nil {
 		return err
 	}
-	return migrations.Apply(ctx, connection)
+	if err := migrations.Apply(ctx, connection); err != nil {
+		return err
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	return mothersecret.Migrate(ctx, pool, ring)
 }
 
 func required(getenv func(string) string, name string) (string, error) {

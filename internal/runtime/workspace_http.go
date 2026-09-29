@@ -17,6 +17,7 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/identity"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/mothersecret"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/task"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/workspace"
 )
@@ -161,7 +162,14 @@ func (h *OwnerAuthHandler) createMotherAccount(w http.ResponseWriter, r *http.Re
 		if fingerprintErr != nil {
 			err = fingerprintErr
 		} else {
-			_, err = tx.Exec(r.Context(), `INSERT INTO tsw_mother_account_credentials (mother_account_id,login_identifier,identifier_hmac,identifier_key_version,password_secret,totp_secret) VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::bytea)`, item.Id, identifier, fingerprint[:], keyVersion, []byte(request.Password), []byte(stringValue(request.TotpSecret)))
+			var sealedPassword, sealedTOTP []byte
+			sealedPassword, err = mothersecret.Seal(h.keyRing, item.Id, 1, mothersecret.Password, []byte(request.Password))
+			if err == nil && stringValue(request.TotpSecret) != "" {
+				sealedTOTP, err = mothersecret.Seal(h.keyRing, item.Id, 1, mothersecret.TOTP, []byte(stringValue(request.TotpSecret)))
+			}
+			if err == nil {
+				_, err = tx.Exec(r.Context(), `INSERT INTO tsw_mother_account_credentials (mother_account_id,login_identifier,identifier_hmac,identifier_key_version,password_secret,totp_secret) VALUES ($1,$2,$3,$4,$5,$6)`, item.Id, identifier, fingerprint[:], keyVersion, sealedPassword, sealedTOTP)
+			}
 		}
 	}
 	if err == nil {
@@ -216,7 +224,41 @@ func (h *OwnerAuthHandler) updateMotherAccount(w http.ResponseWriter, r *http.Re
 	err = tx.QueryRow(r.Context(), `UPDATE tsw_mother_accounts SET display_name=$3,status=$4,updated_at=now(),version=version+1 WHERE id=$1 AND version=$2 RETURNING id,display_name,platform_account_ref,status,version,updated_at`, r.PathValue("accountId"), version, displayName, string(request.Status)).Scan(&item.Id, &item.DisplayName, &item.PlatformAccountRef, &item.Status, &item.Version, &item.UpdatedAt)
 	credentialChanged := request.Password != nil || request.TotpSecret != nil
 	if err == nil && credentialChanged {
-		_, err = tx.Exec(r.Context(), `UPDATE tsw_mother_account_credentials SET password_secret=CASE WHEN $5 THEN $2 ELSE password_secret END, totp_secret=CASE WHEN $4 THEN NULLIF($3,'')::bytea ELSE totp_secret END, secret_revision=secret_revision+1, version=version+1 WHERE mother_account_id=$1`, item.Id, []byte(stringValue(request.Password)), []byte(stringValue(request.TotpSecret)), request.TotpSecret != nil, request.Password != nil)
+		var previousPassword, previousTOTP []byte
+		var revision int64
+		err = tx.QueryRow(r.Context(), `SELECT password_secret,totp_secret,secret_revision FROM tsw_mother_account_credentials WHERE mother_account_id=$1 FOR UPDATE`, item.Id).Scan(&previousPassword, &previousTOTP, &revision)
+		if err == nil {
+			password, openErr := mothersecret.Open(h.keyRing, item.Id, revision, mothersecret.Password, previousPassword)
+			err = openErr
+			var totp []byte
+			if err == nil && previousTOTP != nil {
+				totp, err = mothersecret.Open(h.keyRing, item.Id, revision, mothersecret.TOTP, previousTOTP)
+			}
+			if err == nil {
+				if request.Password != nil {
+					clear(password)
+					password = []byte(*request.Password)
+				}
+				if request.TotpSecret != nil {
+					clear(totp)
+					totp = []byte(*request.TotpSecret)
+				}
+			}
+			if err == nil {
+				var sealedPassword, sealedTOTP []byte
+				sealedPassword, err = mothersecret.Seal(h.keyRing, item.Id, revision+1, mothersecret.Password, password)
+				if err == nil && len(totp) > 0 {
+					sealedTOTP, err = mothersecret.Seal(h.keyRing, item.Id, revision+1, mothersecret.TOTP, totp)
+				}
+				if err == nil {
+					_, err = tx.Exec(r.Context(), `UPDATE tsw_mother_account_credentials SET password_secret=$2,totp_secret=$3,secret_revision=secret_revision+1,version=version+1 WHERE mother_account_id=$1 AND secret_revision=$4`, item.Id, sealedPassword, sealedTOTP, revision)
+				}
+			}
+			clear(password)
+			clear(totp)
+		}
+		clear(previousPassword)
+		clear(previousTOTP)
 	}
 	// The revision fence prevents reads, but old sealed AT/cookies must not
 	// survive a material rotation (or disabling the account) indefinitely.

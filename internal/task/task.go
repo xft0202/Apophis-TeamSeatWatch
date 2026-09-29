@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/audit"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/mothersecret"
 	targetdomain "github.com/xft0202/Apophis-TeamSeatWatch/internal/target"
 )
 
@@ -126,8 +127,10 @@ func (s *Store) CreateTargetProbe(ctx context.Context, targetID, dedupeKey, corr
 func (s *Store) WorkspaceReadTarget(ctx context.Context, workspaceID string) (WorkspaceReadTarget, error) {
 	var target WorkspaceReadTarget
 	var password []byte
+	var motherID uuid.UUID
+	var revision int64
 	err := s.pool.QueryRow(ctx, `
-		SELECT workspace.platform_workspace_id, credential.login_identifier, credential.password_secret
+		SELECT workspace.platform_workspace_id, credential.login_identifier, credential.password_secret, account.id,credential.secret_revision
 		FROM tsw_workspaces workspace
 		JOIN tsw_mother_workspace_bindings binding
 		  ON binding.workspace_id=workspace.id AND binding.ended_at IS NULL
@@ -136,11 +139,19 @@ func (s *Store) WorkspaceReadTarget(ctx context.Context, workspaceID string) (Wo
 		JOIN tsw_mother_account_credentials credential
 		  ON credential.mother_account_id=account.id
 		WHERE workspace.id=$1`, workspaceID).Scan(
-		&target.PlatformWorkspaceID, &target.LoginIdentifier, &password,
+		&target.PlatformWorkspaceID, &target.LoginIdentifier, &password, &motherID, &revision,
 	)
-	target.Password = string(password)
+	if err != nil {
+		return WorkspaceReadTarget{}, err
+	}
+	plaintext, err := mothersecret.Open(s.keyRing, motherID, revision, mothersecret.Password, password)
 	clear(password)
-	return target, err
+	if err != nil {
+		return WorkspaceReadTarget{}, err
+	}
+	target.Password = string(plaintext)
+	clear(plaintext)
+	return target, nil
 }
 
 func (s *Store) TargetProbeTarget(ctx context.Context, targetID string) (TargetProbeTarget, error) {

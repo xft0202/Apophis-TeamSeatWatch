@@ -17,6 +17,7 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/egress"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/migrations"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/mothersecret"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/workspace"
 )
@@ -126,6 +127,9 @@ func seedRemovalGraph(t *testing.T, ctx context.Context, pool *pgxpool.Pool) rem
 			t.Fatalf("seed removal graph: %v\n%s", err, item.query)
 		}
 	}
+	if err := mothersecret.Migrate(ctx, pool, removalIntegrationKeyRing{}); err != nil {
+		t.Fatal(err)
+	}
 	return graph
 }
 
@@ -159,6 +163,44 @@ func removalTestMembers() (platform.Member, platform.Member, platform.Member) {
 	return platform.Member{Kind: "member", PlatformMemberID: "owner-live", Identifier: "owner@example.com", Status: "active", Role: "owner"},
 		platform.Member{Kind: "member", PlatformMemberID: "live-one", Identifier: "one@example.com", Status: "active", Role: "member"},
 		platform.Member{Kind: "member", PlatformMemberID: "live-two", Identifier: "two@example.com", Status: "active", Role: "member"}
+}
+
+func TestMotherWorkerCredentialReadersDecryptOnlySealedMaterial(t *testing.T) {
+	pool, ctx := newRemovalIntegrationPool(t)
+	graph := seedRemovalGraph(t, ctx, pool)
+	store := NewStore(pool, removalIntegrationKeyRing{})
+	read, err := store.WorkspaceReadTarget(ctx, graph.workspace)
+	if err != nil || read.Password != "password" {
+		t.Fatalf("workspace read mother credential failed: %v", err)
+	}
+	var taskID, motherID string
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM tsw_tasks WHERE task_type='remove' AND membership_id=$1 LIMIT 1`, graph.membershipOne).Scan(&taskID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT mother_account_id::text FROM tsw_mother_workspace_bindings WHERE workspace_id=$1`, graph.workspace).Scan(&motherID); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := store.RemovalTarget(ctx, Task{ID: taskID})
+	if err != nil || removed.OwnerPassword != "password" {
+		t.Fatalf("removal mother credential failed: %v", err)
+	}
+	if _, err := NewStore(pool, nil).WorkspaceReadTarget(ctx, graph.workspace); err == nil {
+		t.Fatal("worker without keyring used sealed credentials")
+	}
+	var ciphertext []byte
+	if err := pool.QueryRow(ctx, `SELECT password_secret FROM tsw_mother_account_credentials WHERE mother_account_id=$1`, motherID).Scan(&ciphertext); err != nil {
+		t.Fatal(err)
+	}
+	ciphertext[len(ciphertext)-1] ^= 1
+	if _, err := pool.Exec(ctx, `UPDATE tsw_mother_account_credentials SET password_secret=$2,secret_revision=secret_revision+1,version=version+1 WHERE mother_account_id=$1`, motherID, ciphertext); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.WorkspaceReadTarget(ctx, graph.workspace); err == nil {
+		t.Fatal("workspace read accepted tamper")
+	}
+	if _, err := store.RemovalTarget(ctx, Task{ID: taskID}); err == nil {
+		t.Fatal("removal accepted tamper")
+	}
 }
 
 func TestRemovalIntegrationRequiredEgressAdmissionBlocksMutation(t *testing.T) {

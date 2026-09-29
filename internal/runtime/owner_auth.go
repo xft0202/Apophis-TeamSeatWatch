@@ -21,6 +21,7 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/egress"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/mothersecret"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/task"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/workspace"
@@ -99,7 +100,12 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 	if err != nil {
 		return nil, func() {}, err
 	}
-	if err := sealExistingTargetMaterials(context.Background(), pool, config.KeyRing); err != nil {
+	// Both source mother and target materials must be sealed before Owner routes open.
+	if err = mothersecret.Migrate(context.Background(), pool, config.KeyRing); err != nil {
+		pool.Close()
+		return nil, func() {}, err
+	}
+	if err = sealExistingTargetMaterials(context.Background(), pool, config.KeyRing); err != nil {
 		pool.Close()
 		return nil, func() {}, err
 	}

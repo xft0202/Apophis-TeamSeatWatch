@@ -8,11 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/audit"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/identity"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/mothersecret"
 )
 
 func materialString(value string) *string { return &value }
@@ -133,24 +135,31 @@ func (h *OwnerAuthHandler) importMotherAccounts(w http.ResponseWriter, r *http.R
 			h.workspaceFailure(w, r, err)
 			return
 		}
-		var accountID string
+		var accountID uuid.UUID
 		err = tx.QueryRow(r.Context(), `INSERT INTO tsw_mother_accounts (display_name) VALUES ($1) RETURNING id`, identifier).Scan(&accountID)
 		if err == nil {
-			_, err = tx.Exec(r.Context(), `INSERT INTO tsw_mother_account_credentials (mother_account_id,login_identifier,identifier_hmac,identifier_key_version,password_secret,totp_secret) VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::bytea)`, accountID, identifier, fingerprint[:], keyVersion, []byte(material.password), []byte(material.totp))
+			var sealedPassword, sealedTOTP []byte
+			sealedPassword, err = mothersecret.Seal(h.keyRing, accountID, 1, mothersecret.Password, []byte(material.password))
+			if err == nil && material.totp != "" {
+				sealedTOTP, err = mothersecret.Seal(h.keyRing, accountID, 1, mothersecret.TOTP, []byte(material.totp))
+			}
+			if err == nil {
+				_, err = tx.Exec(r.Context(), `INSERT INTO tsw_mother_account_credentials (mother_account_id,login_identifier,identifier_hmac,identifier_key_version,password_secret,totp_secret) VALUES ($1,$2,$3,$4,$5,$6)`, accountID, identifier, fingerprint[:], keyVersion, sealedPassword, sealedTOTP)
+			}
 		}
 		if err != nil {
 			h.workspaceFailure(w, r, err)
 			return
 		}
 		changed = true
-		importedIDs = append(importedIDs, accountID)
+		importedIDs = append(importedIDs, accountID.String())
 		result.Imported++
 	}
 	var token string
 	var idle time.Time
 	if changed {
 		for _, accountID := range importedIDs {
-			if _, err = audit.Write(r.Context(), tx, audit.Event{Type: audit.MotherAccountCreated, Actor: audit.ActorOwner, OwnerID: owner.OwnerID, EntityType: "mother_account", EntityID: accountID, Outcome: audit.OutcomeSucceeded, CorrelationID: correlation(r), Details: audit.WorkspaceDetails{Result: "imported"}, IdempotencyKey: accountID + ":mother-import"}); err != nil {
+			if _, err = audit.Write(r.Context(), tx, audit.Event{Type: audit.MotherAccountCreated, Actor: audit.ActorOwner, OwnerID: owner.OwnerID, EntityType: "mother_account", EntityID: accountID, Outcome: audit.OutcomeSucceeded, CorrelationID: correlation(r), Details: audit.WorkspaceDetails{Result: "created"}, IdempotencyKey: accountID + ":mother-import"}); err != nil {
 				h.workspaceFailure(w, r, err)
 				return
 			}
@@ -186,7 +195,7 @@ func (h *OwnerAuthHandler) exportMotherAccounts(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	query := `SELECT credential.login_identifier, credential.password_secret, credential.totp_secret
+	query := `SELECT account.id,credential.secret_revision,credential.login_identifier,credential.password_secret,credential.totp_secret
 		FROM tsw_mother_account_credentials credential JOIN tsw_mother_accounts account ON account.id=credential.mother_account_id`
 	var args []any
 	if request.AccountIds != nil {
@@ -203,13 +212,31 @@ func (h *OwnerAuthHandler) exportMotherAccounts(w http.ResponseWriter, r *http.R
 	var output strings.Builder
 	count := 0
 	for rows.Next() {
+		var accountID uuid.UUID
+		var revision int64
 		var identifier string
-		var password, totp []byte
-		if err = rows.Scan(&identifier, &password, &totp); err != nil {
+		var sealedPassword, sealedTOTP []byte
+		if err = rows.Scan(&accountID, &revision, &identifier, &sealedPassword, &sealedTOTP); err != nil {
 			h.workspaceFailure(w, r, err)
 			return
 		}
+		password, openErr := mothersecret.Open(h.keyRing, accountID, revision, mothersecret.Password, sealedPassword)
+		if openErr != nil {
+			h.workspaceFailure(w, r, openErr)
+			return
+		}
+		var totp []byte
+		if sealedTOTP != nil {
+			totp, openErr = mothersecret.Open(h.keyRing, accountID, revision, mothersecret.TOTP, sealedTOTP)
+		}
+		if openErr != nil {
+			clear(password)
+			h.workspaceFailure(w, r, openErr)
+			return
+		}
 		_, _ = fmt.Fprintf(&output, "%s----%s----%s\n", identifier, password, totp)
+		clear(password)
+		clear(totp)
 		count++
 	}
 	if err = rows.Err(); err != nil {
