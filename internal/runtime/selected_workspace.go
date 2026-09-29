@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -15,6 +16,23 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/identity"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 )
+
+type selectedAttempt struct {
+	id, revision    int64
+	run, generation uuid.UUID
+	platformID      string
+	session         platform.PersonalSession
+}
+
+// One current mother discovery plus its Personal generation authorizes this
+// space. The joined scope is shared by reservation, completion and GET.
+const selectedWorkspaceFromSQL = ` FROM tsw_mother_workspace_visibility visibility
+	JOIN tsw_workspaces workspace ON workspace.id=visibility.workspace_id
+	JOIN tsw_mother_accounts account ON account.id=visibility.mother_account_id AND account.status='active'
+	JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id
+	JOIN tsw_mother_discoveries discovery ON discovery.mother_account_id=account.id AND discovery.run_id=visibility.run_id AND discovery.secret_revision=credential.secret_revision AND discovery.status='discovered' AND discovery.observed_at>now()-interval '7 days'
+	JOIN tsw_mother_personal_sessions session ON session.mother_account_id=account.id AND session.generation=discovery.session_generation AND session.secret_revision=credential.secret_revision AND session.expires_at>now()
+	WHERE visibility.workspace_id=$1 AND visibility.mother_account_id=$2`
 
 func (h *OwnerAuthHandler) GetSelectedWorkspaceVerification(w http.ResponseWriter, r *http.Request, workspaceID openapi_types.UUID, params ownerapi.GetSelectedWorkspaceVerificationParams) {
 	if _, ok := h.authenticated(w, r, false); !ok {
@@ -36,26 +54,20 @@ func (h *OwnerAuthHandler) VerifySelectedWorkspace(w http.ResponseWriter, r *htt
 		writeProblem(w, r, 422, "selection_required", "Selection Required", "Confirm the selected mother and canonical workspace", 0)
 		return
 	}
-	current, err := h.selectedWorkspace(r.Context(), workspaceID, request.MotherAccountId)
+	if h.selectedWorkspaceReader == nil {
+		writeProblem(w, r, 501, "management_protocol_unavailable", "Unavailable", "No verified Workspace read protocol is configured", 0)
+		return
+	}
+	attempt, err := h.reserveSelectedWorkspace(r.Context(), workspaceID, request.MotherAccountId)
 	if !h.selectedWorkspaceError(w, r, err) {
 		return
 	}
-	if current.AccessStatus != "readable" {
+	if attempt.id == 0 {
 		writeProblem(w, r, 403, "workspace_permission_denied", "Forbidden", "Verify access through another mother", 0)
 		return
 	}
-	if h.selectedWorkspaceReader == nil {
-		writeProblem(w, r, 501, "management_protocol_unavailable", "Unavailable", "No verified Workspace management protocol is configured", 0)
-		return
-	}
-	var platformID string
-	err = h.pool.QueryRow(r.Context(), `SELECT platform_workspace_id FROM tsw_workspaces WHERE id=$1`, workspaceID).Scan(&platformID)
-	if err != nil {
-		h.workspaceFailure(w, r, err)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	facts, readErr := h.selectedWorkspaceReader.VerifySelectedWorkspace(ctx, request.MotherAccountId.String(), platformID)
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	facts, readErr := h.selectedWorkspaceReader.VerifySelectedWorkspace(ctx, attempt.session, request.MotherAccountId.String(), attempt.platformID)
 	cancel()
 	status, observedAt := "failed", time.Now().UTC()
 	var activeUntil *time.Time
@@ -63,6 +75,9 @@ func (h *OwnerAuthHandler) VerifySelectedWorkspace(w http.ResponseWriter, r *htt
 	permission, completeness := facts.Permission, string(facts.Result.Completeness)
 	if permission != "manage" && permission != "read" && permission != "denied" {
 		permission = "unknown"
+	}
+	if h.selectedWorkspaceReader.Source() == "official_readonly" && permission == "manage" {
+		permission = "read"
 	}
 	if completeness != "complete" && completeness != "partial" {
 		completeness = "unknown"
@@ -72,70 +87,30 @@ func (h *OwnerAuthHandler) VerifySelectedWorkspace(w http.ResponseWriter, r *htt
 		if observedAt.IsZero() || observedAt.After(time.Now()) || observedAt.Before(time.Now().Add(-7*24*time.Hour)) {
 			status, observedAt, permission, completeness = "failed", time.Now().UTC(), "unknown", "unknown"
 		} else if permission == "denied" || facts.Result.Outcome == platform.OutcomeForbidden || facts.Result.Outcome == platform.OutcomeUnauthorized {
-			status = "permission_denied"
-		} else if permission == "manage" && facts.Result.Outcome == platform.OutcomeOperational && completeness == "complete" &&
+			status, permission = "permission_denied", "denied"
+		} else if (permission == "manage" || permission == "read") && facts.Result.Outcome == platform.OutcomeOperational && completeness == "complete" &&
 			facts.Result.ActiveUntil != nil && facts.Result.SeatLimit != nil && facts.Result.MemberCount != nil && facts.Result.PendingInviteCount != nil &&
-			*facts.Result.SeatLimit >= 0 && *facts.Result.MemberCount >= 0 && *facts.Result.PendingInviteCount >= 0 && validSelectedEntries(facts.Result.Members, *facts.Result.MemberCount, *facts.Result.PendingInviteCount) {
+			*facts.Result.SeatLimit >= 0 && *facts.Result.MemberCount >= 0 && *facts.Result.PendingInviteCount >= 0 &&
+			validSelectedEntries(facts.Result.Members, *facts.Result.MemberCount, *facts.Result.PendingInviteCount) {
 			status = "verified"
 			activeUntil, seats, members, invites = facts.Result.ActiveUntil, facts.Result.SeatLimit, facts.Result.MemberCount, facts.Result.PendingInviteCount
-		} else if facts.Result.Outcome == platform.OutcomeOperational {
-			status = "partial"
-			completeness = "partial"
+		} else if facts.Result.Outcome == platform.OutcomeOperational || facts.Result.Completeness == platform.Partial {
+			status, completeness = "partial", "partial"
+			if facts.Result.Outcome != platform.OutcomeOperational {
+				permission = "unknown"
+			}
 		} else {
 			permission = "unknown"
 		}
 	} else {
 		permission, completeness = "unknown", "unknown"
 	}
-	// Recheck the discovery/session fence after the adapter returns. No permission
-	// obtained on a different mother or a revoked session may publish facts.
-	tx, err := h.pool.Begin(r.Context())
-	if err != nil {
-		h.workspaceFailure(w, r, err)
-		return
-	}
-	defer tx.Rollback(r.Context())
-	var access string
-	err = tx.QueryRow(r.Context(), selectedWorkspaceAccessSQL+` FOR SHARE OF account,credential,discovery,session,visibility`, workspaceID, request.MotherAccountId).Scan(&access, &platformID)
-	if err != nil || access != "readable" {
-		if errors.Is(err, pgx.ErrNoRows) || err == nil {
-			writeProblem(w, r, 409, "workspace_access_changed", "Conflict", "Discover and select the workspace again", 0)
+	if err := h.finishSelectedWorkspace(r.Context(), workspaceID, request.MotherAccountId, attempt, status, permission, completeness, observedAt, activeUntil, seats, members, invites, facts); err != nil {
+		if errors.Is(err, errSelectedAttemptSuperseded) {
+			writeProblem(w, r, 409, "workspace_read_superseded", "Conflict", "A newer verification or access generation superseded this read", 0)
 		} else {
 			h.workspaceFailure(w, r, err)
 		}
-		return
-	}
-	var verificationID int64
-	err = tx.QueryRow(r.Context(), `INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,source,outcome,permission,completeness,observed_at,expires_at,active_until,seat_limit,member_count,pending_invite_count)
-		VALUES($1,$2,'injected_platform_reader',$3,$4,$5,$6,$6::timestamptz+interval '7 days',$7,$8,$9,$10) RETURNING id`,
-		workspaceID, request.MotherAccountId, status, permission, completeness, observedAt, activeUntil, seats, members, invites).Scan(&verificationID)
-	if err == nil && status == "verified" {
-		for _, member := range facts.Result.Members {
-			var normalized string
-			var version uint16
-			var fingerprint [32]byte
-			normalized, version, fingerprint, err = identity.Fingerprint(h.keyRing, identity.WorkspaceEntry, member.Identifier)
-			if err != nil {
-				break
-			}
-			var platformMemberID, role *string
-			if member.Kind == "member" {
-				platformMemberID = &member.PlatformMemberID
-			}
-			if member.Role != "" {
-				role = &member.Role
-			}
-			_, err = tx.Exec(r.Context(), `INSERT INTO tsw_workspace_verification_entries(verification_id,kind,identifier,identifier_hmac,identifier_key_version,status,role,platform_member_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, verificationID, member.Kind, normalized, fingerprint[:], version, member.Status, role, platformMemberID)
-			if err != nil {
-				break
-			}
-		}
-	}
-	if err == nil {
-		err = tx.Commit(r.Context())
-	}
-	if err != nil {
-		h.workspaceFailure(w, r, err)
 		return
 	}
 	response, err := h.selectedWorkspace(r.Context(), workspaceID, request.MotherAccountId)
@@ -145,16 +120,104 @@ func (h *OwnerAuthHandler) VerifySelectedWorkspace(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, response)
 }
 
-// Only a current discovery run and a live session authorize this specific
-// mother/workspace pair. Readability is never a management grant.
-const selectedWorkspaceAccessSQL = `SELECT visibility.access_status,workspace.platform_workspace_id
-	FROM tsw_mother_workspace_visibility visibility
-	JOIN tsw_workspaces workspace ON workspace.id=visibility.workspace_id
-	JOIN tsw_mother_accounts account ON account.id=visibility.mother_account_id AND account.status='active'
-	JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id
-	JOIN tsw_mother_discoveries discovery ON discovery.mother_account_id=account.id AND discovery.run_id=visibility.run_id AND discovery.secret_revision=credential.secret_revision AND discovery.status='discovered' AND discovery.observed_at>now()-interval '7 days'
-	JOIN tsw_mother_personal_sessions session ON session.mother_account_id=account.id AND session.generation=discovery.session_generation AND session.secret_revision=credential.secret_revision AND session.expires_at>now()
-	WHERE visibility.workspace_id=$1 AND visibility.mother_account_id=$2`
+var errSelectedAttemptSuperseded = errors.New("selected workspace attempt superseded")
+
+// Reserve an ordered attempt before I/O, then release all row locks. A newer
+// request becomes the only publishable attempt for this mother and space.
+func (h *OwnerAuthHandler) reserveSelectedWorkspace(ctx context.Context, workspaceID, motherID uuid.UUID) (selectedAttempt, error) {
+	var attempt selectedAttempt
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		return attempt, err
+	}
+	defer tx.Rollback(ctx)
+	var access string
+	var keyVersion int16
+	var nonce, sealed []byte
+	err = tx.QueryRow(ctx, `SELECT visibility.access_status,workspace.platform_workspace_id,discovery.run_id,session.generation,credential.secret_revision,session.key_version,session.nonce,session.sealed_session`+selectedWorkspaceFromSQL+` FOR SHARE OF account,credential,discovery,session,visibility`, workspaceID, motherID).Scan(&access, &attempt.platformID, &attempt.run, &attempt.generation, &attempt.revision, &keyVersion, &nonce, &sealed)
+	if err != nil {
+		return attempt, err
+	}
+	if access != "readable" {
+		return attempt, nil
+	}
+	source := h.selectedWorkspaceReader.Source()
+	if source != "injected_platform_reader" && source != "official_readonly" {
+		return attempt, errors.New("workspace reader source invalid")
+	}
+	err = tx.QueryRow(ctx, `INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,secret_revision,source,outcome,permission,completeness,observed_at,expires_at)
+		VALUES($1,$2,$3,$4,$5,$6,'verifying','unknown','unknown',now(),now()+interval '7 days') RETURNING id`, workspaceID, motherID, attempt.run, attempt.generation, attempt.revision, source).Scan(&attempt.id)
+	if err != nil {
+		return attempt, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return attempt, err
+	}
+	attempt.session, err = openPersonalSession(h.keyRing, motherID, attempt.revision, uint16(keyVersion), nonce, sealed)
+	if err != nil {
+		return attempt, err
+	}
+	return attempt, nil
+}
+
+func (h *OwnerAuthHandler) finishSelectedWorkspace(ctx context.Context, workspaceID, motherID uuid.UUID, attempt selectedAttempt, status, permission, completeness string, observedAt time.Time, until *time.Time, seats, members, invites *int, facts platform.SelectedWorkspaceFacts) error {
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var access string
+	var run, generation uuid.UUID
+	var revision int64
+	err = tx.QueryRow(ctx, `SELECT visibility.access_status,discovery.run_id,session.generation,credential.secret_revision`+selectedWorkspaceFromSQL+` FOR SHARE OF account,credential,discovery,session,visibility`, workspaceID, motherID).Scan(&access, &run, &generation, &revision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errSelectedAttemptSuperseded
+	}
+	if err != nil {
+		return err
+	}
+	if access != "readable" || run != attempt.run || generation != attempt.generation || revision != attempt.revision {
+		return errSelectedAttemptSuperseded
+	}
+	if len(facts.Sources) > 8 {
+		return errors.New("workspace sources too large")
+	}
+	if facts.Sources == nil {
+		facts.Sources = []platform.ReadEvidence{}
+	}
+	encoded, err := json.Marshal(facts.Sources)
+	if err != nil {
+		return err
+	}
+	updated, err := tx.Exec(ctx, `UPDATE tsw_workspace_verifications SET outcome=$2,permission=$3,completeness=$4,observed_at=$5,expires_at=$5::timestamptz+interval '7 days',active_until=$6,seat_limit=$7,member_count=$8,pending_invite_count=$9,sources=$10
+		WHERE id=$1 AND outcome='verifying' AND id=(SELECT max(id) FROM tsw_workspace_verifications WHERE workspace_id=$11 AND mother_account_id=$12 AND discovery_run_id=$13 AND session_generation=$14 AND secret_revision=$15)`, attempt.id, status, permission, completeness, observedAt, until, seats, members, invites, encoded, workspaceID, motherID, attempt.run, attempt.generation, attempt.revision)
+	if err != nil {
+		return err
+	}
+	if updated.RowsAffected() != 1 {
+		return errSelectedAttemptSuperseded
+	}
+	if status == "verified" {
+		for _, member := range facts.Result.Members {
+			normalized, version, fingerprint, err := identity.Fingerprint(h.keyRing, identity.WorkspaceEntry, member.Identifier)
+			if err != nil {
+				return err
+			}
+			var platformMemberID, role *string
+			if member.Kind == "member" {
+				platformMemberID = &member.PlatformMemberID
+			}
+			if member.Role != "" {
+				role = &member.Role
+			}
+			_, err = tx.Exec(ctx, `INSERT INTO tsw_workspace_verification_entries(verification_id,kind,identifier,identifier_hmac,identifier_key_version,status,role,platform_member_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, attempt.id, member.Kind, normalized, fingerprint[:], version, member.Status, role, platformMemberID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit(ctx)
+}
 
 func (h *OwnerAuthHandler) selectedWorkspace(ctx context.Context, workspaceID, motherID uuid.UUID) (ownerapi.SelectedWorkspaceVerification, error) {
 	response := ownerapi.SelectedWorkspaceVerification{WorkspaceId: workspaceID, MotherAccountId: motherID, Status: "pending", Permission: "unknown", Completeness: "unknown", Members: []ownerapi.SelectedWorkspaceMember{}}
@@ -163,12 +226,13 @@ func (h *OwnerAuthHandler) selectedWorkspace(ctx context.Context, workspaceID, m
 		return response, err
 	}
 	defer tx.Rollback(ctx)
-	var platformID string
-	err = tx.QueryRow(ctx, `SELECT display_name FROM tsw_workspaces WHERE id=$1`, workspaceID).Scan(&response.WorkspaceName)
-	if err != nil {
+	if err = tx.QueryRow(ctx, `SELECT display_name FROM tsw_workspaces WHERE id=$1`, workspaceID).Scan(&response.WorkspaceName); err != nil {
 		return response, err
 	}
-	err = tx.QueryRow(ctx, selectedWorkspaceAccessSQL, workspaceID, motherID).Scan(&response.AccessStatus, &platformID)
+	var platformID string
+	var run, generation uuid.UUID
+	var revision int64
+	err = tx.QueryRow(ctx, `SELECT visibility.access_status,workspace.platform_workspace_id,discovery.run_id,session.generation,credential.secret_revision`+selectedWorkspaceFromSQL, workspaceID, motherID).Scan(&response.AccessStatus, &platformID, &run, &generation, &revision)
 	if err != nil {
 		return response, err
 	}
@@ -176,20 +240,22 @@ func (h *OwnerAuthHandler) selectedWorkspace(ctx context.Context, workspaceID, m
 		response.Status = "permission_denied"
 		return response, tx.Commit(ctx)
 	}
-	// A missing management reader cannot promote historical mock evidence into
-	// current management facts after a process restart or configuration change.
 	if h.selectedWorkspaceReader == nil {
 		return response, tx.Commit(ctx)
 	}
 	var id int64
 	var source, status, permission, completeness string
 	var observed, expires time.Time
-	err = tx.QueryRow(ctx, `SELECT id,source,outcome,permission,completeness,observed_at,expires_at FROM tsw_workspace_verifications WHERE workspace_id=$1 AND mother_account_id=$2 ORDER BY id DESC LIMIT 1`, workspaceID, motherID).Scan(&id, &source, &status, &permission, &completeness, &observed, &expires)
+	var sources []byte
+	err = tx.QueryRow(ctx, `SELECT id,source,outcome,permission,completeness,observed_at,expires_at,sources FROM tsw_workspace_verifications WHERE workspace_id=$1 AND mother_account_id=$2 AND discovery_run_id=$3 AND session_generation=$4 AND secret_revision=$5 ORDER BY id DESC LIMIT 1`, workspaceID, motherID, run, generation, revision).Scan(&id, &source, &status, &permission, &completeness, &observed, &expires, &sources)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return response, tx.Commit(ctx)
 	}
 	if err != nil {
 		return response, err
+	}
+	if source != h.selectedWorkspaceReader.Source() {
+		return response, tx.Commit(ctx)
 	}
 	response.Source, response.ObservedAt, response.ExpiresAt = &source, &observed, &expires
 	response.Permission, response.Completeness = ownerapi.SelectedWorkspaceVerificationPermission(permission), ownerapi.SelectedWorkspaceVerificationCompleteness(completeness)
@@ -198,6 +264,17 @@ func (h *OwnerAuthHandler) selectedWorkspace(ctx context.Context, workspaceID, m
 		response.Status = "stale"
 		return response, tx.Commit(ctx)
 	}
+	if status == "verifying" {
+		if observed.Before(time.Now().Add(-time.Minute)) {
+			response.Status = "failed"
+		}
+		return response, tx.Commit(ctx)
+	}
+	var readSources []ownerapi.SelectedWorkspaceReadSource
+	if err = json.Unmarshal(sources, &readSources); err != nil {
+		return response, err
+	}
+	response.ReadSources = &readSources
 	if status != "verified" {
 		return response, tx.Commit(ctx)
 	}
@@ -218,7 +295,7 @@ func (h *OwnerAuthHandler) selectedWorkspace(ctx context.Context, workspaceID, m
 			return response, err
 		}
 		member.Source, member.ObservedAt = source, observed
-		member.Completeness, member.Permission, member.LatestVerification = "complete", "manage", "verified"
+		member.Completeness, member.Permission, member.LatestVerification = "complete", ownerapi.SelectedWorkspaceMemberPermission(permission), "verified"
 		response.Members = append(response.Members, member)
 	}
 	rows.Close()

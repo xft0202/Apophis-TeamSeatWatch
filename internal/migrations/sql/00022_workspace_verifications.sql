@@ -5,8 +5,12 @@ CREATE TABLE tsw_workspace_verifications (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     workspace_id uuid NOT NULL REFERENCES tsw_workspaces(id) ON DELETE RESTRICT,
     mother_account_id uuid NOT NULL REFERENCES tsw_mother_accounts(id) ON DELETE RESTRICT,
-    source text NOT NULL CHECK (source = 'injected_platform_reader'),
-    outcome text NOT NULL CHECK (outcome IN ('verified','partial','failed','permission_denied')),
+    discovery_run_id uuid NOT NULL,
+    session_generation uuid NOT NULL,
+    secret_revision bigint NOT NULL CHECK (secret_revision > 0),
+    source text NOT NULL CHECK (source IN ('injected_platform_reader','official_readonly')),
+    outcome text NOT NULL CHECK (outcome IN ('verifying','verified','partial','failed','permission_denied')),
+    sources jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(sources) = 'array'),
     permission text NOT NULL CHECK (permission IN ('manage','read','denied','unknown')),
     completeness text NOT NULL CHECK (completeness IN ('complete','partial','unknown')),
     observed_at timestamptz NOT NULL,
@@ -16,10 +20,10 @@ CREATE TABLE tsw_workspace_verifications (
     member_count integer CHECK (member_count IS NULL OR member_count >= 0),
     pending_invite_count integer CHECK (pending_invite_count IS NULL OR pending_invite_count >= 0),
     CHECK (expires_at > observed_at AND expires_at <= observed_at + interval '7 days'),
-    CHECK (outcome <> 'verified' OR (completeness = 'complete' AND permission = 'manage' AND active_until IS NOT NULL AND seat_limit IS NOT NULL AND member_count IS NOT NULL AND pending_invite_count IS NOT NULL)),
+    CHECK (outcome <> 'verified' OR (completeness = 'complete' AND permission IN ('manage','read') AND active_until IS NOT NULL AND seat_limit IS NOT NULL AND member_count IS NOT NULL AND pending_invite_count IS NOT NULL)),
     CHECK (outcome = 'verified' OR (active_until IS NULL AND seat_limit IS NULL AND member_count IS NULL AND pending_invite_count IS NULL))
 );
-CREATE INDEX tsw_workspace_verifications_latest_idx ON tsw_workspace_verifications(workspace_id,mother_account_id,id DESC);
+CREATE INDEX tsw_workspace_verifications_latest_idx ON tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,id DESC);
 CREATE TABLE tsw_workspace_verification_entries (
     verification_id bigint NOT NULL REFERENCES tsw_workspace_verifications(id) ON DELETE RESTRICT,
     kind text NOT NULL CHECK (kind IN ('member','pending_invite')),
@@ -36,6 +40,10 @@ REVOKE ALL ON tsw_workspace_verifications,tsw_workspace_verification_entries FRO
 -- +goose StatementBegin
 CREATE FUNCTION tsw_workspace_verification_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+    IF TG_OP = 'UPDATE' AND TG_TABLE_NAME = 'tsw_workspace_verifications' AND OLD.outcome = 'verifying' AND
+       NEW.outcome IN ('verified','partial','failed','permission_denied') AND
+       (NEW.id,NEW.workspace_id,NEW.mother_account_id,NEW.discovery_run_id,NEW.session_generation,NEW.secret_revision,NEW.source) =
+       (OLD.id,OLD.workspace_id,OLD.mother_account_id,OLD.discovery_run_id,OLD.session_generation,OLD.secret_revision,OLD.source) THEN RETURN NEW; END IF;
     IF TG_OP = 'DELETE' AND TG_TABLE_NAME = 'tsw_workspace_verifications' AND OLD.expires_at <= now() THEN RETURN OLD; END IF;
     IF TG_OP = 'DELETE' AND TG_TABLE_NAME = 'tsw_workspace_verification_entries' AND
        EXISTS (SELECT 1 FROM tsw_workspace_verifications WHERE id = OLD.verification_id AND expires_at <= now()) THEN RETURN OLD; END IF;

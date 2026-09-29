@@ -966,6 +966,48 @@ func (e SelectedWorkspaceMemberPermission) Valid() bool {
 	}
 }
 
+// Defines values for SelectedWorkspaceReadSourceCompleteness.
+const (
+	SelectedWorkspaceReadSourceCompletenessComplete SelectedWorkspaceReadSourceCompleteness = "complete"
+	SelectedWorkspaceReadSourceCompletenessPartial  SelectedWorkspaceReadSourceCompleteness = "partial"
+	SelectedWorkspaceReadSourceCompletenessUnknown  SelectedWorkspaceReadSourceCompleteness = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceReadSourceCompleteness enum.
+func (e SelectedWorkspaceReadSourceCompleteness) Valid() bool {
+	switch e {
+	case SelectedWorkspaceReadSourceCompletenessComplete:
+		return true
+	case SelectedWorkspaceReadSourceCompletenessPartial:
+		return true
+	case SelectedWorkspaceReadSourceCompletenessUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SelectedWorkspaceReadSourcePermission.
+const (
+	SelectedWorkspaceReadSourcePermissionDenied  SelectedWorkspaceReadSourcePermission = "denied"
+	SelectedWorkspaceReadSourcePermissionRead    SelectedWorkspaceReadSourcePermission = "read"
+	SelectedWorkspaceReadSourcePermissionUnknown SelectedWorkspaceReadSourcePermission = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceReadSourcePermission enum.
+func (e SelectedWorkspaceReadSourcePermission) Valid() bool {
+	switch e {
+	case SelectedWorkspaceReadSourcePermissionDenied:
+		return true
+	case SelectedWorkspaceReadSourcePermissionRead:
+		return true
+	case SelectedWorkspaceReadSourcePermissionUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SelectedWorkspaceVerificationAccessStatus.
 const (
 	SelectedWorkspaceVerificationAccessStatusPermissionDenied SelectedWorkspaceVerificationAccessStatus = "permission_denied"
@@ -1040,6 +1082,7 @@ const (
 	SelectedWorkspaceVerificationStatusPermissionDenied SelectedWorkspaceVerificationStatus = "permission_denied"
 	SelectedWorkspaceVerificationStatusStale            SelectedWorkspaceVerificationStatus = "stale"
 	SelectedWorkspaceVerificationStatusVerified         SelectedWorkspaceVerificationStatus = "verified"
+	SelectedWorkspaceVerificationStatusVerifying        SelectedWorkspaceVerificationStatus = "verifying"
 )
 
 // Valid indicates whether the value is a known member of the SelectedWorkspaceVerificationStatus enum.
@@ -1056,6 +1099,8 @@ func (e SelectedWorkspaceVerificationStatus) Valid() bool {
 	case SelectedWorkspaceVerificationStatusStale:
 		return true
 	case SelectedWorkspaceVerificationStatusVerified:
+		return true
+	case SelectedWorkspaceVerificationStatusVerifying:
 		return true
 	default:
 		return false
@@ -2463,6 +2508,21 @@ type SelectedWorkspaceMemberLatestVerification string
 // SelectedWorkspaceMemberPermission defines model for SelectedWorkspaceMember.Permission.
 type SelectedWorkspaceMemberPermission string
 
+// SelectedWorkspaceReadSource defines model for SelectedWorkspaceReadSource.
+type SelectedWorkspaceReadSource struct {
+	Completeness SelectedWorkspaceReadSourceCompleteness `json:"completeness"`
+	ObservedAt   time.Time                               `json:"observedAt"`
+	Outcome      string                                  `json:"outcome"`
+	Permission   SelectedWorkspaceReadSourcePermission   `json:"permission"`
+	Source       string                                  `json:"source"`
+}
+
+// SelectedWorkspaceReadSourceCompleteness defines model for SelectedWorkspaceReadSource.Completeness.
+type SelectedWorkspaceReadSourceCompleteness string
+
+// SelectedWorkspaceReadSourcePermission defines model for SelectedWorkspaceReadSource.Permission.
+type SelectedWorkspaceReadSourcePermission string
+
 // SelectedWorkspaceVerification defines model for SelectedWorkspaceVerification.
 type SelectedWorkspaceVerification struct {
 	AccessStatus       SelectedWorkspaceVerificationAccessStatus `json:"accessStatus"`
@@ -2475,6 +2535,7 @@ type SelectedWorkspaceVerification struct {
 	ObservedAt         *time.Time                                `json:"observedAt,omitempty"`
 	PendingInviteCount *int                                      `json:"pendingInviteCount,omitempty"`
 	Permission         SelectedWorkspaceVerificationPermission   `json:"permission"`
+	ReadSources        *[]SelectedWorkspaceReadSource            `json:"readSources,omitempty"`
 	SeatLimit          *int                                      `json:"seatLimit,omitempty"`
 	Source             *string                                   `json:"source,omitempty"`
 	Status             SelectedWorkspaceVerificationStatus       `json:"status"`

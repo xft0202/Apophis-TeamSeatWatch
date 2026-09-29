@@ -9,9 +9,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,13 +29,39 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/workspace"
 )
 
+type selectedRoundTrip func(*http.Request) (*http.Response, error)
+
+func (fn selectedRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) { return fn(req) }
+
 type selectedFixture struct {
 	facts platform.SelectedWorkspaceFacts
 	err   error
 }
 
-func (f *selectedFixture) VerifySelectedWorkspace(_ context.Context, _, _ string) (platform.SelectedWorkspaceFacts, error) {
+func (f *selectedFixture) Source() string { return "injected_platform_reader" }
+func (f *selectedFixture) VerifySelectedWorkspace(_ context.Context, _ platform.PersonalSession, _, _ string) (platform.SelectedWorkspaceFacts, error) {
 	return f.facts, f.err
+}
+
+type sequencedSelectedFixture struct {
+	entered chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+	success platform.SelectedWorkspaceFacts
+}
+
+func (f *sequencedSelectedFixture) Source() string { return "injected_platform_reader" }
+func (f *sequencedSelectedFixture) VerifySelectedWorkspace(ctx context.Context, _ platform.PersonalSession, _, _ string) (platform.SelectedWorkspaceFacts, error) {
+	if f.calls.Add(1) != 1 {
+		return platform.SelectedWorkspaceFacts{Permission: "denied", Result: platform.Result{ObservedAt: time.Now().UTC(), Outcome: platform.OutcomeForbidden}}, nil
+	}
+	close(f.entered)
+	select {
+	case <-f.release:
+		return f.success, nil
+	case <-ctx.Done():
+		return platform.SelectedWorkspaceFacts{}, ctx.Err()
+	}
 }
 
 func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) {
@@ -75,7 +104,12 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 		seed(`INSERT INTO tsw_mother_accounts(id,display_name) VALUES ($1,$2)`, mother, []string{"Mother A", "Mother B"}[i])
 		seed(`INSERT INTO tsw_mother_account_credentials(mother_account_id,login_identifier,identifier_hmac,identifier_key_version,password_secret) VALUES ($1,$2,$3,1,'sealed-test')`, mother, []string{"a@example.test", "b@example.test"}[i], bytes.Repeat([]byte{byte(i + 1)}, 32))
 		generation, run := uuid.New(), uuid.New()
-		seed(`INSERT INTO tsw_mother_personal_sessions(mother_account_id,secret_revision,generation,key_version,nonce,sealed_session,expires_at) VALUES ($1,1,$2,1,$3,$4,now()+interval '1 hour')`, mother, generation, bytes.Repeat([]byte{1}, 12), bytes.Repeat([]byte{2}, 17))
+		personal := platform.PersonalSession{AccessToken: "fixture-personal-token", DeviceID: "fixture-device", Cookies: []platform.SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "fixture-cookie"}}, ExpiresAt: time.Now().Add(time.Hour)}
+		keyVersion, nonce, sealed, sealErr := sealPersonalSession(cardIntegrationKeyRing{}, mother, 1, personal)
+		if sealErr != nil {
+			t.Fatal(sealErr)
+		}
+		seed(`INSERT INTO tsw_mother_personal_sessions(mother_account_id,secret_revision,generation,key_version,nonce,sealed_session,expires_at) VALUES ($1,1,$2,$3,$4,$5,$6)`, mother, generation, keyVersion, nonce, sealed, personal.ExpiresAt)
 		seed(`INSERT INTO tsw_mother_discoveries(mother_account_id,run_id,secret_revision,session_generation,status) VALUES ($1,$2,1,$3,'discovered')`, mother, run, generation)
 	}
 	seed(`INSERT INTO tsw_workspaces(id,platform_workspace_id,display_name) VALUES ($1,'canonical-a','A'),($2,'canonical-b','B')`, spaceA, spaceB)
@@ -122,7 +156,9 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 		seat, member, invite := 5, 1, 1
 		return platform.SelectedWorkspaceFacts{Permission: "manage", Result: platform.Result{Outcome: platform.OutcomeOperational, ObservedAt: time.Now().Add(-time.Second), Completeness: platform.Complete, ActiveUntil: &until, SeatLimit: &seat, MemberCount: &member, PendingInviteCount: &invite, Members: []platform.Member{{Kind: "member", Identifier: "child@example.test", PlatformMemberID: "member-1", Status: "active"}, {Kind: "pending_invite", Identifier: "guest@example.test", Status: "pending"}}}}
 	}
-	seed(`INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,source,outcome,permission,completeness,observed_at,expires_at) VALUES($1,$2,'injected_platform_reader','failed','unknown','unknown',now()-interval '8 days',now()-interval '1 day')`, spaceA, motherA)
+	seed(`INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,secret_revision,source,outcome,permission,completeness,observed_at,expires_at)
+		SELECT $1,$2,discovery.run_id,session.generation,1,'injected_platform_reader','failed','unknown','unknown',now()-interval '8 days',now()-interval '1 day'
+		FROM tsw_mother_discoveries discovery JOIN tsw_mother_personal_sessions session ON session.mother_account_id=discovery.mother_account_id WHERE discovery.mother_account_id=$2`, spaceA, motherA)
 	if code, stale := call(http.MethodGet, spaceA, motherA, true); code != 200 || stale.Status != "stale" || stale.ActiveUntil != nil {
 		t.Fatalf("stale read became current: %d %+v", code, stale)
 	}
@@ -161,6 +197,34 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 			t.Fatalf("verified %v: %d %+v", pair, code, result)
 		}
 	}
+	sequenced := &sequencedSelectedFixture{entered: make(chan struct{}), release: make(chan struct{}), success: fact()}
+	h.selectedWorkspaceReader = sequenced
+	first := make(chan int, 1)
+	go func() { code, _ := call(http.MethodPost, spaceA, motherA, true); first <- code }()
+	select {
+	case <-sequenced.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first read never started")
+	}
+	if _, pending := call(http.MethodGet, spaceA, motherA, true); pending.Status != "verifying" || pending.ActiveUntil != nil || len(pending.Members) != 0 {
+		t.Fatalf("in-flight read exposed previous success: %+v", pending)
+	}
+	if _, denied := call(http.MethodPost, spaceA, motherA, true); denied.Status != "permission_denied" {
+		t.Fatalf("newer denial not committed: %+v", denied)
+	}
+	close(sequenced.release)
+	select {
+	case code := <-first:
+		if code != 409 {
+			t.Fatalf("superseded success status=%d", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("superseded read did not finish")
+	}
+	if _, denied := call(http.MethodGet, spaceA, motherA, true); denied.Status != "permission_denied" || denied.ActiveUntil != nil {
+		t.Fatalf("slow success restored facts: %+v", denied)
+	}
+	h.selectedWorkspaceReader = fixture
 	fixture.facts = fact()
 	fixture.facts.Result.Completeness = platform.Partial
 	fixture.facts.Result.MemberCount = nil
@@ -181,8 +245,8 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 	}
 	fixture.err, fixture.facts = nil, fact()
 	fixture.facts.Permission = "read"
-	if _, readOnly := call(http.MethodPost, spaceA, motherA, true); readOnly.Status != "partial" || readOnly.ActiveUntil != nil {
-		t.Fatalf("read permission became management: %+v", readOnly)
+	if _, readOnly := call(http.MethodPost, spaceA, motherA, true); readOnly.Status != "verified" || readOnly.Permission != "read" || readOnly.ActiveUntil == nil {
+		t.Fatalf("read facts incorrectly granted management or suppressed complete facts: %+v", readOnly)
 	}
 	fixture.facts.Permission = "denied"
 	if _, denied := call(http.MethodPost, spaceA, motherA, true); denied.Status != "permission_denied" || len(denied.Members) != 0 {
@@ -195,12 +259,78 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 	if code, _ := call(http.MethodPost, spaceA, motherB, true); code != 403 {
 		t.Fatalf("downgraded refresh=%d", code)
 	}
-	// A fresh handler can read durable facts, but removing the adapter fails
-	// closed even when an older successful observation remains in storage.
-	h = &OwnerAuthHandler{pool: pool, keyRing: cardIntegrationKeyRing{}, origins: origins, selectedWorkspaceReader: &selectedFixture{}}
+	// A new discovery and Personal generation must not revive a previous
+	// verified observation even when canonical workspace and mother are unchanged.
+	newRun, newGeneration := uuid.New(), uuid.New()
+	seed(`UPDATE tsw_mother_discoveries SET run_id=$2 WHERE mother_account_id=$1`, motherA, newRun)
+	seed(`UPDATE tsw_mother_workspace_visibility SET run_id=$2 WHERE mother_account_id=$1`, motherA, newRun)
+	if _, pending := call(http.MethodGet, spaceB, motherA, true); pending.Status != "pending" || pending.ActiveUntil != nil || len(pending.Members) != 0 {
+		t.Fatalf("rediscovery revived facts: %+v", pending)
+	}
+	seed(`UPDATE tsw_mother_personal_sessions SET generation=$2 WHERE mother_account_id=$1`, motherA, newGeneration)
+	seed(`UPDATE tsw_mother_discoveries SET session_generation=$2 WHERE mother_account_id=$1`, motherA, newGeneration)
+	if _, pending := call(http.MethodGet, spaceB, motherA, true); pending.Status != "pending" || len(pending.Members) != 0 {
+		t.Fatalf("Personal refresh revived facts: %+v", pending)
+	}
+	// The production adapter consumes the saved Personal AT through a mocked
+	// egress client; all four endpoints stay on the official host and GET only.
+	var httpCalls, httpMode atomic.Int32
+	transport := selectedRoundTrip(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodGet || req.URL.Scheme != "https" || req.URL.Host != "chatgpt.com" || req.Header.Get("Authorization") != "Bearer fixture-personal-token" || !strings.Contains(req.Header.Get("Cookie"), "fixture-cookie") {
+			return nil, errors.New("unexpected platform operation")
+		}
+		httpCalls.Add(1)
+		if httpMode.Load() == 1 && strings.HasSuffix(req.URL.Path, "/invites") {
+			return &http.Response{StatusCode: 403, Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header), Request: req}, nil
+		}
+		var body string
+		switch {
+		case req.URL.Path == "/backend-api/subscriptions" && req.URL.Query().Get("account_id") == "canonical-b":
+			body = `{"active_until":"2027-01-01T00:00:00Z","seats_in_use":2,"seats_entitled":3,"seat_capacity":[{"type":"default","paid":3}]}`
+		case req.URL.Path == "/backend-api/accounts/canonical-b/users/seat_type_counts":
+			body = `{"seat_type_counts":{"default":2,"usage_based":0,"automation":0,"prolite":0}}`
+		case req.URL.Path == "/backend-api/accounts/canonical-b/users" && req.URL.Query().Get("offset") == "0":
+			body = `{"total":2,"limit":100,"offset":0,"items":[{"id":"user-a","email":"child@example.test","role":"owner"}]}`
+		case req.URL.Path == "/backend-api/accounts/canonical-b/users" && req.URL.Query().Get("offset") == "1":
+			if httpMode.Load() == 2 {
+				body = `{"total":2,"limit":100,"offset":1,"items":[]}`
+			} else {
+				body = `{"total":2,"limit":100,"offset":1,"items":[{"id":"user-b","email":"other@example.test","role":"standard-user"}]}`
+			}
+		case req.URL.Path == "/backend-api/accounts/canonical-b/invites" && req.URL.Query().Get("offset") == "0":
+			body = `{"total":1,"limit":100,"offset":0,"items":[{"email_address":"invited@example.test","status":2}]}`
+		default:
+			return nil, errors.New("endpoint not allowlisted")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: req}, nil
+	})
+	reader := platform.OfficialSelectedWorkspaceReader{Client: func(context.Context) (*http.Client, func(), error) {
+		return &http.Client{Transport: transport, Timeout: time.Second}, func() {}, nil
+	}}
+	h.selectedWorkspaceReader = reader
+	if code, observed := call(http.MethodPost, spaceB, motherA, true); code != 200 || observed.Status != "verified" || observed.Permission != "read" || observed.SeatLimit == nil || *observed.SeatLimit != 3 || len(observed.Members) != 3 || observed.ReadSources == nil || len(*observed.ReadSources) != 4 {
+		t.Fatalf("saved Personal/egress read: %d %+v", code, observed)
+	}
+	if httpCalls.Load() != 5 {
+		t.Fatalf("expected five official GETs, got %d", httpCalls.Load())
+	}
+	httpMode.Store(1)
+	if _, denied := call(http.MethodPost, spaceB, motherA, true); denied.Status != "permission_denied" || denied.ActiveUntil != nil {
+		t.Fatalf("official 403 kept old facts: %+v", denied)
+	}
+	httpMode.Store(2)
+	if _, partial := call(http.MethodPost, spaceB, motherA, true); partial.Status != "partial" || partial.MemberCount != nil {
+		t.Fatalf("official incomplete page became complete: %+v", partial)
+	}
+	httpMode.Store(0)
+	if _, repaired := call(http.MethodPost, spaceB, motherA, true); repaired.Status != "verified" {
+		t.Fatalf("official complete retry: %+v", repaired)
+	}
+	// A fresh handler sees only current-generation evidence for its reader.
+	h = &OwnerAuthHandler{pool: pool, keyRing: cardIntegrationKeyRing{}, origins: origins, selectedWorkspaceReader: reader}
 	serve = ownerapi.Handler(h)
-	if _, persisted := call(http.MethodGet, spaceB, motherA, true); persisted.Status != "verified" || len(persisted.Members) != 2 {
-		t.Fatalf("restart lost facts: %+v", persisted)
+	if _, persisted := call(http.MethodGet, spaceB, motherA, true); persisted.Status != "verified" || persisted.Permission != "read" || len(persisted.Members) != 3 {
+		t.Fatalf("restart lost current evidence: %+v", persisted)
 	}
 	h = &OwnerAuthHandler{pool: pool, keyRing: cardIntegrationKeyRing{}, origins: origins}
 	serve = ownerapi.Handler(h)

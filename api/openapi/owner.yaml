@@ -2497,7 +2497,14 @@ components:
           enum: [readable, permission_denied, unknown]
         status:
           type: string
-          enum: [pending, verified, partial, failed, permission_denied, stale]
+          enum:
+            - pending
+            - verifying
+            - verified
+            - partial
+            - failed
+            - permission_denied
+            - stale
         permission:
           type: string
           enum: [manage, read, denied, unknown]
@@ -2521,10 +2528,32 @@ components:
           type: integer
         pendingInviteCount:
           type: integer
+        readSources:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectedWorkspaceReadSource'
         members:
           type: array
           items:
             $ref: '#/components/schemas/SelectedWorkspaceMember'
+    SelectedWorkspaceReadSource:
+      type: object
+      additionalProperties: false
+      required: [source, observedAt, completeness, permission, outcome]
+      properties:
+        source:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+        completeness:
+          type: string
+          enum: [complete, partial, unknown]
+        permission:
+          type: string
+          enum: [read, denied, unknown]
+        outcome:
+          type: string
     SelectedWorkspaceMember:
       type: object
       additionalProperties: false

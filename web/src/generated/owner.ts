@@ -1243,7 +1243,7 @@ export interface components {
             /** @enum {string} */
             accessStatus: "readable" | "permission_denied" | "unknown";
             /** @enum {string} */
-            status: "pending" | "verified" | "partial" | "failed" | "permission_denied" | "stale";
+            status: "pending" | "verifying" | "verified" | "partial" | "failed" | "permission_denied" | "stale";
             /** @enum {string} */
             permission: "manage" | "read" | "denied" | "unknown";
             /** @enum {string} */
@@ -1258,7 +1258,18 @@ export interface components {
             seatLimit?: number;
             memberCount?: number;
             pendingInviteCount?: number;
+            readSources?: components["schemas"]["SelectedWorkspaceReadSource"][];
             members: components["schemas"]["SelectedWorkspaceMember"][];
+        };
+        SelectedWorkspaceReadSource: {
+            source: string;
+            /** Format: date-time */
+            observedAt: string;
+            /** @enum {string} */
+            completeness: "complete" | "partial" | "unknown";
+            /** @enum {string} */
+            permission: "read" | "denied" | "unknown";
+            outcome: string;
         };
         SelectedWorkspaceMember: {
             /** @enum {string} */

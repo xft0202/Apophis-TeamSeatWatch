@@ -77,12 +77,13 @@ func NewControlHandlers(config ControlConfig) (ControlHandlers, error) {
 		return lease.Client(), lease.Release, nil
 	}
 	ownerAuth, closeOwnerAuth, err := NewOwnerAuthHandler(OwnerAuthConfig{
-		DatabaseURL:     config.DatabaseURL,
-		KeyRing:         keyRing,
-		Origins:         config.OwnerOrigins,
-		Egress:          config.Egress,
-		Discovery:       platform.AccountsCheckDiscovery{Client: leaseClient},
-		PersonalRefresh: platform.PersonalWebRefresher{Client: leaseClient},
+		DatabaseURL:             config.DatabaseURL,
+		KeyRing:                 keyRing,
+		Origins:                 config.OwnerOrigins,
+		Egress:                  config.Egress,
+		Discovery:               platform.AccountsCheckDiscovery{Client: leaseClient},
+		PersonalRefresh:         platform.PersonalWebRefresher{Client: leaseClient},
+		SelectedWorkspaceReader: platform.OfficialSelectedWorkspaceReader{Client: leaseClient},
 	})
 	if err != nil {
 		closeHealth()
