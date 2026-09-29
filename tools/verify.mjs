@@ -12,14 +12,16 @@ const toolBin = 'E:\\TeamSeatWatchTools\\bin';
 const goBin = 'E:\\TeamSeatWatchTools\\go\\1.27.1\\go\\bin';
 const goPathBin = 'E:\\TeamSeatWatchTools\\gopath\\bin';
 const inheritedPath = process.env.Path ?? process.env.PATH ?? '';
-const verificationEnv = {
-  ...process.env,
-  GOPATH: 'E:\\TeamSeatWatchTools\\gopath',
-  GOMODCACHE: 'E:\\TeamSeatWatchTools\\gomodcache',
-  GOCACHE: 'E:\\TeamSeatWatchTools\\gocache',
-  GOTMPDIR: 'E:\\TeamSeatWatchTools\\gotmp',
-  Path: windows ? [toolBin, goBin, goPathBin, inheritedPath].join(';') : inheritedPath,
-};
+const verificationEnv = windows
+  ? {
+      ...process.env,
+      GOPATH: 'E:\\TeamSeatWatchTools\\gopath',
+      GOMODCACHE: 'E:\\TeamSeatWatchTools\\gomodcache',
+      GOCACHE: 'E:\\TeamSeatWatchTools\\gocache',
+      GOTMPDIR: 'E:\\TeamSeatWatchTools\\gotmp',
+      Path: [toolBin, goBin, goPathBin, inheritedPath].join(';'),
+    }
+  : { ...process.env };
 const goCommand = windows && existsSync(fixedGo) ? fixedGo : 'go';
 const hasLocalTests = existsSync('tests/frontend');
 

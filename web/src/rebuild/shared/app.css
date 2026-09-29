@@ -46,7 +46,7 @@ input {
 .brand-lockup {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   color: #0a0a0a;
   letter-spacing: -0.02em;
 }
@@ -70,19 +70,19 @@ input {
 }
 
 .auth-title {
-  margin-top: 34px;
+  margin-top: 32px;
   letter-spacing: -0.04em;
 }
 
 .auth-subtitle {
   max-width: 38ch;
-  margin-top: 10px;
+  margin-top: 8px;
   color: #6b6b6b;
   line-height: 1.6;
 }
 
 .auth-form {
-  margin-top: 28px;
+  margin-top: 32px;
 }
 
 .auth-loading {

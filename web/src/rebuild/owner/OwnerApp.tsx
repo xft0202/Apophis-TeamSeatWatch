@@ -138,7 +138,7 @@ function LoginView({
   return (
     <main className="auth-page">
       <Container className="auth-card" size={456} px={0}>
-        <Paper withBorder radius="md" p={{ base: 'xl', sm: 40 }}>
+        <Paper withBorder radius={12} p={{ base: 'xl', sm: 40 }}>
           <div className="brand-lockup" aria-label="Apophis-TeamSeatWatch Owner">
             <span className="brand-mark" aria-hidden="true">TS</span>
             <span className="brand-name">Apophis-TeamSeatWatch</span>
@@ -263,7 +263,7 @@ function SignedInView({
               </Title>
             </div>
 
-            <Paper withBorder radius="md" p={{ base: 'lg', sm: 'xl' }}>
+            <Paper withBorder radius={12} p={{ base: 'lg', sm: 'xl' }}>
               <Stack gap="lg">
                 <Group justify="space-between" align="flex-start" wrap="nowrap">
                   <div>

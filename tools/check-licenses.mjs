@@ -4,8 +4,10 @@ import { platform } from 'node:os';
 
 function runPnpm(args) {
   const windows = platform() === 'win32';
-  const command = windows ? 'cmd.exe' : 'pnpm';
-  const commandArgs = windows ? ['/d', '/s', '/c', `corepack pnpm@12.4.2 ${args.join(' ')}`] : args;
+  const command = windows ? 'cmd.exe' : 'corepack';
+  const commandArgs = windows
+    ? ['/d', '/s', '/c', `corepack pnpm@12.4.2 ${args.join(' ')}`]
+    : ['pnpm@12.4.2', ...args];
   const result = spawnSync(command, commandArgs, { encoding: 'utf8' });
   if (result.error || result.status !== 0) {
     throw result.error ?? new Error('pnpm license scan failed');
