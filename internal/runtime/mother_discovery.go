@@ -78,6 +78,9 @@ func (h *OwnerAuthHandler) RunMotherDiscovery(w http.ResponseWriter, r *http.Req
 	}
 	status := "missing_credentials"
 	var found []platform.DiscoveredWorkspace
+	if attempt.generation != nil && attempt.expires != nil && !attempt.expires.After(time.Now()) {
+		status = "session_expired"
+	}
 	if attempt.generation != nil && attempt.keyVersion != nil && attempt.expires != nil && attempt.expires.After(time.Now()) {
 		session, openErr := openPersonalSession(h.keyRing, accountID, attempt.revision, uint16(*attempt.keyVersion), attempt.nonce, attempt.ciphertext)
 		if openErr != nil || !platform.ValidatePersonalRefresh(platform.PersonalRefreshResult{Status: "ready", Session: session}, time.Now()) {
@@ -126,11 +129,14 @@ func (h *OwnerAuthHandler) RunMotherDiscovery(w http.ResponseWriter, r *http.Req
 		h.workspaceFailure(w, r, err)
 		return
 	}
-	if attempt.generation != nil && (access == nil || *access != "ready" || expires == nil || (!expires.After(time.Now()) && status != "missing_credentials")) {
+	if attempt.generation != nil && (access == nil || *access != "ready" || expires == nil) {
 		writeProblem(w, r, http.StatusConflict, "mother_access_changed", "Conflict", "Mother access changed; verify again", 0)
 		return
 	}
-	if status == "session_expired" || (expires != nil && !expires.After(time.Now())) {
+	if expires != nil && !expires.After(time.Now()) {
+		status, found = "session_expired", nil
+	}
+	if status == "session_expired" {
 		_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_personal_sessions WHERE mother_account_id=$1 AND generation=$2`, accountID, current)
 		if err != nil {
 			h.workspaceFailure(w, r, err)
@@ -172,10 +178,21 @@ func (h *OwnerAuthHandler) RunMotherDiscovery(w http.ResponseWriter, r *http.Req
 func sameUUID(a, b *uuid.UUID) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
 
 func (h *OwnerAuthHandler) motherDiscovery(r *http.Request, accountID uuid.UUID) (ownerapi.MotherDiscovery, error) {
+	// Both status and visibility must use the same committed snapshot. A newer
+	// reservation can clear visibility between two READ COMMITTED statements.
+	tx, err := h.pool.BeginTx(r.Context(), pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return ownerapi.MotherDiscovery{}, err
+	}
+	defer tx.Rollback(r.Context())
+	return motherDiscoverySnapshot(r.Context(), tx, accountID)
+}
+
+func motherDiscoverySnapshot(ctx context.Context, tx pgx.Tx, accountID uuid.UUID) (ownerapi.MotherDiscovery, error) {
 	response := ownerapi.MotherDiscovery{MotherAccountId: accountID, Status: ownerapi.MotherDiscoveryStatusNotVerified, Workspaces: []ownerapi.MotherVisibleWorkspace{}}
 	var status *string
 	var observed *time.Time
-	err := h.pool.QueryRow(r.Context(), `SELECT CASE WHEN discovery.status IN ('discovered','empty') AND (session.expires_at IS NULL OR session.expires_at<=now()) THEN NULL WHEN discovery.status='discovering' AND discovery.observed_at<now()-interval '1 minute' THEN 'discovery_failed' ELSE discovery.status END,discovery.observed_at FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id LEFT JOIN tsw_mother_discoveries discovery ON discovery.mother_account_id=account.id AND discovery.secret_revision=credential.secret_revision AND discovery.observed_at>now()-interval '7 days' LEFT JOIN tsw_mother_personal_sessions session ON session.mother_account_id=account.id AND session.secret_revision=credential.secret_revision AND session.generation=discovery.session_generation WHERE account.id=$1 AND account.status='active'`, accountID).Scan(&status, &observed)
+	err := tx.QueryRow(ctx, `SELECT CASE WHEN discovery.status IN ('discovered','empty') AND (session.expires_at IS NULL OR session.expires_at<=now()) THEN NULL WHEN discovery.status='discovering' AND discovery.observed_at<now()-interval '1 minute' THEN 'discovery_failed' ELSE discovery.status END,discovery.observed_at FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id LEFT JOIN tsw_mother_discoveries discovery ON discovery.mother_account_id=account.id AND discovery.secret_revision=credential.secret_revision AND discovery.observed_at>now()-interval '7 days' LEFT JOIN tsw_mother_personal_sessions session ON session.mother_account_id=account.id AND session.secret_revision=credential.secret_revision AND session.generation=discovery.session_generation WHERE account.id=$1 AND account.status='active'`, accountID).Scan(&status, &observed)
 	if err != nil {
 		return response, err
 	}
@@ -186,7 +203,7 @@ func (h *OwnerAuthHandler) motherDiscovery(r *http.Request, accountID uuid.UUID)
 	if *status != "discovered" {
 		return response, nil
 	}
-	rows, err := h.pool.Query(r.Context(), `SELECT workspace.id,workspace.display_name,visibility.access_status FROM tsw_mother_workspace_visibility visibility JOIN tsw_workspaces workspace ON workspace.id=visibility.workspace_id JOIN tsw_mother_discoveries discovery ON discovery.mother_account_id=visibility.mother_account_id AND discovery.run_id=visibility.run_id AND discovery.observed_at>now()-interval '7 days' JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=visibility.mother_account_id AND credential.secret_revision=discovery.secret_revision JOIN tsw_mother_personal_sessions session ON session.mother_account_id=visibility.mother_account_id AND session.secret_revision=credential.secret_revision AND session.generation=discovery.session_generation AND session.expires_at>now() WHERE visibility.mother_account_id=$1 ORDER BY workspace.display_name,workspace.id`, accountID)
+	rows, err := tx.Query(ctx, `SELECT workspace.id,workspace.display_name,visibility.access_status FROM tsw_mother_workspace_visibility visibility JOIN tsw_workspaces workspace ON workspace.id=visibility.workspace_id JOIN tsw_mother_discoveries discovery ON discovery.mother_account_id=visibility.mother_account_id AND discovery.run_id=visibility.run_id AND discovery.observed_at>now()-interval '7 days' JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=visibility.mother_account_id AND credential.secret_revision=discovery.secret_revision JOIN tsw_mother_personal_sessions session ON session.mother_account_id=visibility.mother_account_id AND session.secret_revision=credential.secret_revision AND session.generation=discovery.session_generation AND session.expires_at>now() WHERE visibility.mother_account_id=$1 ORDER BY workspace.display_name,workspace.id`, accountID)
 	if err != nil {
 		return response, err
 	}

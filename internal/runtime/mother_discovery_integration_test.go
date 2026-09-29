@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
@@ -238,14 +239,44 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM tsw_workspaces),(SELECT count(*) FROM tsw_mother_workspace_visibility),(SELECT count(*) FROM tsw_mother_workspace_bindings)`).Scan(&spaces, &relations, &bindings); err != nil || spaces != 2 || relations != 3 || bindings != 0 {
 		t.Fatalf("spaces=%d relations=%d bindings=%d err=%v", spaces, relations, bindings, err)
 	}
+	// Fix a read-only snapshot, switch the current attempt, and verify status
+	// and rows still come from the same generation; a new GET sees the new one.
+	snapshot, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var observedStatus string
+	if err := snapshot.QueryRow(ctx, `SELECT status FROM tsw_mother_discoveries WHERE mother_account_id=$1`, firstID).Scan(&observedStatus); err != nil || observedStatus != "discovered" {
+		t.Fatalf("snapshot start: %s %v", observedStatus, err)
+	}
+	if status, state := readDiscovery(http.MethodPost, firstID, true, true); status != 200 || state.Status != "discovered" || len(state.Workspaces) != 1 {
+		t.Fatalf("switch attempt: %d %+v", status, state)
+	}
+	oldSnapshot, err := motherDiscoverySnapshot(ctx, snapshot, firstID)
+	if err != nil || oldSnapshot.Status != "discovered" || len(oldSnapshot.Workspaces) != 2 {
+		t.Fatalf("mixed status/visibility snapshot: %+v %v", oldSnapshot, err)
+	}
+	if err := snapshot.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if status, state := readDiscovery(http.MethodGet, firstID, true, false); status != 200 || state.Status != "discovered" || len(state.Workspaces) != 1 {
+		t.Fatalf("new snapshot did not see switched attempt: %d %+v", status, state)
+	}
 	if _, err := pool.Exec(ctx, `UPDATE tsw_mother_personal_sessions SET expires_at=now()-interval '1 second' WHERE mother_account_id=$1`, firstID); err != nil {
 		t.Fatal(err)
 	}
 	if status, result := readDiscovery(http.MethodGet, firstID, true, false); status != 200 || result.Status != "not_verified" || len(result.Workspaces) != 0 {
 		t.Fatalf("expired Personal session exposed old visibility: %d %+v", status, result)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE tsw_mother_personal_sessions SET expires_at=now()+interval '30 minutes' WHERE mother_account_id=$1`, firstID); err != nil {
-		t.Fatal(err)
+	if status, result := readDiscovery(http.MethodPost, firstID, true, true); status != 200 || result.Status != "session_expired" || len(result.Workspaces) != 0 {
+		t.Fatalf("expired before discovery misclassified: %d %+v", status, result)
+	}
+	var expiredCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, firstID).Scan(&expiredCount); err != nil || expiredCount != 0 {
+		t.Fatalf("expired generation retained: %d %v", expiredCount, err)
+	}
+	if status, state := readAccess(http.MethodPost, firstID, true, true); status != 200 || state.Status != "ready" {
+		t.Fatalf("restore Personal after expiry: %d %+v", status, state)
 	}
 	adapter.result = platform.DiscoveryResult{Status: "session_expired"}
 	if status, result := readDiscovery(http.MethodPost, firstID, true, true); status != 200 || result.Status != "session_expired" || len(result.Workspaces) != 0 {
@@ -266,7 +297,7 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	if status, result := readDiscovery(http.MethodPost, secondID, true, true); status != 200 || result.Status != "discovery_failed" {
 		t.Fatalf("failure: %d %+v", status, result)
 	}
-	if adapter.calls != 6 {
+	if adapter.calls != 7 {
 		t.Fatalf("unexpected discovery calls=%d", adapter.calls)
 	}
 	refresh.result = platform.PersonalRefreshResult{Status: "invalid_login"}
@@ -355,6 +386,29 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	}
 	if state, status := readDiscovery(http.MethodGet, firstID, true, false); state != 200 || status.Status != "discovered" || len(status.Workspaces) != 1 {
 		t.Fatalf("latest discovery lost: %d %+v", state, status)
+	}
+	// Expiry after reservation but before a successful remote response must
+	// settle as session_expired, clear visibility and revoke this generation.
+	third := &sequencedDiscovery{entered: make(chan struct{}), release: make(chan struct{})}
+	handler.discovery = third
+	duringExpiry := startAsync()
+	<-third.entered
+	if _, err := pool.Exec(ctx, `UPDATE tsw_mother_personal_sessions SET expires_at=now()-interval '1 second' WHERE mother_account_id=$1`, firstID); err != nil {
+		close(third.release)
+		t.Fatal(err)
+	}
+	close(third.release)
+	if status := <-duringExpiry; status != 200 {
+		t.Fatalf("expiry during discovery left attempt pending: %d", status)
+	}
+	if status, state := readDiscovery(http.MethodGet, firstID, true, false); status != 200 || state.Status != "session_expired" || len(state.Workspaces) != 0 {
+		t.Fatalf("expiry during discovery misclassified: %d %+v", status, state)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, firstID).Scan(&expiredCount); err != nil || expiredCount != 0 {
+		t.Fatalf("in-flight expired generation retained: %d %v", expiredCount, err)
+	}
+	if status, state := readAccess(http.MethodPost, firstID, true, true); status != 200 || state.Status != "ready" {
+		t.Fatalf("restore Personal after in-flight expiry: %d %+v", status, state)
 	}
 	// A newer explicit refresh fences a slower prior login without retaining
 	// database locks across either platform attempt.

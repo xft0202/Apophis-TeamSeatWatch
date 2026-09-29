@@ -105,6 +105,17 @@ func TestPersonalWebRefreshUsesOnlyPasswordTOTPAndSessionGET(t *testing.T) {
 	}
 }
 
+func TestPostTOTPPersonalExpiryRequiresPositivePersonalPlan(t *testing.T) {
+	for _, plan := range []string{"free", "plus", "pro", "personal", "default"} {
+		t.Run(plan, func(t *testing.T) {
+			token := personalFixtureToken(time.Now(), func(c map[string]any) { c["https://api.openai.com/auth"].(map[string]any)["chatgpt_plan_type"] = plan })
+			if _, err := postTOTPPersonalExpiry(token, time.Now()); err != nil {
+				t.Fatalf("supported Personal plan %s rejected: %v", plan, err)
+			}
+		})
+	}
+}
+
 func TestPersonalRefreshAndDiscoveryAcquireSeparateLeases(t *testing.T) {
 	fixture := &personalFlowFixture{token: personalFixtureToken(time.Now(), nil)}
 	client := &http.Client{Timeout: time.Second, Transport: accountsRoundTrip(func(req *http.Request) (*http.Response, error) {
@@ -157,6 +168,26 @@ func TestPersonalWebRefreshRejectsRedirectsClaimsAndBadTOTP(t *testing.T) {
 		}},
 		{"workspace_claim", func(f *personalFlowFixture) {
 			f.token = personalFixtureToken(time.Now(), func(c map[string]any) { c["https://api.openai.com/auth"].(map[string]any)["chatgpt_plan_type"] = "k12" })
+		}},
+		{"forged_flat_workspace_claim", func(f *personalFlowFixture) {
+			f.token = personalFixtureToken(time.Now(), func(c map[string]any) {
+				c["https://api.openai.com/auth.chatgpt_plan_type"] = "k12"
+				c["https://api.openai.com/auth.chatgpt_account_id"] = "workspace-1"
+			})
+		}},
+		{"conflicting_account_id", func(f *personalFlowFixture) {
+			f.token = personalFixtureToken(time.Now(), func(c map[string]any) { c["https://api.openai.com/auth.chatgpt_account_id"] = "other-personal" })
+		}},
+		{"conflicting_scopes", func(f *personalFlowFixture) {
+			f.token = personalFixtureToken(time.Now(), func(c map[string]any) { c["https://api.openai.com/auth.scp"] = []string{"openid"} })
+		}},
+		{"conflicting_mfa", func(f *personalFlowFixture) {
+			f.token = personalFixtureToken(time.Now(), func(c map[string]any) { c["https://api.openai.com/mfa.required"] = false })
+		}},
+		{"unknown_personal_plan", func(f *personalFlowFixture) {
+			f.token = personalFixtureToken(time.Now(), func(c map[string]any) {
+				c["https://api.openai.com/auth"].(map[string]any)["chatgpt_plan_type"] = "unclassified"
+			})
 		}},
 		{"expired_claim", func(f *personalFlowFixture) {
 			f.token = personalFixtureToken(time.Now(), func(c map[string]any) { c["exp"] = time.Now().Add(-time.Minute).Unix() })
