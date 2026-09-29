@@ -586,7 +586,7 @@ func validRateLimitKind(value string) bool {
 
 func validSessionReason(eventType EventType, value string) bool {
 	if eventType == SessionRotated {
-		return value == "session_revocation" || value == "workspace_manual_verification"
+		return value == "session_revocation" || value == "workspace_manual_verification" || value == "mother_personal_refresh"
 	}
 	return value == "logout" || value == "owner_request" || value == "rotation"
 }

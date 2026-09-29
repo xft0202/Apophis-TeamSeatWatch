@@ -704,10 +704,10 @@ const (
 	MotherDiscoveryStatusDiscovered         MotherDiscoveryStatus = "discovered"
 	MotherDiscoveryStatusDiscoveryFailed    MotherDiscoveryStatus = "discovery_failed"
 	MotherDiscoveryStatusEmpty              MotherDiscoveryStatus = "empty"
-	MotherDiscoveryStatusInvalidLogin       MotherDiscoveryStatus = "invalid_login"
 	MotherDiscoveryStatusMissingCredentials MotherDiscoveryStatus = "missing_credentials"
 	MotherDiscoveryStatusNotVerified        MotherDiscoveryStatus = "not_verified"
 	MotherDiscoveryStatusPermissionDenied   MotherDiscoveryStatus = "permission_denied"
+	MotherDiscoveryStatusSessionExpired     MotherDiscoveryStatus = "session_expired"
 	MotherDiscoveryStatusUnavailable        MotherDiscoveryStatus = "unavailable"
 )
 
@@ -720,15 +720,45 @@ func (e MotherDiscoveryStatus) Valid() bool {
 		return true
 	case MotherDiscoveryStatusEmpty:
 		return true
-	case MotherDiscoveryStatusInvalidLogin:
-		return true
 	case MotherDiscoveryStatusMissingCredentials:
 		return true
 	case MotherDiscoveryStatusNotVerified:
 		return true
 	case MotherDiscoveryStatusPermissionDenied:
 		return true
+	case MotherDiscoveryStatusSessionExpired:
+		return true
 	case MotherDiscoveryStatusUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MotherPersonalAccessStatus.
+const (
+	MotherPersonalAccessStatusInvalidLogin       MotherPersonalAccessStatus = "invalid_login"
+	MotherPersonalAccessStatusMissingCredentials MotherPersonalAccessStatus = "missing_credentials"
+	MotherPersonalAccessStatusNotVerified        MotherPersonalAccessStatus = "not_verified"
+	MotherPersonalAccessStatusReady              MotherPersonalAccessStatus = "ready"
+	MotherPersonalAccessStatusRefreshFailed      MotherPersonalAccessStatus = "refresh_failed"
+	MotherPersonalAccessStatusUnavailable        MotherPersonalAccessStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the MotherPersonalAccessStatus enum.
+func (e MotherPersonalAccessStatus) Valid() bool {
+	switch e {
+	case MotherPersonalAccessStatusInvalidLogin:
+		return true
+	case MotherPersonalAccessStatusMissingCredentials:
+		return true
+	case MotherPersonalAccessStatusNotVerified:
+		return true
+	case MotherPersonalAccessStatusReady:
+		return true
+	case MotherPersonalAccessStatusRefreshFailed:
+		return true
+	case MotherPersonalAccessStatusUnavailable:
 		return true
 	default:
 		return false
@@ -1974,6 +2004,16 @@ type MotherDiscovery struct {
 // MotherDiscoveryStatus defines model for MotherDiscovery.Status.
 type MotherDiscoveryStatus string
 
+// MotherPersonalAccess defines model for MotherPersonalAccess.
+type MotherPersonalAccess struct {
+	CheckedAt       *time.Time                 `json:"checkedAt,omitempty"`
+	MotherAccountId openapi_types.UUID         `json:"motherAccountId"`
+	Status          MotherPersonalAccessStatus `json:"status"`
+}
+
+// MotherPersonalAccessStatus defines model for MotherPersonalAccess.Status.
+type MotherPersonalAccessStatus string
+
 // MotherVisibleWorkspace defines model for MotherVisibleWorkspace.
 type MotherVisibleWorkspace struct {
 	AccessStatus MotherVisibleWorkspaceAccessStatus `json:"accessStatus"`
@@ -2707,6 +2747,11 @@ type RunMotherDiscoveryParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// RefreshMotherPersonalAccessParams defines parameters for RefreshMotherPersonalAccess.
+type RefreshMotherPersonalAccessParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // ListRemovalOperationsNeedingAttentionParams defines parameters for ListRemovalOperationsNeedingAttention.
 type ListRemovalOperationsNeedingAttentionParams struct {
 	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
@@ -3044,6 +3089,12 @@ type ServerInterface interface {
 
 	// (POST /api/owner/v1/mother-accounts/{accountId}/discovery)
 	RunMotherDiscovery(w http.ResponseWriter, r *http.Request, accountId AccountId, params RunMotherDiscoveryParams)
+
+	// (GET /api/owner/v1/mother-accounts/{accountId}/personal-session)
+	GetMotherPersonalAccess(w http.ResponseWriter, r *http.Request, accountId AccountId)
+
+	// (POST /api/owner/v1/mother-accounts/{accountId}/personal-session)
+	RefreshMotherPersonalAccess(w http.ResponseWriter, r *http.Request, accountId AccountId, params RefreshMotherPersonalAccessParams)
 
 	// (GET /api/owner/v1/removal-operations/needs-attention)
 	ListRemovalOperationsNeedingAttention(w http.ResponseWriter, r *http.Request, params ListRemovalOperationsNeedingAttentionParams)
@@ -5433,6 +5484,86 @@ func (siw *ServerInterfaceWrapper) RunMotherDiscovery(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// GetMotherPersonalAccess operation middleware
+func (siw *ServerInterfaceWrapper) GetMotherPersonalAccess(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "accountId" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "accountId", r.PathValue("accountId"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "accountId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMotherPersonalAccess(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefreshMotherPersonalAccess operation middleware
+func (siw *ServerInterfaceWrapper) RefreshMotherPersonalAccess(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "accountId" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "accountId", r.PathValue("accountId"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "accountId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RefreshMotherPersonalAccessParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshMotherPersonalAccess(w, r, accountId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRemovalOperationsNeedingAttention operation middleware
 func (siw *ServerInterfaceWrapper) ListRemovalOperationsNeedingAttention(w http.ResponseWriter, r *http.Request) {
 
@@ -6591,6 +6722,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/delivery-destinations/{destinationId}", wrapper.UpdateDeliveryDestination)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/delivery-destinations/{destinationId}/test", wrapper.TestDeliveryDestination)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/delivery-destinations/{destinationId}/select", wrapper.SelectDeliveryDestination)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/mother-accounts/{accountId}/personal-session", wrapper.GetMotherPersonalAccess)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts/{accountId}/personal-session", wrapper.RefreshMotherPersonalAccess)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/mother-accounts/{accountId}/discovery", wrapper.GetMotherDiscovery)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts/{accountId}/discovery", wrapper.RunMotherDiscovery)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces", wrapper.ListWorkspaces)

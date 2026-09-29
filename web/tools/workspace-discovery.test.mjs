@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { confirmWorkspace, isWorkspaceSelectable } from '../src/rebuild/owner/workspaceSelection.ts';
+import { canDiscover, confirmWorkspace, isWorkspaceSelectable } from '../src/rebuild/owner/workspaceSelection.ts';
 
 const visible = { id: 'team-1', displayName: 'One', accessStatus: 'readable' };
 const denied = { id: 'team-2', displayName: 'Two', accessStatus: 'permission_denied' };
@@ -20,7 +20,15 @@ test('multiple mothers can show one real workspace; only readable candidates are
   assert.equal(isWorkspaceSelectable(unknown), false);
   assert.equal(confirmWorkspace(result, denied.id), null);
   assert.equal(confirmWorkspace(result, unknown.id), null);
-  for (const status of ['not_verified', 'empty', 'invalid_login', 'missing_credentials', 'discovery_failed', 'permission_denied', 'unavailable']) {
+  for (const status of ['not_verified', 'empty', 'session_expired', 'missing_credentials', 'discovery_failed', 'permission_denied', 'unavailable']) {
     assert.equal(confirmWorkspace({ ...result, status }, visible.id), null, status);
   }
+});
+
+test('discovery stays locked until explicit Personal verification succeeds', () => {
+  assert.equal(canDiscover(null), false);
+  for (const status of ['not_verified', 'invalid_login', 'missing_credentials', 'refresh_failed', 'unavailable']) {
+    assert.equal(canDiscover({ status }), false, status);
+  }
+  assert.equal(canDiscover({ status: 'ready' }), true);
 });

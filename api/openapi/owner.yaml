@@ -332,6 +332,38 @@ paths:
                 $ref: '#/components/schemas/DeliveryDestination'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/mother-accounts/{accountId}/personal-session:
+    get:
+      operationId: getMotherPersonalAccess
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Saved Personal session status, never credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotherPersonalAccess'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: refreshMotherPersonalAccess
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: Explicit password and TOTP Personal session refresh
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotherPersonalAccess'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/mother-accounts/{accountId}/discovery:
     get:
       operationId: getMotherDiscovery
@@ -1792,6 +1824,26 @@ components:
           enum:
             - not_verified
             - verified
+    MotherPersonalAccess:
+      type: object
+      additionalProperties: false
+      required: [motherAccountId, status]
+      properties:
+        motherAccountId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - not_verified
+            - ready
+            - invalid_login
+            - missing_credentials
+            - refresh_failed
+            - unavailable
+        checkedAt:
+          type: string
+          format: date-time
     MotherDiscovery:
       type: object
       additionalProperties: false
@@ -1806,7 +1858,7 @@ components:
             - not_verified
             - discovered
             - empty
-            - invalid_login
+            - session_expired
             - missing_credentials
             - discovery_failed
             - permission_denied

@@ -244,6 +244,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/mother-accounts/{accountId}/personal-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getMotherPersonalAccess"];
+        put?: never;
+        post: operations["refreshMotherPersonalAccess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/mother-accounts/{accountId}/discovery": {
         parameters: {
             query?: never;
@@ -951,11 +967,19 @@ export interface components {
             /** @enum {string} */
             accessStatus: "not_verified" | "verified";
         };
+        MotherPersonalAccess: {
+            /** Format: uuid */
+            motherAccountId: string;
+            /** @enum {string} */
+            status: "not_verified" | "ready" | "invalid_login" | "missing_credentials" | "refresh_failed" | "unavailable";
+            /** Format: date-time */
+            checkedAt?: string;
+        };
         MotherDiscovery: {
             /** Format: uuid */
             motherAccountId: string;
             /** @enum {string} */
-            status: "not_verified" | "discovered" | "empty" | "invalid_login" | "missing_credentials" | "discovery_failed" | "permission_denied" | "unavailable";
+            status: "not_verified" | "discovered" | "empty" | "session_expired" | "missing_credentials" | "discovery_failed" | "permission_denied" | "unavailable";
             /** Format: date-time */
             observedAt?: string;
             workspaces: components["schemas"]["MotherVisibleWorkspace"][];
@@ -2227,6 +2251,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeliveryDestination"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getMotherPersonalAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                accountId: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved Personal session status, never credentials */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MotherPersonalAccess"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    refreshMotherPersonalAccess: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                accountId: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Explicit password and TOTP Personal session refresh */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MotherPersonalAccess"];
                 };
             };
             default: components["responses"]["Problem"];

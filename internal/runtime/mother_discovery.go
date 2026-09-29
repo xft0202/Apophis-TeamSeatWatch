@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	openapi_types "github.com/oapi-codegen/runtime/types"
-	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 )
@@ -43,11 +41,12 @@ func (h *OwnerAuthHandler) RunMotherDiscovery(w http.ResponseWriter, r *http.Req
 		return
 	}
 	defer tx.Rollback(r.Context())
-	var material platform.MotherMaterial
-	var password, totp []byte
 	var revision int64
 	var active bool
-	err = tx.QueryRow(r.Context(), `SELECT credential.login_identifier,credential.password_secret,credential.totp_secret,credential.secret_revision,account.status='active' FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id WHERE account.id=$1 FOR UPDATE OF account,credential`, accountID).Scan(&material.LoginIdentifier, &password, &totp, &revision, &active)
+	var keyVersion *int16
+	var nonce, ciphertext []byte
+	var expires *time.Time
+	err = tx.QueryRow(r.Context(), `SELECT credential.secret_revision,account.status='active',session.key_version,session.nonce,session.sealed_session,session.expires_at FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id LEFT JOIN tsw_mother_personal_sessions session ON session.mother_account_id=account.id AND session.secret_revision=credential.secret_revision WHERE account.id=$1 FOR UPDATE OF account,credential`, accountID).Scan(&revision, &active, &keyVersion, &nonce, &ciphertext, &expires)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeProblem(w, r, 404, "mother_not_found", "Not Found", "Mother account was not found", 0)
 		return
@@ -60,25 +59,25 @@ func (h *OwnerAuthHandler) RunMotherDiscovery(w http.ResponseWriter, r *http.Req
 		writeProblem(w, r, http.StatusConflict, "mother_disabled", "Account Disabled", "Mother account is disabled", 0)
 		return
 	}
-	material.Password, material.TOTPSecret = string(password), string(totp)
 	status := "missing_credentials"
 	var found []platform.DiscoveredWorkspace
-	_, totpErr := auth.TOTPCode(material.TOTPSecret, time.Now())
-	if strings.TrimSpace(material.LoginIdentifier) != "" && material.Password != "" && totpErr == nil {
+	if keyVersion != nil && expires != nil && expires.After(time.Now()) {
+		session, openErr := openPersonalSession(h.keyRing, accountID, revision, uint16(*keyVersion), nonce, ciphertext)
+		if openErr != nil || !platform.ValidatePersonalRefresh(platform.PersonalRefreshResult{Status: "ready", Session: session}, time.Now()) {
+			h.workspaceFailure(w, r, errors.New("stored Personal session is invalid"))
+			return
+		}
 		adapter := h.discovery
 		if adapter == nil {
 			adapter = platform.UnavailableDiscovery{}
 		}
-		var result platform.DiscoveryResult
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-		result, err = adapter.VerifyAndDiscover(ctx, material)
+		result, discoverErr := adapter.Discover(ctx, session)
 		cancel()
 		switch {
-		case errors.Is(err, platform.ErrDiscoveryUnavailable):
+		case errors.Is(discoverErr, platform.ErrDiscoveryUnavailable):
 			status = "unavailable"
-		case err != nil:
-			status = "discovery_failed"
-		case !platform.ValidateDiscovery(result):
+		case discoverErr != nil || !platform.ValidateDiscovery(result):
 			status = "discovery_failed"
 		default:
 			status = result.Status
@@ -88,6 +87,13 @@ func (h *OwnerAuthHandler) RunMotherDiscovery(w http.ResponseWriter, r *http.Req
 					status = "empty"
 				}
 			}
+		}
+	}
+	if status == "session_expired" || (expires != nil && !expires.After(time.Now())) {
+		_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, accountID)
+		if err != nil {
+			h.workspaceFailure(w, r, err)
+			return
 		}
 	}
 	runID := uuid.New()
@@ -129,7 +135,7 @@ func (h *OwnerAuthHandler) motherDiscovery(r *http.Request, accountID uuid.UUID)
 	response := ownerapi.MotherDiscovery{MotherAccountId: accountID, Status: ownerapi.MotherDiscoveryStatusNotVerified, Workspaces: []ownerapi.MotherVisibleWorkspace{}}
 	var status *string
 	var observed *time.Time
-	err := h.pool.QueryRow(r.Context(), `SELECT discovery.status,discovery.observed_at FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id LEFT JOIN tsw_mother_discoveries discovery ON discovery.mother_account_id=account.id AND discovery.secret_revision=credential.secret_revision AND discovery.observed_at>now()-interval '7 days' WHERE account.id=$1 AND account.status='active'`, accountID).Scan(&status, &observed)
+	err := h.pool.QueryRow(r.Context(), `SELECT CASE WHEN discovery.status IN ('discovered','empty') AND (session.expires_at IS NULL OR session.expires_at<=now()) THEN NULL ELSE discovery.status END,discovery.observed_at FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id LEFT JOIN tsw_mother_discoveries discovery ON discovery.mother_account_id=account.id AND discovery.secret_revision=credential.secret_revision AND discovery.observed_at>now()-interval '7 days' LEFT JOIN tsw_mother_personal_sessions session ON session.mother_account_id=account.id AND session.secret_revision=credential.secret_revision WHERE account.id=$1 AND account.status='active'`, accountID).Scan(&status, &observed)
 	if err != nil {
 		return response, err
 	}
@@ -140,7 +146,7 @@ func (h *OwnerAuthHandler) motherDiscovery(r *http.Request, accountID uuid.UUID)
 	if *status != "discovered" {
 		return response, nil
 	}
-	rows, err := h.pool.Query(r.Context(), `SELECT workspace.id,workspace.display_name,visibility.access_status FROM tsw_mother_workspace_visibility visibility JOIN tsw_workspaces workspace ON workspace.id=visibility.workspace_id JOIN tsw_mother_discoveries discovery ON discovery.mother_account_id=visibility.mother_account_id AND discovery.run_id=visibility.run_id AND discovery.observed_at>now()-interval '7 days' JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=visibility.mother_account_id AND credential.secret_revision=discovery.secret_revision WHERE visibility.mother_account_id=$1 ORDER BY workspace.display_name,workspace.id`, accountID)
+	rows, err := h.pool.Query(r.Context(), `SELECT workspace.id,workspace.display_name,visibility.access_status FROM tsw_mother_workspace_visibility visibility JOIN tsw_workspaces workspace ON workspace.id=visibility.workspace_id JOIN tsw_mother_discoveries discovery ON discovery.mother_account_id=visibility.mother_account_id AND discovery.run_id=visibility.run_id AND discovery.observed_at>now()-interval '7 days' JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=visibility.mother_account_id AND credential.secret_revision=discovery.secret_revision JOIN tsw_mother_personal_sessions session ON session.mother_account_id=visibility.mother_account_id AND session.secret_revision=credential.secret_revision AND session.expires_at>now() WHERE visibility.mother_account_id=$1 ORDER BY workspace.display_name,workspace.id`, accountID)
 	if err != nil {
 		return response, err
 	}

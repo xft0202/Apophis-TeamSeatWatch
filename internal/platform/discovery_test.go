@@ -10,7 +10,7 @@ func TestValidateDiscoveryRejectsAmbiguousOrInventedWorkspaceFacts(t *testing.T)
 	}{
 		{"multiple", DiscoveryResult{Status: "discovered", Workspaces: []DiscoveredWorkspace{{PlatformID: "team-a", Name: "Team A", Access: "readable"}, {PlatformID: "team-b", Name: "Team B", Access: "permission_denied"}}}, true},
 		{"empty", DiscoveryResult{Status: "discovered"}, true},
-		{"invalid_login", DiscoveryResult{Status: "invalid_login"}, true},
+		{"session_expired", DiscoveryResult{Status: "session_expired"}, true},
 		{"permission_denied", DiscoveryResult{Status: "permission_denied"}, true},
 		{"duplicate", DiscoveryResult{Status: "discovered", Workspaces: []DiscoveredWorkspace{{PlatformID: "team-a", Name: "Team A", Access: "readable"}, {PlatformID: "team-a", Name: "Other", Access: "readable"}}}, false},
 		{"failure_with_items", DiscoveryResult{Status: "discovery_failed", Workspaces: []DiscoveredWorkspace{{PlatformID: "team-a", Name: "Team A", Access: "readable"}}}, false},
@@ -27,7 +27,7 @@ func TestValidateDiscoveryRejectsAmbiguousOrInventedWorkspaceFacts(t *testing.T)
 }
 
 func TestUnavailableDiscoveryFailsClosed(t *testing.T) {
-	result, err := (UnavailableDiscovery{}).VerifyAndDiscover(t.Context(), MotherMaterial{LoginIdentifier: "mother@example.test", Password: "secret"})
+	result, err := (UnavailableDiscovery{}).Discover(t.Context(), PersonalSession{})
 	if err != ErrDiscoveryUnavailable || len(result.Workspaces) != 0 || result.Status != "" {
 		t.Fatalf("default adapter must not invent access: %+v %v", result, err)
 	}

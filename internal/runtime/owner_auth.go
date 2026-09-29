@@ -34,6 +34,7 @@ type OwnerAuthConfig struct {
 	Egress           *egress.Manager
 	DestinationProbe DestinationProbe
 	Discovery       platform.DiscoveryAdapter
+	PersonalRefresh platform.PersonalSessionRefresher
 }
 
 // OwnerAuthHandler owns the HTTP boundary for the Ticket 03 Owner security API.
@@ -47,6 +48,7 @@ type OwnerAuthHandler struct {
 	egress            *egress.Manager
 	destinationProbe  DestinationProbe
 	discovery         platform.DiscoveryAdapter
+	personalRefresh   platform.PersonalSessionRefresher
 	secureCookies     bool
 }
 
@@ -111,6 +113,7 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 		egress:            config.Egress,
 		destinationProbe:  config.DestinationProbe,
 		discovery:         config.Discovery,
+		personalRefresh:   config.PersonalRefresh,
 		secureCookies:     config.Origins.SecureCookies(),
 	}
 	mux := http.NewServeMux()

@@ -1,6 +1,12 @@
 import type { components } from '../../generated/owner';
 
 type Discovery = components['schemas']['MotherDiscovery'];
+type PersonalAccess = components['schemas']['MotherPersonalAccess'];
+
+export function canDiscover(access: PersonalAccess | null): boolean {
+  return access?.status === 'ready';
+}
+
 type VisibleWorkspace = components['schemas']['MotherVisibleWorkspace'];
 
 export function isWorkspaceSelectable(workspace: VisibleWorkspace): boolean {

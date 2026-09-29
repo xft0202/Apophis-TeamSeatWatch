@@ -69,11 +69,12 @@ func NewControlHandlers(config ControlConfig) (ControlHandlers, error) {
 		return ControlHandlers{}, fmt.Errorf("invalid TOTP key ring: %w", err)
 	}
 	ownerAuth, closeOwnerAuth, err := NewOwnerAuthHandler(OwnerAuthConfig{
-		DatabaseURL: config.DatabaseURL,
-		KeyRing:     keyRing,
-		Origins:     config.OwnerOrigins,
-		Egress:      config.Egress,
-		Discovery:   platform.UnavailableDiscovery{},
+		DatabaseURL:     config.DatabaseURL,
+		KeyRing:         keyRing,
+		Origins:         config.OwnerOrigins,
+		Egress:          config.Egress,
+		Discovery:       platform.UnavailableDiscovery{},
+		PersonalRefresh: platform.UnavailablePersonalRefresh{},
 	})
 	if err != nil {
 		closeHealth()
