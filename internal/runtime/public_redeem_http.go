@@ -704,18 +704,18 @@ func loadRedeemFactsForUpdate(ctx context.Context, tx pgx.Tx, keyVersion uint16,
 	if err != nil {
 		return facts, err
 	}
-	var cardID string
-	if err := tx.QueryRow(ctx, `SELECT id::text FROM tsw_cards WHERE id=$1::uuid FOR UPDATE`, facts.CardID).Scan(&cardID); err != nil {
-		return redeemFacts{}, err
-	}
-	// A first claim is ordered against Owner material corrections. Existing orders
-	// are still restored from their immutable delivery version, irrespective of
-	// later changes to login material.
+	// Activation locks the credential before the card. Keep that same order
+	// so a concurrent idempotent activation cannot deadlock a first claim.
+	// Existing orders still restore from their immutable delivery version.
 	var materialStatus string
 	err = tx.QueryRow(ctx, `SELECT credential.material_status FROM tsw_batch_memberships membership
 		JOIN tsw_target_credentials credential ON credential.target_account_id=membership.target_account_id
 		WHERE membership.id=$1::uuid FOR SHARE OF credential`, facts.MembershipID).Scan(&materialStatus)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return redeemFacts{}, err
+	}
+	var cardID string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM tsw_cards WHERE id=$1::uuid FOR UPDATE`, facts.CardID).Scan(&cardID); err != nil {
 		return redeemFacts{}, err
 	}
 	return loadRedeemFacts(ctx, tx, keyVersion, lookup)
