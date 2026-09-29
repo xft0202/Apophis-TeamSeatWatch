@@ -704,15 +704,22 @@ func loadRedeemFactsForUpdate(ctx context.Context, tx pgx.Tx, keyVersion uint16,
 	if err != nil {
 		return facts, err
 	}
-	// Activation locks the credential before the card. Keep that same order
-	// so a concurrent idempotent activation cannot deadlock a first claim.
-	// Existing orders still restore from their immutable delivery version.
-	var materialStatus string
-	err = tx.QueryRow(ctx, `SELECT credential.material_status FROM tsw_batch_memberships membership
-		JOIN tsw_target_credentials credential ON credential.target_account_id=membership.target_account_id
-		WHERE membership.id=$1::uuid FOR SHARE OF credential`, facts.MembershipID).Scan(&materialStatus)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return redeemFacts{}, err
+	// Match Owner activation's membership/batch/asset/credential-before-card
+	// lock order. The membership and asset locks also protect the first order's
+	// FK checks from inverting against an activation waiting for credentials.
+	// Existing orders need no current material and retain immutable restore.
+	if !facts.hasOrder() {
+		var lockedMembership string
+		err = tx.QueryRow(ctx, `SELECT membership.id::text FROM tsw_batch_memberships membership
+			JOIN tsw_batches batch ON batch.id=membership.batch_id
+			JOIN tsw_mother_workspace_bindings binding ON binding.id=batch.binding_id
+			JOIN tsw_oauth_assets asset ON asset.membership_id=membership.id
+			JOIN tsw_target_credentials credential ON credential.target_account_id=membership.target_account_id
+			WHERE membership.id=$1::uuid AND membership.state='active'
+			FOR SHARE OF membership,batch,asset,credential`, facts.MembershipID).Scan(&lockedMembership)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return redeemFacts{}, err
+		}
 	}
 	var cardID string
 	if err := tx.QueryRow(ctx, `SELECT id::text FROM tsw_cards WHERE id=$1::uuid FOR UPDATE`, facts.CardID).Scan(&cardID); err != nil {
