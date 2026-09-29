@@ -31,6 +31,25 @@ func TestAccountsCheckDiscoveryUsesOnlySavedPersonalSessionAndReadOnlyEndpoint(t
 	}
 }
 
+func TestParseAccountsCheckWorkspacesFailsClosedOnPersonalAndUnknownPlans(t *testing.T) {
+	workspaces, err := ParseAccountsCheckWorkspaces([]byte(`{"accounts":{"personal-key":{"account":{"account_id":"PERSONAL","name":"Private","plan_type":"Team","structure":"Workspace"}},"free-key":{"account":{"account_id":"team-free","name":"Private","plan_type":"Free","structure":"workspace"}},"default-key":{"account":{"account_id":"team-default","name":"Private","plan_type":"team","kind":"DEFAULT","structure":"workspace"}},"real":{"account":{"account_id":"team-1","name":"One","plan_type":"Business","kind":"Workspace","structure":"Workspace"}}}}`))
+	if err != nil || len(workspaces) != 1 || workspaces[0].PlatformID != "team-1" || workspaces[0].Access != "readable" {
+		t.Fatalf("case-insensitive exclusion/Team admission: %+v %v", workspaces, err)
+	}
+	for _, tt := range []struct{ name, body string }{
+		{"unknown_plan", `{"accounts":{"other":{"account":{"account_id":"team-x","name":"Other","plan_type":"enterprise","structure":"workspace"}}}}`},
+		{"unknown_kind", `{"accounts":{"other":{"account":{"account_id":"team-x","name":"Other","plan_type":"team","kind":"unclassified","structure":"workspace"}}}}`},
+		{"unknown_structure", `{"accounts":{"other":{"account":{"account_id":"team-x","name":"Other","plan_type":"team","structure":"unclassified"}}}}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			items, err := ParseAccountsCheckWorkspaces([]byte(tt.body))
+			if err == nil || len(items) != 0 {
+				t.Fatalf("unsupported entry became selectable: %+v %v", items, err)
+			}
+		})
+	}
+}
+
 func TestAccountsCheckDiscoveryDoesNotTreatFailuresAsEmpty(t *testing.T) {
 	for _, tt := range []struct {
 		name   string

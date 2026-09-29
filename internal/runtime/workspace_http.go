@@ -218,6 +218,20 @@ func (h *OwnerAuthHandler) updateMotherAccount(w http.ResponseWriter, r *http.Re
 	if err == nil && credentialChanged {
 		_, err = tx.Exec(r.Context(), `UPDATE tsw_mother_account_credentials SET password_secret=CASE WHEN $5 THEN $2 ELSE password_secret END, totp_secret=CASE WHEN $4 THEN NULLIF($3,'')::bytea ELSE totp_secret END, secret_revision=secret_revision+1, version=version+1 WHERE mother_account_id=$1`, item.Id, []byte(stringValue(request.Password)), []byte(stringValue(request.TotpSecret)), request.TotpSecret != nil, request.Password != nil)
 	}
+	// The revision fence prevents reads, but old sealed AT/cookies must not
+	// survive a material rotation (or disabling the account) indefinitely.
+	if err == nil && (credentialChanged || string(request.Status) == "disabled") {
+		_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, item.Id)
+		if err == nil {
+			_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_workspace_visibility WHERE mother_account_id=$1`, item.Id)
+		}
+		if err == nil {
+			_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_discoveries WHERE mother_account_id=$1`, item.Id)
+		}
+		if err == nil {
+			_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_personal_access WHERE mother_account_id=$1`, item.Id)
+		}
+	}
 	if err == nil {
 		item.AccessStatus = ownerapi.MotherAccountAccessStatusNotVerified
 		err = tx.QueryRow(r.Context(), `SELECT login_identifier, CASE WHEN totp_secret IS NULL THEN 'needs_totp' ELSE 'complete' END FROM tsw_mother_account_credentials WHERE mother_account_id=$1`, item.Id).Scan(&item.LoginIdentifier, &item.MaterialStatus)

@@ -113,15 +113,20 @@ func ParseAccountsCheckWorkspaces(data []byte) ([]DiscoveredWorkspace, error) {
 		if item == nil {
 			return nil, errors.New("accounts check account missing")
 		}
-		if item.Plan == "personal" || item.Plan == "free" || item.Plan == "default" ||
-			item.Kind == "personal" || item.Kind == "free" || item.Kind == "default" ||
-			key == "personal" || key == "free" || key == "default" {
+		id, name := strings.TrimSpace(item.ID), strings.TrimSpace(item.Name)
+		plan, kind := strings.ToLower(strings.TrimSpace(item.Plan)), strings.ToLower(strings.TrimSpace(item.Kind))
+		structure := strings.ToLower(strings.TrimSpace(item.Structure))
+		isExcluded := func(value string) bool { return value == "personal" || value == "free" || value == "default" }
+		if isExcluded(strings.ToLower(strings.TrimSpace(key))) || isExcluded(strings.ToLower(id)) ||
+			isExcluded(plan) || isExcluded(kind) || isExcluded(structure) {
 			continue
 		}
-		if item.Structure != "workspace" || strings.TrimSpace(item.Plan) == "" {
-			return nil, errors.New("accounts check workspace kind or plan unknown")
+		// Team/Business are the only evidenced target plans. Unknown plans or
+		// kinds cannot become selectable merely because structure says workspace.
+		if structure != "workspace" || (plan != "team" && plan != "business") ||
+			(kind != "" && kind != "workspace" && kind != "team") {
+			return nil, errors.New("accounts check Team plan or kind unknown")
 		}
-		id, name := strings.TrimSpace(item.ID), strings.TrimSpace(item.Name)
 		if id == "" || name == "" || len(id) > 255 || len(name) > 120 {
 			return nil, errors.New("accounts check workspace identity incomplete")
 		}

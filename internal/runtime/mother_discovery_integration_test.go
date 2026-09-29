@@ -383,4 +383,33 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	if status, state := readDiscovery(http.MethodGet, firstID, true, false); status != 200 || state.Status != "not_verified" || len(state.Workspaces) != 0 {
 		t.Fatalf("refresh left stale visibility: %d %+v", status, state)
 	}
+	if status, state := readDiscovery(http.MethodPost, firstID, true, true); status != 200 || state.Status != "discovered" {
+		t.Fatalf("prepare visibility before credential rotation: %d %+v", status, state)
+	}
+	// PATCH must delete the old encrypted AT and every access/visibility row
+	// in the same transaction as the source credential revision increase.
+	patch := httptest.NewRequest(http.MethodPatch, "/api/owner/v1/mother-accounts/"+firstID.String(), bytes.NewBufferString(`{"displayName":"Mother A","status":"active","password":"replaced"}`))
+	patch.Header.Set("Origin", "https://owner.test")
+	patch.Header.Set("Content-Type", "application/json")
+	patch.Header.Set("If-Match", `"1"`)
+	patch.Header.Set(auth.CSRFHeaderName, csrf)
+	patch.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: session})
+	patch.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: csrf})
+	patched := httptest.NewRecorder()
+	serve.ServeHTTP(patched, patch)
+	if patched.Code != 200 {
+		t.Fatalf("credential rotation failed: %d %s", patched.Code, patched.Body.String())
+	}
+	for _, cookie := range patched.Result().Cookies() {
+		if cookie.Name == auth.SessionCookieName {
+			session = cookie.Value
+		}
+	}
+	var oldSessions, oldVisibility, oldDiscovery, oldAccess int
+	if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM tsw_mother_personal_sessions WHERE mother_account_id=$1),(SELECT count(*) FROM tsw_mother_workspace_visibility WHERE mother_account_id=$1),(SELECT count(*) FROM tsw_mother_discoveries WHERE mother_account_id=$1),(SELECT count(*) FROM tsw_mother_personal_access WHERE mother_account_id=$1)`, firstID).Scan(&oldSessions, &oldVisibility, &oldDiscovery, &oldAccess); err != nil || oldSessions != 0 || oldVisibility != 0 || oldDiscovery != 0 || oldAccess != 0 {
+		t.Fatalf("credential rotation retained Personal facts: sessions=%d visibility=%d discovery=%d access=%d err=%v", oldSessions, oldVisibility, oldDiscovery, oldAccess, err)
+	}
+	if status, state := readDiscovery(http.MethodGet, firstID, true, false); status != 200 || state.Status != "not_verified" || len(state.Workspaces) != 0 {
+		t.Fatalf("rotated material still discoverable: %d %+v", status, state)
+	}
 }
