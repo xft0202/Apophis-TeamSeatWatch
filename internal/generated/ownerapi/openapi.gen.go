@@ -534,6 +534,42 @@ func (e ManualVerificationRequestSource) Valid() bool {
 	}
 }
 
+// Defines values for MotherAccountAccessStatus.
+const (
+	NotVerified MotherAccountAccessStatus = "not_verified"
+	Verified    MotherAccountAccessStatus = "verified"
+)
+
+// Valid indicates whether the value is a known member of the MotherAccountAccessStatus enum.
+func (e MotherAccountAccessStatus) Valid() bool {
+	switch e {
+	case NotVerified:
+		return true
+	case Verified:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MotherAccountMaterialStatus.
+const (
+	MotherAccountMaterialStatusComplete  MotherAccountMaterialStatus = "complete"
+	MotherAccountMaterialStatusNeedsTotp MotherAccountMaterialStatus = "needs_totp"
+)
+
+// Valid indicates whether the value is a known member of the MotherAccountMaterialStatus enum.
+func (e MotherAccountMaterialStatus) Valid() bool {
+	switch e {
+	case MotherAccountMaterialStatusComplete:
+		return true
+	case MotherAccountMaterialStatusNeedsTotp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MotherAccountStatus.
 const (
 	MotherAccountStatusActive   MotherAccountStatus = "active"
@@ -546,6 +582,30 @@ func (e MotherAccountStatus) Valid() bool {
 	case MotherAccountStatusActive:
 		return true
 	case MotherAccountStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MotherAccountImportRowStatus.
+const (
+	MotherAccountImportRowStatusDuplicate MotherAccountImportRowStatus = "duplicate"
+	MotherAccountImportRowStatusImported  MotherAccountImportRowStatus = "imported"
+	MotherAccountImportRowStatusInvalid   MotherAccountImportRowStatus = "invalid"
+	MotherAccountImportRowStatusNeedsTotp MotherAccountImportRowStatus = "needs_totp"
+)
+
+// Valid indicates whether the value is a known member of the MotherAccountImportRowStatus enum.
+func (e MotherAccountImportRowStatus) Valid() bool {
+	switch e {
+	case MotherAccountImportRowStatusDuplicate:
+		return true
+	case MotherAccountImportRowStatusImported:
+		return true
+	case MotherAccountImportRowStatusInvalid:
+		return true
+	case MotherAccountImportRowStatusNeedsTotp:
 		return true
 	default:
 		return false
@@ -1505,6 +1565,18 @@ type ExitPoolStatus struct {
 // ExitPoolStatusMode defines model for ExitPoolStatus.Mode.
 type ExitPoolStatusMode string
 
+// ExportMotherAccounts defines model for ExportMotherAccounts.
+type ExportMotherAccounts struct {
+	AccountIds    *[]openapi_types.UUID `json:"accountIds,omitempty"`
+	Confirmed     bool                  `json:"confirmed"`
+	ExpectedCount int                   `json:"expectedCount"`
+}
+
+// ImportMotherAccounts defines model for ImportMotherAccounts.
+type ImportMotherAccounts struct {
+	Content string `json:"content"`
+}
+
 // JoinOperation defines model for JoinOperation.
 type JoinOperation struct {
 	AuthorizedAt   time.Time             `json:"authorizedAt"`
@@ -1602,16 +1674,44 @@ type ManualVerificationRequestSource string
 
 // MotherAccount defines model for MotherAccount.
 type MotherAccount struct {
-	DisplayName        string              `json:"displayName"`
-	Id                 openapi_types.UUID  `json:"id"`
-	PlatformAccountRef *string             `json:"platformAccountRef,omitempty"`
-	Status             MotherAccountStatus `json:"status"`
-	UpdatedAt          time.Time           `json:"updatedAt"`
-	Version            int64               `json:"version"`
+	AccessStatus       MotherAccountAccessStatus   `json:"accessStatus"`
+	DisplayName        string                      `json:"displayName"`
+	Id                 openapi_types.UUID          `json:"id"`
+	LoginIdentifier    string                      `json:"loginIdentifier"`
+	MaterialStatus     MotherAccountMaterialStatus `json:"materialStatus"`
+	PlatformAccountRef *string                     `json:"platformAccountRef,omitempty"`
+	Status             MotherAccountStatus         `json:"status"`
+	UpdatedAt          time.Time                   `json:"updatedAt"`
+	Version            int64                       `json:"version"`
 }
+
+// MotherAccountAccessStatus defines model for MotherAccount.AccessStatus.
+type MotherAccountAccessStatus string
+
+// MotherAccountMaterialStatus defines model for MotherAccount.MaterialStatus.
+type MotherAccountMaterialStatus string
 
 // MotherAccountStatus defines model for MotherAccount.Status.
 type MotherAccountStatus string
+
+// MotherAccountImportResult defines model for MotherAccountImportResult.
+type MotherAccountImportResult struct {
+	Duplicate int                      `json:"duplicate"`
+	Imported  int                      `json:"imported"`
+	Invalid   int                      `json:"invalid"`
+	Rows      []MotherAccountImportRow `json:"rows"`
+}
+
+// MotherAccountImportRow defines model for MotherAccountImportRow.
+type MotherAccountImportRow struct {
+	Identifier *string                      `json:"identifier,omitempty"`
+	Line       int                          `json:"line"`
+	Message    *string                      `json:"message,omitempty"`
+	Status     MotherAccountImportRowStatus `json:"status"`
+}
+
+// MotherAccountImportRowStatus defines model for MotherAccountImportRow.Status.
+type MotherAccountImportRowStatus string
 
 // MotherAccountList defines model for MotherAccountList.
 type MotherAccountList struct {
@@ -1898,7 +1998,9 @@ type UpdateBatch struct {
 // UpdateMotherAccount defines model for UpdateMotherAccount.
 type UpdateMotherAccount struct {
 	DisplayName string                    `json:"displayName"`
+	Password    *string                   `json:"password,omitempty"`
 	Status      UpdateMotherAccountStatus `json:"status"`
+	TotpSecret  *string                   `json:"totpSecret,omitempty"`
 }
 
 // UpdateMotherAccountStatus defines model for UpdateMotherAccount.Status.
@@ -2265,6 +2367,7 @@ type ListMotherAccountsParams struct {
 	Page     *Page                         `form:"page,omitempty" json:"page,omitempty"`
 	PageSize *PageSize                     `form:"page_size,omitempty" json:"page_size,omitempty"`
 	Sort     *ListMotherAccountsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+	Search   *Search                       `form:"search,omitempty" json:"search,omitempty"`
 }
 
 // ListMotherAccountsParamsSort defines parameters for ListMotherAccounts.
@@ -2272,6 +2375,16 @@ type ListMotherAccountsParamsSort string
 
 // CreateMotherAccountParams defines parameters for CreateMotherAccount.
 type CreateMotherAccountParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// ExportMotherAccountsParams defines parameters for ExportMotherAccounts.
+type ExportMotherAccountsParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// ImportMotherAccountsParams defines parameters for ImportMotherAccounts.
+type ImportMotherAccountsParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
@@ -2433,6 +2546,12 @@ type ActivateMembershipCardJSONRequestBody = ActivateCardRequest
 // CreateMotherAccountJSONRequestBody defines body for CreateMotherAccount for application/json ContentType.
 type CreateMotherAccountJSONRequestBody = CreateMotherAccount
 
+// ExportMotherAccountsJSONRequestBody defines body for ExportMotherAccounts for application/json ContentType.
+type ExportMotherAccountsJSONRequestBody = ExportMotherAccounts
+
+// ImportMotherAccountsJSONRequestBody defines body for ImportMotherAccounts for application/json ContentType.
+type ImportMotherAccountsJSONRequestBody = ImportMotherAccounts
+
 // UpdateMotherAccountJSONRequestBody defines body for UpdateMotherAccount for application/json ContentType.
 type UpdateMotherAccountJSONRequestBody = UpdateMotherAccount
 
@@ -2564,6 +2683,12 @@ type ServerInterface interface {
 
 	// (POST /api/owner/v1/mother-accounts)
 	CreateMotherAccount(w http.ResponseWriter, r *http.Request, params CreateMotherAccountParams)
+
+	// (POST /api/owner/v1/mother-accounts/export)
+	ExportMotherAccounts(w http.ResponseWriter, r *http.Request, params ExportMotherAccountsParams)
+
+	// (POST /api/owner/v1/mother-accounts/import)
+	ImportMotherAccounts(w http.ResponseWriter, r *http.Request, params ImportMotherAccountsParams)
 
 	// (PATCH /api/owner/v1/mother-accounts/{accountId})
 	UpdateMotherAccount(w http.ResponseWriter, r *http.Request, accountId AccountId, params UpdateMotherAccountParams)
@@ -4329,6 +4454,19 @@ func (siw *ServerInterfaceWrapper) ListMotherAccounts(w http.ResponseWriter, r *
 		return
 	}
 
+	// ------------- Optional query parameter "search" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "search", r.URL.Query(), &params.Search, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "search"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "search", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListMotherAccounts(w, r, params)
 	}))
@@ -4376,6 +4514,96 @@ func (siw *ServerInterfaceWrapper) CreateMotherAccount(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateMotherAccount(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExportMotherAccounts operation middleware
+func (siw *ServerInterfaceWrapper) ExportMotherAccounts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExportMotherAccountsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportMotherAccounts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ImportMotherAccounts operation middleware
+func (siw *ServerInterfaceWrapper) ImportMotherAccounts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ImportMotherAccountsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportMotherAccounts(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5612,6 +5840,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/owner/v1/sessions/{sessionId}", wrapper.RevokeOwnerSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/mother-accounts", wrapper.ListMotherAccounts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts", wrapper.CreateMotherAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts/import", wrapper.ImportMotherAccounts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts/export", wrapper.ExportMotherAccounts)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/mother-accounts/{accountId}", wrapper.UpdateMotherAccount)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces", wrapper.ListWorkspaces)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces", wrapper.CreateWorkspace)

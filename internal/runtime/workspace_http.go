@@ -91,7 +91,16 @@ func (h *OwnerAuthHandler) listMotherAccounts(w http.ResponseWriter, r *http.Req
 		writeProblem(w, r, 400, "invalid_sort", "Invalid Request", "Sort is not allowed", 0)
 		return
 	}
-	rows, err := h.pool.Query(r.Context(), `SELECT id, display_name, platform_account_ref, status, version, updated_at, count(*) OVER() FROM tsw_mother_accounts ORDER BY `+order+` LIMIT $1 OFFSET $2`, size, (page-1)*size)
+	search := ""
+	if params.Search != nil {
+		search = strings.TrimSpace(string(*params.Search))
+	}
+	rows, err := h.pool.Query(r.Context(), `SELECT account.id, account.display_name, account.platform_account_ref, account.status, account.version, account.updated_at,
+		credential.login_identifier, CASE WHEN credential.totp_secret IS NULL THEN 'needs_totp' ELSE 'complete' END,
+		count(*) OVER() FROM tsw_mother_accounts account
+		JOIN tsw_mother_account_credentials credential ON credential.mother_account_id = account.id
+		WHERE ($3 = '' OR credential.login_identifier ILIKE '%' || $3 || '%' OR account.display_name ILIKE '%' || $3 || '%')
+		ORDER BY `+order+` LIMIT $1 OFFSET $2`, size, (page-1)*size, search)
 	if err != nil {
 		h.workspaceFailure(w, r, err)
 		return
@@ -100,10 +109,11 @@ func (h *OwnerAuthHandler) listMotherAccounts(w http.ResponseWriter, r *http.Req
 	response := ownerapi.MotherAccountList{Items: []ownerapi.MotherAccount{}, Page: page, PageSize: size}
 	for rows.Next() {
 		var item motherAccountDTO
-		if err := rows.Scan(&item.Id, &item.DisplayName, &item.PlatformAccountRef, &item.Status, &item.Version, &item.UpdatedAt, &response.Total); err != nil {
+		if err := rows.Scan(&item.Id, &item.DisplayName, &item.PlatformAccountRef, &item.Status, &item.Version, &item.UpdatedAt, &item.LoginIdentifier, &item.MaterialStatus, &response.Total); err != nil {
 			h.workspaceFailure(w, r, err)
 			return
 		}
+		item.AccessStatus = ownerapi.NotVerified
 		response.Items = append(response.Items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -138,6 +148,14 @@ func (h *OwnerAuthHandler) createMotherAccount(w http.ResponseWriter, r *http.Re
 	defer tx.Rollback(r.Context())
 	var item motherAccountDTO
 	err = tx.QueryRow(r.Context(), `INSERT INTO tsw_mother_accounts (display_name, platform_account_ref) VALUES ($1,NULLIF($2,'')) RETURNING id,display_name,platform_account_ref,status,version,updated_at`, displayName, strings.TrimSpace(stringValue(request.PlatformAccountRef))).Scan(&item.Id, &item.DisplayName, &item.PlatformAccountRef, &item.Status, &item.Version, &item.UpdatedAt)
+	item.LoginIdentifier = loginIdentifier
+	item.AccessStatus = ownerapi.NotVerified
+	item.MaterialStatus = ownerapi.MotherAccountMaterialStatusComplete
+	if totp := strings.TrimSpace(stringValue(request.TotpSecret)); totp == "" {
+		item.MaterialStatus = ownerapi.MotherAccountMaterialStatusNeedsTotp
+	} else if _, totpErr := auth.TOTPCode(totp, time.Now()); totpErr != nil {
+		item.MaterialStatus = ownerapi.MotherAccountMaterialStatusNeedsTotp
+	}
 	if err == nil {
 		identifier, keyVersion, fingerprint, fingerprintErr := identity.Fingerprint(h.keyRing, identity.MotherLogin, loginIdentifier)
 		if fingerprintErr != nil {
@@ -181,7 +199,10 @@ func (h *OwnerAuthHandler) updateMotherAccount(w http.ResponseWriter, r *http.Re
 	}
 	displayName := strings.TrimSpace(request.DisplayName)
 	if !validLength(displayName, 1, 120) ||
-		(string(request.Status) != "active" && string(request.Status) != "disabled") {
+		(string(request.Status) != "active" && string(request.Status) != "disabled") ||
+		(request.Password != nil && !validLength(stringValue(request.Password), 1, 1024)) ||
+		(request.TotpSecret != nil && !optionalLength(request.TotpSecret, 1024)) {
+
 		h.rejectOwnerMutation(w, r, owner, "mother_account.update", "invalid_request", http.StatusUnprocessableEntity, "invalid_account", "Invalid Account", "Account fields are invalid")
 		return
 	}
@@ -193,6 +214,14 @@ func (h *OwnerAuthHandler) updateMotherAccount(w http.ResponseWriter, r *http.Re
 	defer tx.Rollback(r.Context())
 	var item motherAccountDTO
 	err = tx.QueryRow(r.Context(), `UPDATE tsw_mother_accounts SET display_name=$3,status=$4,updated_at=now(),version=version+1 WHERE id=$1 AND version=$2 RETURNING id,display_name,platform_account_ref,status,version,updated_at`, r.PathValue("accountId"), version, displayName, string(request.Status)).Scan(&item.Id, &item.DisplayName, &item.PlatformAccountRef, &item.Status, &item.Version, &item.UpdatedAt)
+	credentialChanged := request.Password != nil || request.TotpSecret != nil
+	if err == nil && credentialChanged {
+		_, err = tx.Exec(r.Context(), `UPDATE tsw_mother_account_credentials SET password_secret=CASE WHEN $5 THEN $2 ELSE password_secret END, totp_secret=CASE WHEN $4 THEN NULLIF($3,'')::bytea ELSE totp_secret END, secret_revision=secret_revision+1, version=version+1 WHERE mother_account_id=$1`, item.Id, []byte(stringValue(request.Password)), []byte(stringValue(request.TotpSecret)), request.TotpSecret != nil, request.Password != nil)
+	}
+	if err == nil {
+		item.AccessStatus = ownerapi.NotVerified
+		err = tx.QueryRow(r.Context(), `SELECT login_identifier, CASE WHEN totp_secret IS NULL THEN 'needs_totp' ELSE 'complete' END FROM tsw_mother_account_credentials WHERE mother_account_id=$1`, item.Id).Scan(&item.LoginIdentifier, &item.MaterialStatus)
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		h.rejectOwnerMutation(w, r, owner, "mother_account.update", "version_mismatch", http.StatusPreconditionFailed, "version_mismatch", "Precondition Failed", "The account changed")
 		return
@@ -205,9 +234,17 @@ func (h *OwnerAuthHandler) updateMotherAccount(w http.ResponseWriter, r *http.Re
 			IdempotencyKey: item.Id.String() + ":updated:" + strconv.FormatInt(item.Version, 10),
 		})
 	}
+	var token string
+	var idle time.Time
+	if err == nil && credentialChanged {
+		token, idle, err = h.rotateSessionTx(r.Context(), tx, owner, "session_revocation", r)
+	}
 	if err != nil || tx.Commit(r.Context()) != nil {
 		h.workspaceFailure(w, r, err)
 		return
+	}
+	if credentialChanged {
+		auth.SetSessionCookie(w, token, idle, h.secureCookies)
 	}
 	setETag(w, item.Version)
 	writeJSON(w, http.StatusOK, item)

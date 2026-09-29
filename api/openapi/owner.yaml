@@ -114,6 +114,7 @@ paths:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
         - $ref: '#/components/parameters/AccountSort'
+        - $ref: '#/components/parameters/Search'
       responses:
         '200':
           description: Paginated administrator accounts
@@ -146,6 +147,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MotherAccount'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/mother-accounts/import:
+    post:
+      operationId: importMotherAccounts
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportMotherAccounts'
+      responses:
+        '200':
+          description: Per-line material import results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotherAccountImportResult'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/mother-accounts/export:
+    post:
+      operationId: exportMotherAccounts
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportMotherAccounts'
+      responses:
+        '200':
+          description: Confirmed material export for the current Owner session
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            text/plain:
+              schema:
+                type: string
         default:
           $ref: '#/components/responses/Problem'
   /api/owner/v1/mother-accounts/{accountId}:
@@ -1526,6 +1575,9 @@ components:
         - status
         - version
         - updatedAt
+        - loginIdentifier
+        - materialStatus
+        - accessStatus
       properties:
         id:
           type: string
@@ -1545,6 +1597,18 @@ components:
         updatedAt:
           type: string
           format: date-time
+        loginIdentifier:
+          type: string
+        materialStatus:
+          type: string
+          enum:
+            - complete
+            - needs_totp
+        accessStatus:
+          type: string
+          enum:
+            - not_verified
+            - verified
     MotherAccountList:
       type: object
       additionalProperties: false
@@ -1591,6 +1655,72 @@ components:
         totpSecret:
           type: string
           maxLength: 1024
+    ImportMotherAccounts:
+      type: object
+      additionalProperties: false
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          maxLength: 10485760
+    MotherAccountImportResult:
+      type: object
+      additionalProperties: false
+      required:
+        - rows
+        - imported
+        - duplicate
+        - invalid
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/MotherAccountImportRow'
+        imported:
+          type: integer
+        duplicate:
+          type: integer
+        invalid:
+          type: integer
+    MotherAccountImportRow:
+      type: object
+      additionalProperties: false
+      required:
+        - line
+        - status
+      properties:
+        line:
+          type: integer
+        status:
+          type: string
+          enum:
+            - imported
+            - duplicate
+            - invalid
+            - needs_totp
+        identifier:
+          type: string
+        message:
+          type: string
+    ExportMotherAccounts:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedCount
+        - confirmed
+      properties:
+        accountIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 10000
+        expectedCount:
+          type: integer
+          minimum: 1
+        confirmed:
+          type: boolean
     UpdateMotherAccount:
       type: object
       additionalProperties: false
@@ -1607,6 +1737,13 @@ components:
           enum:
             - active
             - disabled
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        totpSecret:
+          type: string
+          maxLength: 1024
     Workspace:
       type: object
       additionalProperties: false

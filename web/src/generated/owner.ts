@@ -132,6 +132,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/mother-accounts/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importMotherAccounts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/mother-accounts/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["exportMotherAccounts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/mother-accounts/{accountId}": {
         parameters: {
             query?: never;
@@ -801,6 +833,11 @@ export interface components {
             version: number;
             /** Format: date-time */
             updatedAt: string;
+            loginIdentifier: string;
+            /** @enum {string} */
+            materialStatus: "complete" | "needs_totp";
+            /** @enum {string} */
+            accessStatus: "not_verified" | "verified";
         };
         MotherAccountList: {
             items: components["schemas"]["MotherAccount"][];
@@ -816,10 +853,33 @@ export interface components {
             password: string;
             totpSecret?: string;
         };
+        ImportMotherAccounts: {
+            content: string;
+        };
+        MotherAccountImportResult: {
+            rows: components["schemas"]["MotherAccountImportRow"][];
+            imported: number;
+            duplicate: number;
+            invalid: number;
+        };
+        MotherAccountImportRow: {
+            line: number;
+            /** @enum {string} */
+            status: "imported" | "duplicate" | "invalid" | "needs_totp";
+            identifier?: string;
+            message?: string;
+        };
+        ExportMotherAccounts: {
+            accountIds?: string[];
+            expectedCount: number;
+            confirmed: boolean;
+        };
         UpdateMotherAccount: {
             displayName: string;
             /** @enum {string} */
             status: "active" | "disabled";
+            password?: string;
+            totpSecret?: string;
         };
         Workspace: {
             /** Format: uuid */
@@ -1712,6 +1772,7 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
                 sort?: components["parameters"]["AccountSort"];
+                search?: components["parameters"]["Search"];
             };
             header?: never;
             path?: never;
@@ -1754,6 +1815,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MotherAccount"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    importMotherAccounts: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportMotherAccounts"];
+            };
+        };
+        responses: {
+            /** @description Per-line material import results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MotherAccountImportResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    exportMotherAccounts: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportMotherAccounts"];
+            };
+        };
+        responses: {
+            /** @description Confirmed material export for the current Owner session */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
                 };
             };
             default: components["responses"]["Problem"];

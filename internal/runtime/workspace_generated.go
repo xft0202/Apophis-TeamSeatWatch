@@ -31,6 +31,14 @@ func (h *OwnerAuthHandler) CreateMotherAccount(w http.ResponseWriter, r *http.Re
 	h.createMotherAccount(w, r)
 }
 
+func (h *OwnerAuthHandler) ImportMotherAccounts(w http.ResponseWriter, r *http.Request, params ownerapi.ImportMotherAccountsParams) {
+	h.importMotherAccounts(w, r, params)
+}
+
+func (h *OwnerAuthHandler) ExportMotherAccounts(w http.ResponseWriter, r *http.Request, params ownerapi.ExportMotherAccountsParams) {
+	h.exportMotherAccounts(w, r, params)
+}
+
 func (h *OwnerAuthHandler) UpdateMotherAccount(w http.ResponseWriter, r *http.Request, accountID openapi_types.UUID, params ownerapi.UpdateMotherAccountParams) {
 	r.SetPathValue("accountId", accountID.String())
 	h.updateMotherAccount(w, r, params)

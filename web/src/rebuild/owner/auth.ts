@@ -80,6 +80,47 @@ export async function refreshOwnerSession(): Promise<void> {
   throwIfFailed(response);
 }
 
+export async function listMotherAccounts(search = ''): Promise<components['schemas']['MotherAccountList']> {
+  const query = search ? { page: 1, page_size: 100, search } : { page: 1, page_size: 100 };
+  const response = await ownerApi.GET('/api/owner/v1/mother-accounts', {
+    params: { query },
+  });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function updateMotherAccountMaterial(account: components['schemas']['MotherAccount'], password: string, totpSecret: string): Promise<components['schemas']['MotherAccount']> {
+  const response = await ownerApi.PATCH('/api/owner/v1/mother-accounts/{accountId}', {
+    params: { path: { accountId: account.id }, header: { ...(await mutationHeaders()), 'If-Match': `"${account.version}"` } },
+    body: { displayName: account.displayName, status: account.status, password, totpSecret },
+  });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function importMotherAccounts(content: string): Promise<components['schemas']['MotherAccountImportResult']> {
+  const response = await ownerApi.POST('/api/owner/v1/mother-accounts/import', {
+    params: { header: await mutationHeaders() },
+    body: { content },
+  });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function exportMotherAccounts(accountIds: string[] | undefined, expectedCount: number): Promise<string> {
+  const body = accountIds ? { accountIds, expectedCount, confirmed: true } : { expectedCount, confirmed: true };
+  const response = await ownerApi.POST('/api/owner/v1/mother-accounts/export', {
+    params: { header: await mutationHeaders() },
+    body,
+  });
+  throwIfFailed(response);
+  if (typeof response.data !== 'string') throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
 export async function logoutOwner(): Promise<void> {
   const response = await ownerApi.POST('/api/owner/v1/logout', {
     params: { header: await mutationHeaders() },
