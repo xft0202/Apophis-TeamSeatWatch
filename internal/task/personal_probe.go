@@ -100,11 +100,35 @@ func (s *Store) ProcessPersonalProbes(ctx context.Context, provider PersonalProb
 	// A disconnected request must not abort publication; bound the detached write.
 	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	result, err := s.pool.Exec(saveCtx, `UPDATE tsw_personal_probe_items item SET status=$4,outcome=$5,endpoint=$6,http_status=$7,evidence_code=$8,verified_evidence=$9,finished_at=now()
-  FROM tsw_personal_probe_batches batch WHERE item.batch_id=$1 AND item.target_account_id=$2 AND item.attempt_count=$3
-  AND item.status='running' AND batch.id=item.batch_id AND batch.canceled_at IS NULL
-  AND ($10::text='' OR EXISTS (SELECT 1 FROM tsw_target_accounts target JOIN tsw_target_credentials credential ON credential.target_account_id=target.id JOIN tsw_target_personal_access access ON access.target_account_id=target.id AND access.secret_revision=credential.secret_revision AND access.status='ready' JOIN tsw_target_personal_sessions session ON session.target_account_id=target.id AND session.secret_revision=credential.secret_revision AND session.attempt=access.attempt AND session.expires_at>now() WHERE target.id=item.target_account_id AND target.status='active' AND credential.secret_revision=$11 AND session.generation::text=$10))`, batchID, targetID, attempt, status, string(outcome), endpoint, httpStatus, code, verified, evidence.SessionGeneration, evidence.SessionRevision)
+	saveTx, err := s.pool.Begin(saveCtx)
 	if err != nil {
+		return true, err
+	}
+	defer saveTx.Rollback(saveCtx)
+	if evidence.SessionGeneration != "" {
+		// Lock in the same order as refresh and credential invalidation: target,
+		// credential, access, session. An edit cannot commit between verification
+		// and publication; an edit holding a lock wins and makes this attempt stale.
+		current, lockErr := lockPersonalGeneration(saveCtx, saveTx, targetID, evidence)
+		if lockErr != nil {
+			return true, lockErr
+		}
+		if !current {
+			return true, nil
+		}
+	}
+	var lockedBatch string
+	err = saveTx.QueryRow(saveCtx, `SELECT id FROM tsw_personal_probe_batches WHERE id=$1 AND canceled_at IS NULL FOR UPDATE`, batchID).Scan(&lockedBatch)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	_, err = saveTx.Exec(saveCtx, `UPDATE tsw_personal_probe_items item SET status=$4,outcome=$5,endpoint=$6,http_status=$7,evidence_code=$8,verified_evidence=$9,finished_at=now()
+  WHERE item.batch_id=$1 AND item.target_account_id=$2 AND item.attempt_count=$3 AND item.status='running'`, batchID, targetID, attempt, status, string(outcome), endpoint, httpStatus, code, verified)
+	if err != nil {
+		_ = saveTx.Rollback(saveCtx)
 		// Best effort diagnostic only: never convert an unpersisted result to
 		// success or claim its classification survived a failed write.
 		markerCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
@@ -113,8 +137,34 @@ func (s *Store) ProcessPersonalProbes(ctx context.Context, provider PersonalProb
   WHERE batch_id=$1 AND target_account_id=$2 AND attempt_count=$3 AND status='running'`, batchID, targetID, attempt)
 		return true, err
 	}
+	if err = saveTx.Commit(saveCtx); err != nil {
+		return true, err
+	}
 	// Cancellation or retention may remove the item while a provider is running.
-	// Fencing makes that result impossible to publish or recreate.
-	_ = result
+	// Batch and item fences prevent that attempt from publishing after cancellation.
 	return true, nil
+}
+
+func lockPersonalGeneration(ctx context.Context, tx pgx.Tx, targetID string, evidence platform.PersonalProbeEvidence) (bool, error) {
+	var active, complete, validExpiry bool
+	var revision, attempt, sessionAttempt int64
+	var status, generation string
+	for _, query := range []struct {
+		statement string
+		values    []any
+	}{
+		{`SELECT status='active' FROM tsw_target_accounts WHERE id=$1 FOR UPDATE`, []any{&active}},
+		{`SELECT secret_revision,material_status='complete' AND materials_sealed FROM tsw_target_credentials WHERE target_account_id=$1 FOR UPDATE`, []any{&revision, &complete}},
+		{`SELECT attempt,status FROM tsw_target_personal_access WHERE target_account_id=$1 FOR UPDATE`, []any{&attempt, &status}},
+		{`SELECT attempt,generation::text,expires_at>clock_timestamp() FROM tsw_target_personal_sessions WHERE target_account_id=$1 FOR UPDATE`, []any{&sessionAttempt, &generation, &validExpiry}},
+	} {
+		err := tx.QueryRow(ctx, query.statement, targetID).Scan(query.values...)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+	}
+	return active && complete && status == "ready" && validExpiry && revision == evidence.SessionRevision && attempt == sessionAttempt && generation == evidence.SessionGeneration, nil
 }

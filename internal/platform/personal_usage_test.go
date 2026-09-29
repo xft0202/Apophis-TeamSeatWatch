@@ -25,6 +25,8 @@ func TestPersonalUsageProbeFixedBearerGETAndClassification(t *testing.T) {
 		{"401", 401, "text/plain", "expired", PersonalCredentialInvalid},
 		{"forbidden", 403, "application/json", `{"error":{"code":"not_allowed"}}`, PersonalForbidden},
 		{"deactivated", 403, "application/json", `{"error":{"code":"account_deactivated"}}`, PersonalBanned},
+		{"root deactivated", 403, "application/json", `{"code":"account_deactivated"}`, PersonalBanned},
+		{"ordinary root 403", 403, "application/json", `{"code":"access_denied"}`, PersonalForbidden},
 		{"unstructured", 403, "text/html", `account_deactivated`, PersonalForbidden},
 		{"malformed", 200, "application/json", `{}`, PersonalUnknown},
 		{"unknown usage shape", 200, "application/json", `{"rate_limit":{"unexpected":"value"}}`, PersonalUnknown},

@@ -32,8 +32,8 @@ BEGIN
   IF NEW.status = 'active' OR OLD.status = NEW.status THEN RETURN NEW; END IF;
   target_id := NEW.id;
  END IF;
- DELETE FROM tsw_target_personal_sessions WHERE target_account_id = target_id;
  UPDATE tsw_target_personal_access SET attempt=attempt+1,status='refresh_failed',checked_at=now() WHERE target_account_id=target_id;
+ DELETE FROM tsw_target_personal_sessions WHERE target_account_id = target_id;
  RETURN NEW;
 END $$;
 -- +goose StatementEnd

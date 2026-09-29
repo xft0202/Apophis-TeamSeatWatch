@@ -93,9 +93,12 @@ func (p PersonalUsageProbe) Probe(ctx context.Context, session PersonalSession) 
 				}
 			}
 		}
-		var code string
-		if json.Unmarshal(payload["error_code"], &code) == nil && code == "account_deactivated" {
-			evidence.ErrorCode, evidence.VerifiedDeactivation = code, true
+		for _, key := range []string{"code", "error_code"} {
+			var code string
+			if json.Unmarshal(payload[key], &code) == nil && code == "account_deactivated" {
+				evidence.ErrorCode, evidence.VerifiedDeactivation = code, true
+				break
+			}
 		}
 		return evidence, nil
 	}

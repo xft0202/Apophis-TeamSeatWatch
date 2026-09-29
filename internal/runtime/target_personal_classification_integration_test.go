@@ -53,6 +53,7 @@ func TestSavedTargetPersonalProbePersistsRealAdapterClassifications(t *testing.T
 		{"401", 401, "text/plain", "expired", false, "credential_invalid", false},
 		{"403", 403, "application/json", `{"error":{"code":"forbidden"}}`, false, "forbidden", false},
 		{"deactivated", 403, "application/json", `{"error":{"code":"account_deactivated"}}`, false, "banned", true},
+		{"root deactivated", 403, "application/json", `{"code":"account_deactivated"}`, false, "banned", true},
 		{"network", 0, "", "", true, "network_error", false},
 		{"malformed", 200, "application/json", `{}`, false, "unknown", false},
 	}
