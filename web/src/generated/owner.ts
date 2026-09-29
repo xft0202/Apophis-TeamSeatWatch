@@ -244,6 +244,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/mother-accounts/{accountId}/discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getMotherDiscovery"];
+        put?: never;
+        post: operations["runMotherDiscovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/workspaces": {
         parameters: {
             query?: never;
@@ -934,6 +950,22 @@ export interface components {
             materialStatus: "complete" | "needs_totp";
             /** @enum {string} */
             accessStatus: "not_verified" | "verified";
+        };
+        MotherDiscovery: {
+            /** Format: uuid */
+            motherAccountId: string;
+            /** @enum {string} */
+            status: "not_verified" | "discovered" | "empty" | "invalid_login" | "missing_credentials" | "discovery_failed" | "permission_denied" | "unavailable";
+            /** Format: date-time */
+            observedAt?: string;
+            workspaces: components["schemas"]["MotherVisibleWorkspace"][];
+        };
+        MotherVisibleWorkspace: {
+            /** Format: uuid */
+            id: string;
+            displayName: string;
+            /** @enum {string} */
+            accessStatus: "readable" | "permission_denied" | "unknown";
         };
         MotherAccountList: {
             items: components["schemas"]["MotherAccount"][];
@@ -2195,6 +2227,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeliveryDestination"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getMotherDiscovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                accountId: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Latest visibility observation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MotherDiscovery"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    runMotherDiscovery: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                accountId: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Explicit read-only discovery; no workspace selected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MotherDiscovery"];
                 };
             };
             default: components["responses"]["Problem"];

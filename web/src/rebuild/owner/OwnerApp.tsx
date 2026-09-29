@@ -30,6 +30,7 @@ import {
 import { appTheme } from '../shared/theme';
 import MotherMaterialsView from './MotherMaterialsView';
 import ChildMaterialsView from './ChildMaterialsView';
+import WorkspaceDiscoveryView from './WorkspaceDiscoveryView';
 import {
   destinationApi,
   type Destination,
@@ -292,7 +293,7 @@ function SignedInView({
             <div>
               <div className="session-status">会话已确认</div>
               <Title order={1} size="h2" mt="md">Owner 控制台</Title>
-              <Text c="dimmed" mt="xs">管理可用的交付去向。连接测试不是客户交付，也不会发送客户账号资料。</Text>
+              <Text c="dimmed" mt="xs">{status.username}</Text>
             </div>
 
             <Paper withBorder radius={12} p={{ base: 'lg', sm: 'xl' }}>
@@ -313,14 +314,18 @@ function SignedInView({
               </Stack>
             </Paper>
 
-            <Paper withBorder radius={12} p={{ base: 'lg', sm: 'xl' }}>
-              <Tabs defaultValue="mother">
-                <Tabs.List><Tabs.Tab value="mother">母号</Tabs.Tab><Tabs.Tab value="child">子号</Tabs.Tab></Tabs.List>
-                <Tabs.Panel value="mother" pt="xl"><MotherMaterialsView /></Tabs.Panel>
-                <Tabs.Panel value="child" pt="xl"><ChildMaterialsView /></Tabs.Panel>
-              </Tabs>
-            </Paper>
-            <DeliveryDestinationPanel />
+            <Tabs defaultValue="workspaces" keepMounted={false}>
+              <Tabs.List>
+                <Tabs.Tab value="workspaces">空间管理</Tabs.Tab>
+                <Tabs.Tab value="materials">母号资料</Tabs.Tab>
+                <Tabs.Tab value="child">子号资料</Tabs.Tab>
+                <Tabs.Tab value="destinations">交付去向</Tabs.Tab>
+              </Tabs.List>
+              <Tabs.Panel value="workspaces" pt="xl"><WorkspaceDiscoveryView /></Tabs.Panel>
+              <Tabs.Panel value="materials" pt="xl"><MotherMaterialsView /></Tabs.Panel>
+              <Tabs.Panel value="child" pt="xl"><ChildMaterialsView /></Tabs.Panel>
+              <Tabs.Panel value="destinations" pt="xl"><DeliveryDestinationPanel /></Tabs.Panel>
+            </Tabs>
           </Stack>
         </Container>
       </main>

@@ -21,6 +21,7 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/egress"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/task"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/workspace"
 )
@@ -32,6 +33,7 @@ type OwnerAuthConfig struct {
 	Origins          auth.OriginPolicy
 	Egress           *egress.Manager
 	DestinationProbe DestinationProbe
+	Discovery       platform.DiscoveryAdapter
 }
 
 // OwnerAuthHandler owns the HTTP boundary for the Ticket 03 Owner security API.
@@ -44,6 +46,7 @@ type OwnerAuthHandler struct {
 	workspaceTasks    *task.Store
 	egress            *egress.Manager
 	destinationProbe  DestinationProbe
+	discovery         platform.DiscoveryAdapter
 	secureCookies     bool
 }
 
@@ -107,6 +110,7 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 		workspaceTasks:    task.NewStore(pool, config.KeyRing),
 		egress:            config.Egress,
 		destinationProbe:  config.DestinationProbe,
+		discovery:         config.Discovery,
 		secureCookies:     config.Origins.SecureCookies(),
 	}
 	mux := http.NewServeMux()

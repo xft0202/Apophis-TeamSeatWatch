@@ -78,7 +78,7 @@ func (h *OwnerAuthHandler) listMotherAccounts(w http.ResponseWriter, r *http.Req
 		writeProblem(w, r, 400, "invalid_pagination", "Invalid Request", "Pagination is invalid", 0)
 		return
 	}
-	order := "created_at DESC"
+	order := "account.created_at DESC, account.id DESC"
 	sortValue := ""
 	if params.Sort != nil {
 		sortValue = string(*params.Sort)
@@ -86,7 +86,7 @@ func (h *OwnerAuthHandler) listMotherAccounts(w http.ResponseWriter, r *http.Req
 	switch sortValue {
 	case "", "created_desc":
 	case "name_asc":
-		order = "display_name ASC, created_at DESC"
+		order = "account.display_name ASC, account.created_at DESC, account.id DESC"
 	default:
 		writeProblem(w, r, 400, "invalid_sort", "Invalid Request", "Sort is not allowed", 0)
 		return
@@ -113,7 +113,7 @@ func (h *OwnerAuthHandler) listMotherAccounts(w http.ResponseWriter, r *http.Req
 			h.workspaceFailure(w, r, err)
 			return
 		}
-		item.AccessStatus = ownerapi.NotVerified
+		item.AccessStatus = ownerapi.MotherAccountAccessStatusNotVerified
 		response.Items = append(response.Items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -149,7 +149,7 @@ func (h *OwnerAuthHandler) createMotherAccount(w http.ResponseWriter, r *http.Re
 	var item motherAccountDTO
 	err = tx.QueryRow(r.Context(), `INSERT INTO tsw_mother_accounts (display_name, platform_account_ref) VALUES ($1,NULLIF($2,'')) RETURNING id,display_name,platform_account_ref,status,version,updated_at`, displayName, strings.TrimSpace(stringValue(request.PlatformAccountRef))).Scan(&item.Id, &item.DisplayName, &item.PlatformAccountRef, &item.Status, &item.Version, &item.UpdatedAt)
 	item.LoginIdentifier = loginIdentifier
-	item.AccessStatus = ownerapi.NotVerified
+	item.AccessStatus = ownerapi.MotherAccountAccessStatusNotVerified
 	item.MaterialStatus = ownerapi.MotherAccountMaterialStatusComplete
 	if totp := strings.TrimSpace(stringValue(request.TotpSecret)); totp == "" {
 		item.MaterialStatus = ownerapi.MotherAccountMaterialStatusNeedsTotp
@@ -219,7 +219,7 @@ func (h *OwnerAuthHandler) updateMotherAccount(w http.ResponseWriter, r *http.Re
 		_, err = tx.Exec(r.Context(), `UPDATE tsw_mother_account_credentials SET password_secret=CASE WHEN $5 THEN $2 ELSE password_secret END, totp_secret=CASE WHEN $4 THEN NULLIF($3,'')::bytea ELSE totp_secret END, secret_revision=secret_revision+1, version=version+1 WHERE mother_account_id=$1`, item.Id, []byte(stringValue(request.Password)), []byte(stringValue(request.TotpSecret)), request.TotpSecret != nil, request.Password != nil)
 	}
 	if err == nil {
-		item.AccessStatus = ownerapi.NotVerified
+		item.AccessStatus = ownerapi.MotherAccountAccessStatusNotVerified
 		err = tx.QueryRow(r.Context(), `SELECT login_identifier, CASE WHEN totp_secret IS NULL THEN 'needs_totp' ELSE 'complete' END FROM tsw_mother_account_credentials WHERE mother_account_id=$1`, item.Id).Scan(&item.LoginIdentifier, &item.MaterialStatus)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {

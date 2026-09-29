@@ -73,6 +73,7 @@ func NewControlHandlers(config ControlConfig) (ControlHandlers, error) {
 		KeyRing:     keyRing,
 		Origins:     config.OwnerOrigins,
 		Egress:      config.Egress,
+		Discovery:   platform.UnavailableDiscovery{},
 	})
 	if err != nil {
 		closeHealth()

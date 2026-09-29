@@ -332,6 +332,38 @@ paths:
                 $ref: '#/components/schemas/DeliveryDestination'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/mother-accounts/{accountId}/discovery:
+    get:
+      operationId: getMotherDiscovery
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Latest visibility observation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotherDiscovery'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: runMotherDiscovery
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: Explicit read-only discovery; no workspace selected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MotherDiscovery'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/workspaces:
     get:
       operationId: listWorkspaces
@@ -1760,6 +1792,45 @@ components:
           enum:
             - not_verified
             - verified
+    MotherDiscovery:
+      type: object
+      additionalProperties: false
+      required: [motherAccountId, status, workspaces]
+      properties:
+        motherAccountId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - not_verified
+            - discovered
+            - empty
+            - invalid_login
+            - missing_credentials
+            - discovery_failed
+            - permission_denied
+            - unavailable
+        observedAt:
+          type: string
+          format: date-time
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/MotherVisibleWorkspace'
+    MotherVisibleWorkspace:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, accessStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        accessStatus:
+          type: string
+          enum: [readable, permission_denied, unknown]
     MotherAccountList:
       type: object
       additionalProperties: false

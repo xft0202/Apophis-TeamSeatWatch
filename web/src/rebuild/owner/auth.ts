@@ -128,6 +128,31 @@ export async function listMotherAccounts(search = ''): Promise<components['schem
   return response.data;
 }
 
+export async function listAllMotherAccounts(): Promise<components['schemas']['MotherAccount'][]> {
+  const items: components['schemas']['MotherAccount'][] = [];
+  for (let page = 1; ; page++) {
+    const response = await ownerApi.GET('/api/owner/v1/mother-accounts', { params: { query: { page, page_size: 100 } } });
+    throwIfFailed(response);
+    if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+    items.push(...response.data.items);
+    if (items.length >= response.data.total || response.data.items.length === 0) return items;
+  }
+}
+
+export async function getMotherDiscovery(accountId: string): Promise<components['schemas']['MotherDiscovery']> {
+  const response = await ownerApi.GET('/api/owner/v1/mother-accounts/{accountId}/discovery', { params: { path: { accountId } } });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function runMotherDiscovery(accountId: string): Promise<components['schemas']['MotherDiscovery']> {
+  const response = await ownerApi.POST('/api/owner/v1/mother-accounts/{accountId}/discovery', { params: { path: { accountId }, header: await mutationHeaders() } });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
 export async function updateMotherAccountMaterial(account: components['schemas']['MotherAccount'], password: string, totpSecret: string): Promise<components['schemas']['MotherAccount']> {
   const response = await ownerApi.PATCH('/api/owner/v1/mother-accounts/{accountId}', {
     params: { path: { accountId: account.id }, header: { ...(await mutationHeaders()), 'If-Match': `"${account.version}"` } },

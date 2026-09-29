@@ -623,16 +623,16 @@ func (e ManualVerificationRequestSource) Valid() bool {
 
 // Defines values for MotherAccountAccessStatus.
 const (
-	NotVerified MotherAccountAccessStatus = "not_verified"
-	Verified    MotherAccountAccessStatus = "verified"
+	MotherAccountAccessStatusNotVerified MotherAccountAccessStatus = "not_verified"
+	MotherAccountAccessStatusVerified    MotherAccountAccessStatus = "verified"
 )
 
 // Valid indicates whether the value is a known member of the MotherAccountAccessStatus enum.
 func (e MotherAccountAccessStatus) Valid() bool {
 	switch e {
-	case NotVerified:
+	case MotherAccountAccessStatusNotVerified:
 		return true
-	case Verified:
+	case MotherAccountAccessStatusVerified:
 		return true
 	default:
 		return false
@@ -693,6 +693,63 @@ func (e MotherAccountImportRowStatus) Valid() bool {
 	case MotherAccountImportRowStatusInvalid:
 		return true
 	case MotherAccountImportRowStatusNeedsTotp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MotherDiscoveryStatus.
+const (
+	MotherDiscoveryStatusDiscovered         MotherDiscoveryStatus = "discovered"
+	MotherDiscoveryStatusDiscoveryFailed    MotherDiscoveryStatus = "discovery_failed"
+	MotherDiscoveryStatusEmpty              MotherDiscoveryStatus = "empty"
+	MotherDiscoveryStatusInvalidLogin       MotherDiscoveryStatus = "invalid_login"
+	MotherDiscoveryStatusMissingCredentials MotherDiscoveryStatus = "missing_credentials"
+	MotherDiscoveryStatusNotVerified        MotherDiscoveryStatus = "not_verified"
+	MotherDiscoveryStatusPermissionDenied   MotherDiscoveryStatus = "permission_denied"
+	MotherDiscoveryStatusUnavailable        MotherDiscoveryStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the MotherDiscoveryStatus enum.
+func (e MotherDiscoveryStatus) Valid() bool {
+	switch e {
+	case MotherDiscoveryStatusDiscovered:
+		return true
+	case MotherDiscoveryStatusDiscoveryFailed:
+		return true
+	case MotherDiscoveryStatusEmpty:
+		return true
+	case MotherDiscoveryStatusInvalidLogin:
+		return true
+	case MotherDiscoveryStatusMissingCredentials:
+		return true
+	case MotherDiscoveryStatusNotVerified:
+		return true
+	case MotherDiscoveryStatusPermissionDenied:
+		return true
+	case MotherDiscoveryStatusUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MotherVisibleWorkspaceAccessStatus.
+const (
+	MotherVisibleWorkspaceAccessStatusPermissionDenied MotherVisibleWorkspaceAccessStatus = "permission_denied"
+	MotherVisibleWorkspaceAccessStatusReadable         MotherVisibleWorkspaceAccessStatus = "readable"
+	MotherVisibleWorkspaceAccessStatusUnknown          MotherVisibleWorkspaceAccessStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the MotherVisibleWorkspaceAccessStatus enum.
+func (e MotherVisibleWorkspaceAccessStatus) Valid() bool {
+	switch e {
+	case MotherVisibleWorkspaceAccessStatusPermissionDenied:
+		return true
+	case MotherVisibleWorkspaceAccessStatusReadable:
+		return true
+	case MotherVisibleWorkspaceAccessStatusUnknown:
 		return true
 	default:
 		return false
@@ -1906,6 +1963,27 @@ type MotherAccountList struct {
 	Total    int64           `json:"total"`
 }
 
+// MotherDiscovery defines model for MotherDiscovery.
+type MotherDiscovery struct {
+	MotherAccountId openapi_types.UUID       `json:"motherAccountId"`
+	ObservedAt      *time.Time               `json:"observedAt,omitempty"`
+	Status          MotherDiscoveryStatus    `json:"status"`
+	Workspaces      []MotherVisibleWorkspace `json:"workspaces"`
+}
+
+// MotherDiscoveryStatus defines model for MotherDiscovery.Status.
+type MotherDiscoveryStatus string
+
+// MotherVisibleWorkspace defines model for MotherVisibleWorkspace.
+type MotherVisibleWorkspace struct {
+	AccessStatus MotherVisibleWorkspaceAccessStatus `json:"accessStatus"`
+	DisplayName  string                             `json:"displayName"`
+	Id           openapi_types.UUID                 `json:"id"`
+}
+
+// MotherVisibleWorkspaceAccessStatus defines model for MotherVisibleWorkspace.AccessStatus.
+type MotherVisibleWorkspaceAccessStatus string
+
 // OpenRecoveryGateRequest defines model for OpenRecoveryGateRequest.
 type OpenRecoveryGateRequest struct {
 	RestoredAt time.Time `json:"restoredAt"`
@@ -2624,6 +2702,11 @@ type UpdateMotherAccountParams struct {
 	IfMatch    IfMatch    `json:"If-Match"`
 }
 
+// RunMotherDiscoveryParams defines parameters for RunMotherDiscovery.
+type RunMotherDiscoveryParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // ListRemovalOperationsNeedingAttentionParams defines parameters for ListRemovalOperationsNeedingAttention.
 type ListRemovalOperationsNeedingAttentionParams struct {
 	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
@@ -2955,6 +3038,12 @@ type ServerInterface interface {
 
 	// (PATCH /api/owner/v1/mother-accounts/{accountId})
 	UpdateMotherAccount(w http.ResponseWriter, r *http.Request, accountId AccountId, params UpdateMotherAccountParams)
+
+	// (GET /api/owner/v1/mother-accounts/{accountId}/discovery)
+	GetMotherDiscovery(w http.ResponseWriter, r *http.Request, accountId AccountId)
+
+	// (POST /api/owner/v1/mother-accounts/{accountId}/discovery)
+	RunMotherDiscovery(w http.ResponseWriter, r *http.Request, accountId AccountId, params RunMotherDiscoveryParams)
 
 	// (GET /api/owner/v1/removal-operations/needs-attention)
 	ListRemovalOperationsNeedingAttention(w http.ResponseWriter, r *http.Request, params ListRemovalOperationsNeedingAttentionParams)
@@ -5264,6 +5353,86 @@ func (siw *ServerInterfaceWrapper) UpdateMotherAccount(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// GetMotherDiscovery operation middleware
+func (siw *ServerInterfaceWrapper) GetMotherDiscovery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "accountId" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "accountId", r.PathValue("accountId"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "accountId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMotherDiscovery(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunMotherDiscovery operation middleware
+func (siw *ServerInterfaceWrapper) RunMotherDiscovery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "accountId" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "accountId", r.PathValue("accountId"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "accountId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RunMotherDiscoveryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunMotherDiscovery(w, r, accountId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRemovalOperationsNeedingAttention operation middleware
 func (siw *ServerInterfaceWrapper) ListRemovalOperationsNeedingAttention(w http.ResponseWriter, r *http.Request) {
 
@@ -6422,6 +6591,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/delivery-destinations/{destinationId}", wrapper.UpdateDeliveryDestination)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/delivery-destinations/{destinationId}/test", wrapper.TestDeliveryDestination)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/delivery-destinations/{destinationId}/select", wrapper.SelectDeliveryDestination)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/mother-accounts/{accountId}/discovery", wrapper.GetMotherDiscovery)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts/{accountId}/discovery", wrapper.RunMotherDiscovery)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces", wrapper.ListWorkspaces)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces", wrapper.CreateWorkspace)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces/needs-attention", wrapper.ListWorkspacesNeedingAttention)
