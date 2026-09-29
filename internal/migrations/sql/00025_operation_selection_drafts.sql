@@ -10,7 +10,9 @@ CREATE TABLE tsw_operation_selection_drafts (
  workspace_id uuid REFERENCES tsw_workspaces(id) ON DELETE RESTRICT,
  visibility_run_id uuid,
  session_generation uuid,
- verification_id bigint REFERENCES tsw_workspace_verifications(id) ON DELETE RESTRICT,
+ -- Retention deletes expired verification facts. Keep only their immutable ID:
+ -- currentness checks must fail closed once this fact no longer exists.
+ verification_id bigint,
  batch_id uuid REFERENCES tsw_standby_child_batches(id) ON DELETE RESTRICT,
  batch_version bigint,
  children jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(children)='array' AND jsonb_array_length(children)<=10000),
