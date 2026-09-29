@@ -702,6 +702,7 @@ func (e MotherAccountImportRowStatus) Valid() bool {
 // Defines values for MotherDiscoveryStatus.
 const (
 	MotherDiscoveryStatusDiscovered         MotherDiscoveryStatus = "discovered"
+	MotherDiscoveryStatusDiscovering        MotherDiscoveryStatus = "discovering"
 	MotherDiscoveryStatusDiscoveryFailed    MotherDiscoveryStatus = "discovery_failed"
 	MotherDiscoveryStatusEmpty              MotherDiscoveryStatus = "empty"
 	MotherDiscoveryStatusMissingCredentials MotherDiscoveryStatus = "missing_credentials"
@@ -715,6 +716,8 @@ const (
 func (e MotherDiscoveryStatus) Valid() bool {
 	switch e {
 	case MotherDiscoveryStatusDiscovered:
+		return true
+	case MotherDiscoveryStatusDiscovering:
 		return true
 	case MotherDiscoveryStatusDiscoveryFailed:
 		return true
@@ -743,6 +746,7 @@ const (
 	MotherPersonalAccessStatusReady              MotherPersonalAccessStatus = "ready"
 	MotherPersonalAccessStatusRefreshFailed      MotherPersonalAccessStatus = "refresh_failed"
 	MotherPersonalAccessStatusUnavailable        MotherPersonalAccessStatus = "unavailable"
+	MotherPersonalAccessStatusVerifying          MotherPersonalAccessStatus = "verifying"
 )
 
 // Valid indicates whether the value is a known member of the MotherPersonalAccessStatus enum.
@@ -759,6 +763,8 @@ func (e MotherPersonalAccessStatus) Valid() bool {
 	case MotherPersonalAccessStatusRefreshFailed:
 		return true
 	case MotherPersonalAccessStatusUnavailable:
+		return true
+	case MotherPersonalAccessStatusVerifying:
 		return true
 	default:
 		return false

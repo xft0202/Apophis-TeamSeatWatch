@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -47,6 +48,43 @@ func (f *fixturePersonalRefresh) RefreshPersonal(_ context.Context, material pla
 	}
 	f.calls++
 	return f.result, nil
+}
+
+type sequencedPersonalRefresh struct {
+	entered chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+	session platform.PersonalSession
+}
+
+func (f *sequencedPersonalRefresh) RefreshPersonal(ctx context.Context, _ platform.MotherMaterial) (platform.PersonalRefreshResult, error) {
+	if f.calls.Add(1) == 1 {
+		close(f.entered)
+		select {
+		case <-f.release:
+		case <-ctx.Done():
+			return platform.PersonalRefreshResult{}, ctx.Err()
+		}
+	}
+	return platform.PersonalRefreshResult{Status: "ready", Session: f.session}, nil
+}
+
+type sequencedDiscovery struct {
+	entered chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func (f *sequencedDiscovery) Discover(ctx context.Context, _ platform.PersonalSession) (platform.DiscoveryResult, error) {
+	if f.calls.Add(1) == 1 {
+		close(f.entered)
+		select {
+		case <-f.release:
+		case <-ctx.Done():
+			return platform.DiscoveryResult{}, ctx.Err()
+		}
+	}
+	return platform.DiscoveryResult{Status: "discovered", Workspaces: []platform.DiscoveredWorkspace{{PlatformID: "team-one", Name: "One", Access: "readable"}}}, nil
 }
 
 func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelection(t *testing.T) {
@@ -259,5 +297,90 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	}
 	if status, result := readDiscovery(http.MethodGet, secondID, true, false); status != 200 || result.Status != "not_verified" {
 		t.Fatalf("revision must invalidate discovery: %d %+v", status, result)
+	}
+
+	// A slow remote attempt must not hold an account lock: editing the source
+	// credentials fences its result before anything is republished.
+	handler.personalRefresh = refresh
+	refresh.result = platform.PersonalRefreshResult{Status: "ready", Session: platform.PersonalSession{AccessToken: "personal-token", DeviceID: "device-one", Cookies: []platform.SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "cookie-secret"}}, ExpiresAt: time.Now().Add(time.Hour)}}
+	if status, _ := readAccess(http.MethodPost, firstID, true, true); status != 200 {
+		t.Fatalf("restore Personal session: %d", status)
+	}
+	startAsync := func() <-chan int {
+		out := make(chan int, 1)
+		req := httptest.NewRequest(http.MethodPost, "/api/owner/v1/mother-accounts/"+firstID.String()+"/discovery", nil)
+		req.Header.Set("Origin", "https://owner.test")
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: session})
+		req.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: csrf})
+		req.Header.Set(auth.CSRFHeaderName, csrf)
+		go func() { rec := httptest.NewRecorder(); serve.ServeHTTP(rec, req); out <- rec.Code }()
+		return out
+	}
+	first := &sequencedDiscovery{entered: make(chan struct{}), release: make(chan struct{})}
+	handler.discovery = first
+	result := startAsync()
+	<-first.entered
+	updateCtx, cancel := context.WithTimeout(ctx, time.Second)
+	_, err = pool.Exec(updateCtx, `UPDATE tsw_mother_account_credentials SET password_secret='rotated',secret_revision=secret_revision+1,version=version+1 WHERE mother_account_id=$1`, firstID)
+	cancel()
+	if err != nil {
+		close(first.release)
+		t.Fatalf("remote discovery held a database row lock: %v", err)
+	}
+	close(first.release)
+	if status := <-result; status != 409 {
+		t.Fatalf("stale credential generation published: %d", status)
+	}
+	if status, state := readDiscovery(http.MethodGet, firstID, true, false); status != 200 || state.Status != "not_verified" || len(state.Workspaces) != 0 {
+		t.Fatalf("stale visibility: %d %+v", status, state)
+	}
+	_, err = pool.Exec(ctx, `UPDATE tsw_mother_account_credentials SET password_secret='password',secret_revision=secret_revision+1,version=version+1 WHERE mother_account_id=$1`, firstID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := readAccess(http.MethodPost, firstID, true, true); status != 200 {
+		t.Fatalf("restore revised Personal session: %d", status)
+	}
+	second := &sequencedDiscovery{entered: make(chan struct{}), release: make(chan struct{})}
+	handler.discovery = second
+	older := startAsync()
+	<-second.entered
+	if status, state := readDiscovery(http.MethodPost, firstID, true, true); status != 200 || state.Status != "discovered" || len(state.Workspaces) != 1 {
+		close(second.release)
+		t.Fatalf("newer discovery blocked: %d %+v", status, state)
+	}
+	close(second.release)
+	if status := <-older; status != 409 {
+		t.Fatalf("older attempt overwrote newer: %d", status)
+	}
+	if state, status := readDiscovery(http.MethodGet, firstID, true, false); state != 200 || status.Status != "discovered" || len(status.Workspaces) != 1 {
+		t.Fatalf("latest discovery lost: %d %+v", state, status)
+	}
+	// A newer explicit refresh fences a slower prior login without retaining
+	// database locks across either platform attempt.
+	logins := &sequencedPersonalRefresh{entered: make(chan struct{}), release: make(chan struct{}), session: refresh.result.Session}
+	handler.personalRefresh = logins
+	startRefresh := func() <-chan int {
+		out := make(chan int, 1)
+		req := httptest.NewRequest(http.MethodPost, "/api/owner/v1/mother-accounts/"+firstID.String()+"/personal-session", nil)
+		req.Header.Set("Origin", "https://owner.test")
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: session})
+		req.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: csrf})
+		req.Header.Set(auth.CSRFHeaderName, csrf)
+		go func() { rec := httptest.NewRecorder(); serve.ServeHTTP(rec, req); out <- rec.Code }()
+		return out
+	}
+	olderLogin := startRefresh()
+	<-logins.entered
+	if status, state := readAccess(http.MethodPost, firstID, true, true); status != 200 || state.Status != "ready" {
+		close(logins.release)
+		t.Fatalf("newer Personal refresh blocked: %d %+v", status, state)
+	}
+	close(logins.release)
+	if status := <-olderLogin; status != 409 {
+		t.Fatalf("older login replaced newer generation: %d", status)
+	}
+	if status, state := readDiscovery(http.MethodGet, firstID, true, false); status != 200 || state.Status != "not_verified" || len(state.Workspaces) != 0 {
+		t.Fatalf("refresh left stale visibility: %d %+v", status, state)
 	}
 }

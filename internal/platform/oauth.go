@@ -481,6 +481,12 @@ func (r *HTTPReader) authJSON(ctx context.Context, method, path string, body []b
 	return r.authJSONWithJar(ctx, jar, method, base+path, body, referer)
 }
 
+type authHTTPError struct{ status int }
+
+func (e *authHTTPError) Error() string {
+	return fmt.Sprintf("authentication request rejected: HTTP %d", e.status)
+}
+
 func (r *HTTPReader) authJSONWithJar(ctx context.Context, jar http.CookieJar, method, target string, body []byte, referer string) ([]byte, error) {
 	var reader io.Reader
 	if body != nil {
@@ -525,7 +531,7 @@ func (r *HTTPReader) authJSONWithJar(ctx context.Context, jar http.CookieJar, me
 		return json.Marshal(map[string]string{"continue_url": resolveURL(target, location)})
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("authentication request rejected: HTTP %d", response.StatusCode)
+		return nil, &authHTTPError{status: response.StatusCode}
 	}
 	return payload, nil
 }

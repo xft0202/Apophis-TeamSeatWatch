@@ -1836,6 +1836,7 @@ components:
           type: string
           enum:
             - not_verified
+            - verifying
             - ready
             - invalid_login
             - missing_credentials
@@ -1856,6 +1857,7 @@ components:
           type: string
           enum:
             - not_verified
+            - discovering
             - discovered
             - empty
             - session_expired

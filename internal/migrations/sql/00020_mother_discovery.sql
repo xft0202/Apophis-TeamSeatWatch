@@ -3,8 +3,10 @@
 CREATE TABLE tsw_mother_discoveries (
     mother_account_id uuid PRIMARY KEY REFERENCES tsw_mother_accounts(id) ON DELETE RESTRICT,
     run_id uuid NOT NULL,
+    attempt bigint NOT NULL DEFAULT 1 CHECK (attempt > 0),
     secret_revision bigint NOT NULL CHECK (secret_revision > 0),
-    status text NOT NULL CHECK (status IN ('discovered','empty','session_expired','missing_credentials','discovery_failed','permission_denied','unavailable')),
+    session_generation uuid,
+    status text NOT NULL CHECK (status IN ('discovering','discovered','empty','session_expired','missing_credentials','discovery_failed','permission_denied','unavailable')),
     observed_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE tsw_mother_workspace_visibility (
@@ -31,7 +33,8 @@ CREATE TABLE tsw_mother_personal_sessions (
 CREATE TABLE tsw_mother_personal_access (
     mother_account_id uuid PRIMARY KEY REFERENCES tsw_mother_accounts(id) ON DELETE RESTRICT,
     secret_revision bigint NOT NULL CHECK (secret_revision > 0),
-    status text NOT NULL CHECK (status IN ('ready','invalid_login','missing_credentials','refresh_failed','unavailable')),
+    attempt bigint NOT NULL DEFAULT 1 CHECK (attempt > 0),
+    status text NOT NULL CHECK (status IN ('verifying','ready','invalid_login','missing_credentials','refresh_failed','unavailable')),
     checked_at timestamptz NOT NULL DEFAULT now()
 );
 REVOKE ALL ON tsw_mother_personal_sessions FROM PUBLIC;

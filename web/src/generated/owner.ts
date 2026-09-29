@@ -971,7 +971,7 @@ export interface components {
             /** Format: uuid */
             motherAccountId: string;
             /** @enum {string} */
-            status: "not_verified" | "ready" | "invalid_login" | "missing_credentials" | "refresh_failed" | "unavailable";
+            status: "not_verified" | "verifying" | "ready" | "invalid_login" | "missing_credentials" | "refresh_failed" | "unavailable";
             /** Format: date-time */
             checkedAt?: string;
         };
@@ -979,7 +979,7 @@ export interface components {
             /** Format: uuid */
             motherAccountId: string;
             /** @enum {string} */
-            status: "not_verified" | "discovered" | "empty" | "session_expired" | "missing_credentials" | "discovery_failed" | "permission_denied" | "unavailable";
+            status: "not_verified" | "discovering" | "discovered" | "empty" | "session_expired" | "missing_credentials" | "discovery_failed" | "permission_denied" | "unavailable";
             /** Format: date-time */
             observedAt?: string;
             workspaces: components["schemas"]["MotherVisibleWorkspace"][];

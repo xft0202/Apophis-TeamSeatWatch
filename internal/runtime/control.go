@@ -68,13 +68,21 @@ func NewControlHandlers(config ControlConfig) (ControlHandlers, error) {
 		closeHealth()
 		return ControlHandlers{}, fmt.Errorf("invalid TOTP key ring: %w", err)
 	}
+	// Each explicit Owner action acquires its own admitted route; startup performs no login or discovery.
+	leaseClient := func(ctx context.Context) (*http.Client, func(), error) {
+		lease, err := config.Egress.Acquire(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		return lease.Client(), lease.Release, nil
+	}
 	ownerAuth, closeOwnerAuth, err := NewOwnerAuthHandler(OwnerAuthConfig{
 		DatabaseURL:     config.DatabaseURL,
 		KeyRing:         keyRing,
 		Origins:         config.OwnerOrigins,
 		Egress:          config.Egress,
-		Discovery:       platform.UnavailableDiscovery{},
-		PersonalRefresh: platform.UnavailablePersonalRefresh{},
+		Discovery:       platform.AccountsCheckDiscovery{Client: leaseClient},
+		PersonalRefresh: platform.PersonalWebRefresher{Client: leaseClient},
 	})
 	if err != nil {
 		closeHealth()

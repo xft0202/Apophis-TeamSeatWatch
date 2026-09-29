@@ -10,6 +10,7 @@ type PersonalAccess = components['schemas']['MotherPersonalAccess'];
 
 const accessLabels: Record<PersonalAccess['status'], string> = {
   not_verified: '登录待验证',
+  verifying: '正在验证登录',
   ready: '登录已验证',
   invalid_login: '登录资料无效',
   missing_credentials: '资料待补',
@@ -19,6 +20,7 @@ const accessLabels: Record<PersonalAccess['status'], string> = {
 
 const resultLabels: Record<Discovery['status'], string> = {
   not_verified: '未验证',
+  discovering: '正在发现空间',
   discovered: '已发现可见空间',
   empty: '未发现 Team 空间',
   session_expired: '登录已失效',

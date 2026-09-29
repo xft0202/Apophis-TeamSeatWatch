@@ -31,22 +31,48 @@ func (h *OwnerAuthHandler) GetMotherPersonalAccess(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, result)
 }
 
+type personalRefreshAttempt struct {
+	material platform.MotherMaterial
+	revision int64
+	attempt  int64
+}
+
+func (h *OwnerAuthHandler) reservePersonalRefresh(ctx context.Context, id uuid.UUID) (personalRefreshAttempt, bool, error) {
+	var attempt personalRefreshAttempt
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		return attempt, false, err
+	}
+	defer tx.Rollback(ctx)
+	var password, totp []byte
+	var active bool
+	err = tx.QueryRow(ctx, `SELECT credential.login_identifier,credential.password_secret,credential.totp_secret,credential.secret_revision,account.status='active' FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id WHERE account.id=$1 FOR UPDATE OF account,credential`, id).Scan(&attempt.material.LoginIdentifier, &password, &totp, &attempt.revision, &active)
+	if err != nil || !active {
+		return attempt, active, err
+	}
+	attempt.material.Password, attempt.material.TOTPSecret = string(password), string(totp)
+	err = tx.QueryRow(ctx, `INSERT INTO tsw_mother_personal_access(mother_account_id,secret_revision,status) VALUES ($1,$2,'verifying') ON CONFLICT(mother_account_id) DO UPDATE SET secret_revision=EXCLUDED.secret_revision,attempt=tsw_mother_personal_access.attempt+1,status='verifying',checked_at=now() RETURNING attempt`, id, attempt.revision).Scan(&attempt.attempt)
+	if err == nil {
+		_, err = tx.Exec(ctx, `DELETE FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, id)
+	}
+	if err == nil {
+		_, err = tx.Exec(ctx, `DELETE FROM tsw_mother_workspace_visibility WHERE mother_account_id=$1`, id)
+	}
+	if err == nil {
+		_, err = tx.Exec(ctx, `DELETE FROM tsw_mother_discoveries WHERE mother_account_id=$1`, id)
+	}
+	if err != nil {
+		return attempt, active, err
+	}
+	return attempt, active, tx.Commit(ctx)
+}
+
 func (h *OwnerAuthHandler) RefreshMotherPersonalAccess(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, _ ownerapi.RefreshMotherPersonalAccessParams) {
 	owner, ok := h.authenticated(w, r, true)
 	if !ok {
 		return
 	}
-	tx, err := h.pool.Begin(r.Context())
-	if err != nil {
-		h.workspaceFailure(w, r, err)
-		return
-	}
-	defer tx.Rollback(r.Context())
-	var material platform.MotherMaterial
-	var password, totp []byte
-	var revision int64
-	var active bool
-	err = tx.QueryRow(r.Context(), `SELECT credential.login_identifier,credential.password_secret,credential.totp_secret,credential.secret_revision,account.status='active' FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id WHERE account.id=$1 FOR UPDATE OF account,credential`, id).Scan(&material.LoginIdentifier, &password, &totp, &revision, &active)
+	attempt, active, err := h.reservePersonalRefresh(r.Context(), id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeProblem(w, r, 404, "mother_not_found", "Not Found", "Mother account was not found", 0)
 		return
@@ -56,61 +82,63 @@ func (h *OwnerAuthHandler) RefreshMotherPersonalAccess(w http.ResponseWriter, r 
 		return
 	}
 	if !active {
-		writeProblem(w, r, 409, "mother_disabled", "Account Disabled", "Mother account is disabled", 0)
+		writeProblem(w, r, http.StatusConflict, "mother_disabled", "Account Disabled", "Mother account is disabled", 0)
 		return
 	}
-	material.Password, material.TOTPSecret = string(password), string(totp)
 	status := "missing_credentials"
 	var session platform.PersonalSession
-	_, totpErr := auth.TOTPCode(material.TOTPSecret, time.Now())
-	if strings.TrimSpace(material.LoginIdentifier) != "" && material.Password != "" && totpErr == nil {
+	_, totpErr := auth.TOTPCode(attempt.material.TOTPSecret, time.Now())
+	if strings.TrimSpace(attempt.material.LoginIdentifier) != "" && attempt.material.Password != "" && totpErr == nil {
 		adapter := h.personalRefresh
 		if adapter == nil {
 			adapter = platform.UnavailablePersonalRefresh{}
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
-		result, refreshErr := adapter.RefreshPersonal(ctx, material)
+		result, refreshErr := adapter.RefreshPersonal(ctx, attempt.material)
 		cancel()
 		switch {
 		case errors.Is(refreshErr, platform.ErrPersonalRefreshUnavailable):
 			status = "unavailable"
-		case refreshErr != nil:
-			status = "refresh_failed"
-		case !platform.ValidatePersonalRefresh(result, time.Now()):
+		case refreshErr != nil || !platform.ValidatePersonalRefresh(result, time.Now()):
 			status = "refresh_failed"
 		default:
-			status = result.Status
-			session = result.Session
+			status, session = result.Status, result.Session
 		}
 	}
-	// A failed refresh cannot leave a prior session or visibility silently usable.
-	_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, id)
-	if err == nil {
-		_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_workspace_visibility WHERE mother_account_id=$1`, id)
+	tx, err := h.pool.Begin(r.Context())
+	if err != nil {
+		h.workspaceFailure(w, r, err)
+		return
 	}
-	if err == nil {
-		_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_discoveries WHERE mother_account_id=$1`, id)
-	}
-	if err == nil {
-		_, err = tx.Exec(r.Context(), `INSERT INTO tsw_mother_personal_access(mother_account_id,secret_revision,status) VALUES ($1,$2,$3) ON CONFLICT(mother_account_id) DO UPDATE SET secret_revision=EXCLUDED.secret_revision,status=EXCLUDED.status,checked_at=now()`, id, revision, status)
+	defer tx.Rollback(r.Context())
+	var revision, currentAttempt int64
+	var stillActive bool
+	err = tx.QueryRow(r.Context(), `SELECT credential.secret_revision,access.attempt,account.status='active' FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id JOIN tsw_mother_personal_access access ON access.mother_account_id=account.id WHERE account.id=$1 FOR UPDATE OF account,credential,access`, id).Scan(&revision, &currentAttempt, &stillActive)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (!stillActive || revision != attempt.revision || currentAttempt != attempt.attempt)) {
+		writeProblem(w, r, http.StatusConflict, "mother_access_changed", "Conflict", "Mother access changed; verify again", 0)
+		return
 	}
 	if err != nil {
 		h.workspaceFailure(w, r, err)
 		return
 	}
+	_, err = tx.Exec(r.Context(), `UPDATE tsw_mother_personal_access SET status=$2,checked_at=now() WHERE mother_account_id=$1`, id, status)
+	if err != nil {
+		h.workspaceFailure(w, r, err)
+		return
+	}
 	if status == "ready" {
-		version, nonce, sealed, sealErr := sealPersonalSession(h.keyRing, id, revision, session)
+		version, nonce, sealed, sealErr := sealPersonalSession(h.keyRing, id, attempt.revision, session)
 		if sealErr != nil {
 			h.workspaceFailure(w, r, sealErr)
 			return
 		}
-		_, err = tx.Exec(r.Context(), `INSERT INTO tsw_mother_personal_sessions(mother_account_id,secret_revision,generation,key_version,nonce,sealed_session,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`, id, revision, uuid.New(), version, nonce, sealed, session.ExpiresAt)
+		_, err = tx.Exec(r.Context(), `INSERT INTO tsw_mother_personal_sessions(mother_account_id,secret_revision,generation,key_version,nonce,sealed_session,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`, id, attempt.revision, uuid.New(), version, nonce, sealed, session.ExpiresAt)
 		if err != nil {
 			h.workspaceFailure(w, r, err)
 			return
 		}
 	}
-	// Persisted platform session material is sensitive; replace Owner token atomically.
 	var token string
 	var idle time.Time
 	if status == "ready" {
@@ -139,7 +167,7 @@ func (h *OwnerAuthHandler) motherPersonalAccess(r *http.Request, id uuid.UUID) (
 	response := ownerapi.MotherPersonalAccess{MotherAccountId: id, Status: ownerapi.MotherPersonalAccessStatusNotVerified}
 	var status *string
 	var checked *time.Time
-	err := h.pool.QueryRow(r.Context(), `SELECT CASE WHEN access.status='ready' AND (session.mother_account_id IS NULL OR session.expires_at<=now()) THEN NULL ELSE access.status END,access.checked_at FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id LEFT JOIN tsw_mother_personal_access access ON access.mother_account_id=account.id AND access.secret_revision=credential.secret_revision LEFT JOIN tsw_mother_personal_sessions session ON session.mother_account_id=account.id AND session.secret_revision=credential.secret_revision WHERE account.id=$1 AND account.status='active'`, id).Scan(&status, &checked)
+	err := h.pool.QueryRow(r.Context(), `SELECT CASE WHEN access.status='ready' AND (session.mother_account_id IS NULL OR session.expires_at<=now()) THEN NULL WHEN access.status='verifying' AND access.checked_at<now()-interval '1 minute' THEN 'refresh_failed' ELSE access.status END,access.checked_at FROM tsw_mother_accounts account JOIN tsw_mother_account_credentials credential ON credential.mother_account_id=account.id LEFT JOIN tsw_mother_personal_access access ON access.mother_account_id=account.id AND access.secret_revision=credential.secret_revision LEFT JOIN tsw_mother_personal_sessions session ON session.mother_account_id=account.id AND session.secret_revision=credential.secret_revision WHERE account.id=$1 AND account.status='active'`, id).Scan(&status, &checked)
 	if err != nil {
 		return response, err
 	}
