@@ -22,6 +22,9 @@ func TestPersonalUsageProbeFixedBearerGETAndClassification(t *testing.T) {
 		want              PersonalProbeOutcome
 	}{
 		{"available", 200, "application/json", `{"rate_limit":{"primary_window":{"used_percent":20}}}`, PersonalAvailable},
+		{"explicitly allowed", 200, "application/json", `{"rate_limit":{"allowed":true}}`, PersonalAvailable},
+		{"explicitly denied", 200, "application/json", `{"rate_limit":{"allowed":false}}`, PersonalUnknown},
+		{"denied despite window", 200, "application/json", `{"rate_limit":{"allowed":false,"primary_window":{"used_percent":20}}}`, PersonalUnknown},
 		{"401", 401, "text/plain", "expired", PersonalCredentialInvalid},
 		{"forbidden", 403, "application/json", `{"error":{"code":"not_allowed"}}`, PersonalForbidden},
 		{"deactivated", 403, "application/json", `{"error":{"code":"account_deactivated"}}`, PersonalBanned},

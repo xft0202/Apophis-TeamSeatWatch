@@ -107,8 +107,20 @@ func (p PersonalUsageProbe) Probe(ctx context.Context, session PersonalSession) 
 		evidence.Malformed = true
 		return evidence, nil
 	}
-	var allowed bool
-	verified := json.Unmarshal(rateLimit["allowed"], &allowed) == nil
+	verified := false
+	if rawAllowed, present := rateLimit["allowed"]; present {
+		var allowed bool
+		if json.Unmarshal(rawAllowed, &allowed) != nil {
+			evidence.Malformed = true
+			return evidence, nil
+		}
+		if !allowed {
+			// An explicit usage denial is not an account-wide healthy result,
+			// even if a separately reported rate window looks well formed.
+			return evidence, nil
+		}
+		verified = true
+	}
 	for _, key := range []string{"primary_window", "secondary_window"} {
 		var window map[string]json.RawMessage
 		if json.Unmarshal(rateLimit[key], &window) == nil && window != nil {

@@ -50,6 +50,8 @@ func TestSavedTargetPersonalProbePersistsRealAdapterClassifications(t *testing.T
 		verified          bool
 	}{
 		{"success", 200, "application/json", `{"rate_limit":{"primary_window":{"used_percent":10}}}`, false, "available", true},
+		{"denied", 200, "application/json", `{"rate_limit":{"allowed":false}}`, false, "unknown", false},
+		{"denied despite window", 200, "application/json", `{"rate_limit":{"allowed":false,"primary_window":{"used_percent":10}}}`, false, "unknown", false},
 		{"401", 401, "text/plain", "expired", false, "credential_invalid", false},
 		{"403", 403, "application/json", `{"error":{"code":"forbidden"}}`, false, "forbidden", false},
 		{"deactivated", 403, "application/json", `{"error":{"code":"account_deactivated"}}`, false, "banned", true},
