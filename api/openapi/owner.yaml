@@ -182,7 +182,7 @@ paths:
         - $ref: '#/components/parameters/CsrfHeader'
       responses:
         '200':
-          description: Frozen, non-executing review of the current selection and evidence
+          description: Frozen non-executing review of current evidence
           content:
             application/json:
               schema:
@@ -245,11 +245,17 @@ paths:
               $ref: '#/components/schemas/ExpiryRotationConfirmation'
       responses:
         '200':
-          description: Recorded authorization only; no remote mutation is scheduled
+          description: Reserved for a separately reviewed durable write fence
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExpiryRotationPreview'
+        '409':
+          description: Currently returns pending_write_fence for valid mapping
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         default:
           $ref: '#/components/responses/Problem'
   /api/owner/v1/expiry-rotation/previews/{previewId}/revoke:
@@ -2302,7 +2308,16 @@ components:
     ExpiryRotationSlot:
       type: object
       additionalProperties: false
-      required: [identifier, platformMemberId, accountId, seatType, usageState, everUsed, protectionStatus, decision, reason]
+      required:
+        - identifier
+        - platformMemberId
+        - accountId
+        - seatType
+        - usageState
+        - everUsed
+        - protectionStatus
+        - decision
+        - reason
       properties:
         accountId:
           type: string
@@ -2314,7 +2329,14 @@ components:
           type: boolean
         protectionStatus:
           type: string
-          enum: [unknown, none, delivered, canceled_retired, sale_reserved, delivery_pending, suspected_sold]
+          enum:
+            - unknown
+            - none
+            - delivered
+            - canceled_retired
+            - sale_reserved
+            - delivery_pending
+            - suspected_sold
         identifier:
           type: string
         platformMemberId:
@@ -2329,7 +2351,15 @@ components:
     ExpiryRotationCandidate:
       type: object
       additionalProperties: false
-      required: [accountId, identifier, seatType, usageState, everUsed, protectionStatus, decision, reason]
+      required:
+        - accountId
+        - identifier
+        - seatType
+        - usageState
+        - everUsed
+        - protectionStatus
+        - decision
+        - reason
       properties:
         accountId:
           type: string
@@ -2341,7 +2371,14 @@ components:
           type: boolean
         protectionStatus:
           type: string
-          enum: [unknown, none, delivered, canceled_retired, sale_reserved, delivery_pending, suspected_sold]
+          enum:
+            - unknown
+            - none
+            - delivered
+            - canceled_retired
+            - sale_reserved
+            - delivery_pending
+            - suspected_sold
         identifier:
           type: string
         seatType:
@@ -2354,14 +2391,46 @@ components:
     ExpiryRotationPreview:
       type: object
       additionalProperties: false
-      required: [id, status, digest, draftId, draftVersion, motherAccountId, workspaceId, verificationId, batchId, batchVersion, destinationId, destinationRevision, activeUntil, seatTypeCounts, members, invitations, slots, candidates, source, evidenceFingerprint, sourceRevisions, assignments, observedAt, expiresAt, authorized]
+      required:
+        - id
+        - status
+        - digest
+        - draftId
+        - draftVersion
+        - motherAccountId
+        - workspaceId
+        - verificationId
+        - batchId
+        - batchVersion
+        - destinationId
+        - destinationRevision
+        - activeUntil
+        - seatTypeCounts
+        - members
+        - invitations
+        - slots
+        - candidates
+        - source
+        - evidenceFingerprint
+        - sourceRevisions
+        - assignments
+        - observedAt
+        - expiresAt
+        - authorized
       properties:
         id:
           type: string
           format: uuid
         status:
           type: string
-          enum: [ready, pending_permission, facts_incomplete, not_expired, needs_verification, authorized, revoked]
+          enum:
+            - ready
+            - pending_permission
+            - facts_incomplete
+            - not_expired
+            - needs_verification
+            - authorized
+            - revoked
         digest:
           type: string
         draftId:

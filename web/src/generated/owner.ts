@@ -2761,7 +2761,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Frozen, non-executing review of the current selection and evidence */
+            /** @description Frozen non-executing review of current evidence */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2834,13 +2834,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Recorded authorization only; no remote mutation is scheduled */
+            /** @description Reserved for a separately reviewed durable write fence */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["ExpiryRotationPreview"];
+                };
+            };
+            /** @description Currently returns pending_write_fence for valid mapping */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             default: components["responses"]["Problem"];

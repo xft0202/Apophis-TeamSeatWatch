@@ -41,6 +41,14 @@ type rotationProtectionProof struct {
 	AccountID uuid.UUID `json:"accountId"`
 	Status    string    `json:"status"`
 }
+type rotationInvitationProof struct {
+	rotationProof
+	WorkspaceID    uuid.UUID `json:"workspaceId"`
+	VerificationID int64     `json:"verificationId"`
+	Identifier     string    `json:"identifier"`
+	Status         string    `json:"status"`
+	SeatType       string    `json:"seatType"`
+}
 type rotationVerdict struct {
 	rotationProof
 	AccountID  uuid.UUID               `json:"accountId"`
@@ -51,17 +59,18 @@ type rotationVerdict struct {
 	Reason     string                  `json:"reason"`
 }
 type rotationEvidence struct {
-	WorkspaceID            uuid.UUID                     `json:"workspaceId"`
-	MotherID               uuid.UUID                     `json:"motherId"`
-	VerificationID         int64                         `json:"verificationId"`
-	Permission             rotationProof                 `json:"permission"`
-	PermissionDecision     string                        `json:"permissionDecision"`
-	Counts                 rotationProof                 `json:"counts"`
-	PaidDefault            rotationProof                 `json:"paidDefault"`
-	PaidDefaultEntitlement int                           `json:"paidDefaultEntitlement"`
-	SeatTypeCounts         map[string]int                `json:"seatTypeCounts"`
-	Slots                  map[string]rotationVerdict    `json:"slots"`      // exact platform member IDs
-	Candidates             map[uuid.UUID]rotationVerdict `json:"candidates"` // exact selected account IDs
+	WorkspaceID            uuid.UUID                          `json:"workspaceId"`
+	MotherID               uuid.UUID                          `json:"motherId"`
+	VerificationID         int64                              `json:"verificationId"`
+	Permission             rotationProof                      `json:"permission"`
+	PermissionDecision     string                             `json:"permissionDecision"`
+	Counts                 rotationProof                      `json:"counts"`
+	PaidDefault            rotationProof                      `json:"paidDefault"`
+	PaidDefaultEntitlement int                                `json:"paidDefaultEntitlement"`
+	SeatTypeCounts         map[string]int                     `json:"seatTypeCounts"`
+	Slots                  map[string]rotationVerdict         `json:"slots"`       // exact platform member IDs
+	Candidates             map[uuid.UUID]rotationVerdict      `json:"candidates"`  // exact selected account IDs
+	Invitations            map[string]rotationInvitationProof `json:"invitations"` // exact normalized outbound invite identifiers
 }
 
 func rotationExpired(activeUntil, now time.Time) bool { return !activeUntil.After(now) }
@@ -284,13 +293,13 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 	}
 	total := 0
 	for kind, count := range ev.SeatTypeCounts {
-		if kind == "" || count < 0 {
+		if kind == "" || count < 0 || count > memberCount-total {
 			pending()
 			return p, nil
 		}
 		total += count
 	}
-	if total < memberCount {
+	if total != memberCount {
 		pending()
 		return p, nil
 	}
@@ -356,7 +365,7 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			ready = false
 		}
 		var delivered bool
-		err = db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tsw_batch_memberships membership JOIN tsw_batches batch ON batch.id=membership.batch_id JOIN tsw_mother_workspace_bindings binding ON binding.id=batch.binding_id JOIN tsw_oauth_assets asset ON asset.membership_id=membership.id JOIN tsw_delivery_versions delivery ON delivery.oauth_asset_id=asset.id WHERE binding.workspace_id=$1 AND membership.platform_member_id=$2)`, p.WorkspaceId, e.id).Scan(&delivered)
+		err = db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tsw_batch_memberships membership JOIN tsw_oauth_assets asset ON asset.membership_id=membership.id JOIN tsw_delivery_versions delivery ON delivery.oauth_asset_id=asset.id WHERE membership.target_account_id=$1)`, verdict.AccountID).Scan(&delivered)
 		if err != nil {
 			return p, err
 		}
@@ -428,9 +437,17 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			candidate.Decision = "excluded"
 			candidate.Reason = "global_delivery_protected"
 		}
-		if !invitations[strings.ToLower(c.identifier)] {
+		inviteIdentifier := strings.ToLower(c.identifier)
+		if !invitations[inviteIdentifier] {
 			candidate.Decision = "excluded"
 			candidate.Reason = "invitation_required"
+		} else {
+			invite, hasProof := ev.Invitations[inviteIdentifier]
+			if !hasProof || !validRotationProof(invite.rotationProof, "mock_invite_seat_type", now) || invite.WorkspaceID != p.WorkspaceId || invite.VerificationID != p.VerificationId || invite.Identifier != inviteIdentifier || invite.Status != "pending" || invite.SeatType != "prolite" || invite.SeatType != candidate.SeatType {
+				candidate.Decision = "excluded"
+				candidate.Reason = "invitation_seat_type_unverified"
+				ready = false
+			}
 		}
 		if memberIdentifiers[strings.ToLower(c.identifier)] {
 			candidate.Decision = "excluded"
@@ -482,6 +499,11 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			if expiry.Before(p.ExpiresAt) {
 				p.ExpiresAt = expiry
 			}
+		}
+	}
+	for _, invite := range ev.Invitations {
+		if invite.ExpiresAt.Before(p.ExpiresAt) {
+			p.ExpiresAt = invite.ExpiresAt
 		}
 	}
 	// Scope the preview lifetime independently of Ticket07's seven-day read TTL.
@@ -653,7 +675,7 @@ func (h *OwnerAuthHandler) ConfirmExpiryRotation(w http.ResponseWriter, r *http.
 	}
 	defer tx.Rollback(r.Context())
 	oid := uuid.MustParse(owner.OwnerID)
-	p, key, status, err := rotationStored(r.Context(), tx, oid, id)
+	p, _, status, err := rotationStored(r.Context(), tx, oid, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeProblem(w, r, 404, "preview_not_found", "Not Found", "Preview not found", 0)
 		return
@@ -662,20 +684,16 @@ func (h *OwnerAuthHandler) ConfirmExpiryRotation(w http.ResponseWriter, r *http.
 		h.workspaceFailure(w, r, err)
 		return
 	}
-	if status == "authorized" && key == input.IdempotencyKey && p.Digest == input.Digest {
-		requested, valid := rotationAssignments(p, input.Assignments)
-		if valid && rotationHash(requested) == rotationHash(p.Assignments) {
-			writeJSON(w, 200, p)
-			return
-		}
-		writeProblem(w, r, 409, "idempotency_conflict", "Conflict", "The confirmation key belongs to different assignments", 0)
+	// Historical authorizations cannot be replayed into this fail-closed slice.
+	if status == "authorized" {
+		writeProblem(w, r, 409, "pending_write_fence", "Write Fence Pending", "Authorization is disabled until all fact writers share a reviewed durable fence", 0)
 		return
 	}
 	if status != "ready" {
 		writeProblem(w, r, 409, string(p.Status), "Not Authorizable", "No executable authorization was created", 0)
 		return
 	}
-	assignments, valid := rotationAssignments(p, input.Assignments)
+	_, valid := rotationAssignments(p, input.Assignments)
 	if !valid {
 		writeProblem(w, r, 409, "assignment_incomplete", "Incomplete Mapping", "Choose one distinct eligible candidate per replaceable slot; revise the draft for excess or mismatched candidates", 0)
 		return
@@ -684,48 +702,12 @@ func (h *OwnerAuthHandler) ConfirmExpiryRotation(w http.ResponseWriter, r *http.
 		writeProblem(w, r, 409, "preview_stale", "Stale Preview", "Re-preview changed or expired facts", 0)
 		return
 	}
-	// Lock draft until commit, then verify the exact facts, scope, roster, verdicts,
-	// batch/destination revisions, permission and protection again. Any drift blocks.
-	var draftVersion int64
-	err = tx.QueryRow(r.Context(), `SELECT version FROM tsw_operation_selection_drafts WHERE id=$1 AND owner_id=$2 FOR SHARE`, p.DraftId, oid).Scan(&draftVersion)
-	if err != nil || draftVersion != p.DraftVersion {
-		writeProblem(w, r, 409, "preview_stale", "Stale Preview", "Selection changed", 0)
-		return
-	}
-	fresh, err := h.rotationFacts(r.Context(), tx, oid)
-	if err != nil {
-		h.workspaceFailure(w, r, err)
-		return
-	}
-	fresh.ExpiresAt = p.ExpiresAt // a shorter independent proof still fails the fingerprint and freshness test
-	if fresh.Status != "ready" || fresh.EvidenceFingerprint != p.EvidenceFingerprint || rotationDigest(fresh) != p.Digest {
-		writeProblem(w, r, 409, "preview_stale", "Stale Preview", "Evidence changed; request a new preview", 0)
-		return
-	}
-	assignmentJSON, _ := json.Marshal(assignments)
-	binding := rotationHash(struct {
-		Preview     string
-		Assignments []ownerapi.ExpiryRotationAssignment
-	}{p.Digest, assignments})
-	_, err = tx.Exec(r.Context(), `UPDATE tsw_expiry_rotation_previews SET status='authorized',idempotency_key=$2,authorized_by=$3,authorized_session=$4,authorized_at=now(),assignments=$5,authorization_digest=$6 WHERE id=$1 AND status='ready'`, id, input.IdempotencyKey, oid, owner.SessionID, assignmentJSON, binding)
-	if err == nil {
-		_, err = audit.Write(r.Context(), tx, audit.Event{Type: audit.ExpiryRotationAuthorized, Actor: audit.ActorOwner, OwnerID: owner.OwnerID, RetentionScopeID: p.WorkspaceId.String(), EntityType: "expiry_rotation_preview", EntityID: id.String(), Outcome: audit.OutcomeSucceeded, CorrelationID: correlation(r), Details: audit.ExpiryRotationDetails{Digest: binding, Action: "authorized"}, IdempotencyKey: id.String() + ":authorized"})
-	}
-	if err == nil {
-		err = tx.Commit(r.Context())
-	}
-	if err != nil {
-		h.workspaceFailure(w, r, err)
-		return
-	}
-	now := time.Now().UTC()
-	p.Status = "authorized"
-	p.Assignments = assignments
-	p.AuthorizationDigest = &binding
-	p.Authorized = true
-	p.AuthorizedAt = &now
-	p.AuthorizedBy = &oid
-	writeJSON(w, 200, p)
+	// Preview-level evidence is not a cross-writer authorization fence. A
+	// verification insert, destination update, standby/credential mutation, or
+	// delivery in another Workspace can commit after any read. No Owner request
+	// may turn this mock preview into executable authorization until a reviewed
+	// shared epoch/protection ledger coordinates every writer.
+	writeProblem(w, r, 409, "pending_write_fence", "Write Fence Pending", "Authorization is disabled until all fact writers share a reviewed durable fence", 0)
 }
 func (h *OwnerAuthHandler) RevokeExpiryRotation(w http.ResponseWriter, r *http.Request, id uuid.UUID, _ ownerapi.RevokeExpiryRotationParams) {
 	owner, ok := h.authenticated(w, r, true)

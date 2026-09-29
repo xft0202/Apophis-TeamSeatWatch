@@ -28,6 +28,6 @@ export function rotationStatus(item: ExpiryPreview): string {
     case 'needs_verification': return '原席位保护、候选资格或席位与合格候选数待核验；请修订草案后重新预览。不会整批清退，也不会临时发邀请。';
     case 'authorized': return '已记录冻结授权；本阶段不执行邀请、加入、清退或推送。';
     case 'revoked': return '授权已撤销；原确认不能再次使用。';
-    case 'ready': return '证据已齐；请逐项核对后明确确认。';
+    case 'ready': return '只读预览事实已齐；授权写入围栏待实现。本阶段不会建立可执行授权。';
   }
 }

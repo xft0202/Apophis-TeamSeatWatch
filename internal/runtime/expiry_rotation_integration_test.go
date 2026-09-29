@@ -137,7 +137,7 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	}
 	usedSlot := rotationVerdict{rotationProof: proof("mock_member_protection", "member-1"), AccountID: original, SeatType: "prolite", Usage: usage(original, "used", true), Protection: protection(original, "none"), Decision: "replaceable", Reason: "fixture-used-unprotected"}
 	eligibleChild := rotationVerdict{rotationProof: proof("mock_candidate_protection", "candidate-1"), AccountID: child, SeatType: "prolite", Usage: usage(child, "never_used", false), Protection: protection(child, "none"), Decision: "eligible", Reason: "fixture-invited-unprotected"}
-	mock := &mockRotation{evidence: rotationEvidence{WorkspaceID: space, MotherID: mother, VerificationID: verification, Permission: proof("mock_write_permission", "write-1"), PermissionDecision: "manage", Counts: proof("mock_seat_type_counts", "seats-1"), PaidDefault: proof("mock_paid_default_entitlement", "paid-1"), PaidDefaultEntitlement: 2, SeatTypeCounts: map[string]int{"default": 0, "prolite": 1}, Slots: map[string]rotationVerdict{"member-1": usedSlot}, Candidates: map[uuid.UUID]rotationVerdict{child: eligibleChild}}}
+	mock := &mockRotation{evidence: rotationEvidence{WorkspaceID: space, MotherID: mother, VerificationID: verification, Permission: proof("mock_write_permission", "write-1"), PermissionDecision: "manage", Counts: proof("mock_seat_type_counts", "seats-1"), PaidDefault: proof("mock_paid_default_entitlement", "paid-1"), PaidDefaultEntitlement: 2, SeatTypeCounts: map[string]int{"default": 0, "prolite": 1}, Invitations: map[string]rotationInvitationProof{"child@rotate.test": {rotationProof: proof("mock_invite_seat_type", "invite-1"), WorkspaceID: space, VerificationID: verification, Identifier: "child@rotate.test", Status: "pending", SeatType: "prolite"}}, Slots: map[string]rotationVerdict{"member-1": usedSlot}, Candidates: map[uuid.UUID]rotationVerdict{child: eligibleChild}}}
 	h.rotationCapability = mock
 	mock.evidence.PermissionDecision = "read"
 	if p := preview(); p.Status != "pending_permission" {
@@ -179,9 +179,13 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 		}
 	}
 	mock.evidence.Slots["member-1"] = usedSlot
-	mock.evidence.SeatTypeCounts = map[string]int{"usage_based": 2}
+	mock.evidence.SeatTypeCounts = map[string]int{"usage_based": 1}
 	if p := preview(); p.Status != "needs_verification" {
 		t.Fatalf("mismatched seat type counts accepted: %+v", p)
+	}
+	mock.evidence.SeatTypeCounts = map[string]int{"prolite": 1, "default": 100}
+	if p := preview(); p.Status == "ready" {
+		t.Fatalf("typed occupancy greater than complete roster accepted: %+v", p)
 	}
 	mock.evidence.SeatTypeCounts = map[string]int{"default": 0, "prolite": 1}
 	mock.evidence.PaidDefaultEntitlement = 1
@@ -214,6 +218,45 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 		t.Fatalf("unknown candidate usage accepted: %+v", p)
 	}
 	mock.evidence.Candidates[child] = eligibleChild
+	delete(mock.evidence.Invitations, "child@rotate.test")
+	if p := preview(); p.Status == "ready" || p.Candidates[0].Decision == "eligible" {
+		t.Fatalf("invitation without independent seat type proof accepted: %+v", p)
+	}
+	inviteProof := rotationInvitationProof{rotationProof: proof("mock_invite_seat_type", "invite-1"), WorkspaceID: space, VerificationID: verification, Identifier: "child@rotate.test", Status: "pending", SeatType: "prolite"}
+	for name, corrupt := range map[string]func(*rotationInvitationProof){
+		"wrong_seat":         func(p *rotationInvitationProof) { p.SeatType = "default" },
+		"unknown_seat":       func(p *rotationInvitationProof) { p.SeatType = "unknown" },
+		"wrong_identity":     func(p *rotationInvitationProof) { p.Identifier = "other@rotate.test" },
+		"wrong_verification": func(p *rotationInvitationProof) { p.VerificationID++ },
+		"wrong_source":       func(p *rotationInvitationProof) { p.Source = "official_readonly" },
+		"expired":            func(p *rotationInvitationProof) { p.ExpiresAt = now.Add(-time.Second) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := inviteProof
+			corrupt(&bad)
+			mock.evidence.Invitations["child@rotate.test"] = bad
+			if p := preview(); p.Status == "ready" || p.Candidates[0].Decision == "eligible" {
+				t.Fatalf("unverified invitation accepted: %+v", p)
+			}
+		})
+	}
+	mock.evidence.Invitations["child@rotate.test"] = inviteProof
+	// The disposable fixture already has a delivery in another Workspace. Moving
+	// its membership to the same canonical account tests whole-account protection.
+	var deliveredMembership, priorAccount uuid.UUID
+	err = pool.QueryRow(ctx, `SELECT membership.id,membership.target_account_id FROM tsw_batch_memberships membership JOIN tsw_target_accounts account ON account.id=membership.target_account_id WHERE account.identifier='target@example.com'`).Scan(&deliveredMembership, &priorAccount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed(`UPDATE tsw_batch_memberships SET target_account_id=$2 WHERE id=$1`, deliveredMembership, original)
+	if p := preview(); p.Status == "ready" || p.Slots[0].Decision != "retained" {
+		t.Fatalf("cross-Workspace delivered original was replaceable: %+v", p)
+	}
+	seed(`UPDATE tsw_batch_memberships SET target_account_id=$2 WHERE id=$1`, deliveredMembership, child)
+	if p := preview(); p.Status == "ready" || p.Candidates[0].Decision != "excluded" {
+		t.Fatalf("cross-Workspace delivered candidate was eligible: %+v", p)
+	}
+	seed(`UPDATE tsw_batch_memberships SET target_account_id=$2 WHERE id=$1`, deliveredMembership, priorAccount)
 	ready := preview()
 	if ready.Status != "ready" || len(ready.Slots) != 1 || len(ready.Candidates) != 1 || ready.Candidates[0].Decision != "eligible" {
 		t.Fatalf("ready evidence rejected: %+v", ready)
@@ -229,37 +272,28 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 		t.Fatalf("drifting fact accepted: %d %s", w.Code, w.Body.String())
 	}
 	mock.evidence.Counts.EvidenceID = "seats-1"
-	confirmed := rotationResult(t, rotationRequest(h, session, csrf, "POST", confirmPath, confirmation), 200)
-	if !confirmed.Authorized || confirmed.Status != "authorized" || confirmed.AuthorizedBy == nil || len(confirmed.Assignments) != 1 || confirmed.AuthorizationDigest == nil {
-		t.Fatalf("not authorized: %+v", confirmed)
+	blocked := rotationRequest(h, session, csrf, "POST", confirmPath, confirmation)
+	if blocked.Code != 409 || !bytes.Contains(blocked.Body.Bytes(), []byte("pending_write_fence")) {
+		t.Fatalf("mock confirmation created authorization: %d %s", blocked.Code, blocked.Body.String())
 	}
 	resumed := rotationResult(t, rotationRequest(h, session, csrf, "GET", path+"/latest", nil), 200)
-	if resumed.Id != confirmed.Id || !resumed.Authorized {
-		t.Fatal("not resumed after persistence")
+	if resumed.Id != ready.Id || resumed.Authorized || resumed.Status != "ready" {
+		t.Fatalf("blocked preview mutated: %+v", resumed)
 	}
-	if p := rotationResult(t, rotationRequest(h, session, csrf, "POST", confirmPath, confirmation), 200); p.Id != confirmed.Id {
-		t.Fatal("idempotent replay changed preview")
+	for n := 0; n < 2; n++ {
+		if w := rotationRequest(h, session, csrf, "POST", confirmPath, confirmation); w.Code != 409 || !bytes.Contains(w.Body.Bytes(), []byte("pending_write_fence")) {
+			t.Fatalf("replay bypassed fence: %d %s", w.Code, w.Body.String())
+		}
 	}
-	if w := rotationRequest(h, session, csrf, "POST", confirmPath, map[string]any{"confirmed": true, "digest": ready.Digest, "idempotencyKey": key, "assignments": []map[string]any{{"platformMemberId": "other", "accountId": child}}}); w.Code != 409 {
-		t.Fatalf("idempotency key reused with other mapping: %d", w.Code)
+	if w := rotationRequest(h, session, csrf, "POST", path+"/"+ready.Id.String()+"/revoke", nil); w.Code != 409 {
+		t.Fatalf("unauthorized preview revoked: %d", w.Code)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE tsw_expiry_rotation_previews SET assignments='[]'::jsonb WHERE id=$1`, ready.Id); err == nil {
-		t.Fatal("persisted mapping was mutable")
+	var authorizationCount, auditCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM tsw_expiry_rotation_previews WHERE status='authorized' OR authorized_at IS NOT NULL`).Scan(&authorizationCount); err != nil || authorizationCount != 0 {
+		t.Fatalf("authorization persisted: %d %v", authorizationCount, err)
 	}
-	confirmation["idempotencyKey"] = uuid.New()
-	if rotationRequest(h, session, csrf, "POST", confirmPath, confirmation).Code != 409 {
-		t.Fatal("different key replay authorized")
-	}
-	revoked := rotationResult(t, rotationRequest(h, session, csrf, "POST", path+"/"+ready.Id.String()+"/revoke", nil), 200)
-	if revoked.Status != "revoked" || revoked.Authorized {
-		t.Fatal("revocation failed")
-	}
-	if rotationRequest(h, session, csrf, "POST", confirmPath, map[string]any{"confirmed": true, "digest": ready.Digest, "idempotencyKey": key, "assignments": assignments}).Code != 409 {
-		t.Fatal("revocation replay authorized")
-	}
-	var auditCount int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM tsw_audit_events WHERE entity_id=$1 AND event_type IN ('expiry_rotation.authorized','expiry_rotation.revoked')`, ready.Id).Scan(&auditCount); err != nil || auditCount != 2 {
-		t.Fatalf("audit missing: count=%d err=%v", auditCount, err)
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM tsw_audit_events WHERE entity_id=$1 AND event_type IN ('expiry_rotation.authorized','expiry_rotation.revoked')`, ready.Id).Scan(&auditCount); err != nil || auditCount != 0 {
+		t.Fatalf("authorization audit incorrectly written: count=%d err=%v", auditCount, err)
 	}
 	var tasksAfter, operationsAfter int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM tsw_tasks`).Scan(&tasksAfter); err != nil {
@@ -294,6 +328,9 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	seed(`UPDATE tsw_delivery_destinations SET test_connection='connected',test_target='connected',test_revision=revision,tested_at=now() WHERE id=$1`, dest)
 	seed(`UPDATE tsw_operation_selection_drafts SET verification_id=$2,destination_revision=2,version=version+1 WHERE id=$1`, draft, futureVerification)
 	mock.evidence.VerificationID = futureVerification
+	invite := mock.evidence.Invitations["child@rotate.test"]
+	invite.VerificationID = futureVerification
+	mock.evidence.Invitations["child@rotate.test"] = invite
 	if p := preview(); p.Status != "not_expired" {
 		t.Fatalf("future expiry accepted: %s", p.Status)
 	}
@@ -307,6 +344,53 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	mock.evidence.Candidates[child] = eligibleChild
 	if p := preview(); p.Candidates[0].Reason != "sticky_usage_conflict" {
 		t.Fatalf("sticky usage downgraded: %+v", p)
+	}
+	// No shared epoch coordinates all writers. Force confirmation to wait on its
+	// preview lock while each independent writer commits, then assert that even
+	// a previously ready mock preview cannot transition to authorized.
+	writers := []struct {
+		name, statement string
+		args            []any
+	}{
+		{"new_partial_verification", `INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,secret_revision,token_attempt,token_exchange_id,source,outcome,permission,completeness,observed_at,expires_at) VALUES($1,$2,$3,$4,1,1,$5,'injected_platform_reader','partial','unknown','partial',now(),now()+interval '4 minutes')`, []any{space, mother, run, generation, exchange}},
+		{"destination_update", `UPDATE tsw_delivery_destinations SET revision=revision+1,test_revision=NULL,test_connection=NULL,test_target=NULL,tested_at=NULL WHERE id=$1`, []any{dest}},
+		{"batch_update", `UPDATE tsw_standby_child_batches SET version=version+1 WHERE id=$1`, []any{batch}},
+		{"credential_update", `UPDATE tsw_target_credentials SET material_status='needs_totp',version=version+1 WHERE target_account_id=$1`, []any{child}},
+		{"global_delivery_other_workspace", `UPDATE tsw_batch_memberships SET target_account_id=$2 WHERE id=$1`, []any{deliveredMembership, child}},
+	}
+	for _, writer := range writers {
+		t.Run(writer.name, func(t *testing.T) {
+			guard, err := pool.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer guard.Rollback(ctx)
+			var locked uuid.UUID
+			if err = guard.QueryRow(ctx, `SELECT id FROM tsw_expiry_rotation_previews WHERE id=$1 FOR UPDATE`, ready.Id).Scan(&locked); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan *httptest.ResponseRecorder, 1)
+			go func() { done <- rotationRequest(h, session, csrf, "POST", confirmPath, confirmation) }()
+			waitForReviewLock(t, pool, `%FROM tsw_expiry_rotation_previews WHERE id=%FOR UPDATE%`)
+			if _, err = pool.Exec(ctx, writer.statement, writer.args...); err != nil {
+				t.Fatal(err)
+			}
+			if err = guard.Commit(ctx); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case response := <-done:
+				if response.Code != 409 || !bytes.Contains(response.Body.Bytes(), []byte("pending_write_fence")) {
+					t.Fatalf("stale mock authorized: %d %s", response.Code, response.Body.String())
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("confirmation lock wait deadlocked")
+			}
+			var count int
+			if err = pool.QueryRow(ctx, `SELECT count(*) FROM tsw_expiry_rotation_previews WHERE status='authorized' OR authorized_at IS NOT NULL`).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("writer %s created authorization: %d %v", writer.name, count, err)
+			}
+		})
 	}
 	seed(`UPDATE tsw_owner_sessions SET revoked_at=now(),revocation_reason='owner_test' WHERE owner_id=$1 AND revoked_at IS NULL`, owner)
 	if w := rotationRequest(h, session, csrf, "POST", path, nil); w.Code != 401 {

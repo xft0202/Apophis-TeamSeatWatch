@@ -8,7 +8,7 @@ const ready = {
   slots: [{ decision: 'replaceable' }, { decision: 'retained' }],
   candidates: [{ decision: 'eligible' }, { decision: 'excluded', reason: 'invitation_required' }],
 };
-test('wizard continuation confirms only a fresh, exact ready snapshot', () => {
+test('wizard submits explicit mapping review only for a fresh, exact ready preview', () => {
   assert.equal(canConfirmRotation(ready, 4, now), true);
   assert.equal(canConfirmRotation({ ...ready, status: 'pending_permission' }, 4, now), false);
   assert.equal(canConfirmRotation({ ...ready, status: 'facts_incomplete' }, 4, now), false);
@@ -22,6 +22,7 @@ test('wizard continuation confirms only a fresh, exact ready snapshot', () => {
   assert.equal(canConfirmRotation({ ...ready, slots: [{ decision: 'retained' }] }, 4, now), false);
   assert.match(rotationStatus({ ...ready, status: 'pending_permission' }), /可读取空间不代表允许管理/);
   assert.match(rotationStatus({ ...ready, status: 'needs_verification' }), /不会整批清退/);
+  assert.match(rotationStatus(ready), /不会建立可执行授权/);
 });
 
 test('Owner must explicitly match each independently eligible candidate to one compatible original seat', () => {
