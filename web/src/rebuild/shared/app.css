@@ -1,3 +1,4 @@
+@import url('https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&display=swap');
 @import '@mantine/core/styles.css';
 
 :root {
@@ -56,8 +57,8 @@ input {
   height: 34px;
   place-items: center;
   border-radius: 8px;
-  background: #6366f1;
-  color: #ffffff;
+  background: #0a0a0a;
+  color: #fafafa;
   font-family: 'General Sans', 'DM Sans', sans-serif;
   font-size: 14px;
   font-weight: 700;
@@ -82,14 +83,6 @@ input {
 
 .auth-form {
   margin-top: 28px;
-}
-
-.auth-footnote {
-  margin: 22px 0 0;
-  color: #6b6b6b;
-  font-size: 12px;
-  line-height: 1.6;
-  text-align: center;
 }
 
 .auth-loading {

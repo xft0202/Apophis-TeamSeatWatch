@@ -138,7 +138,7 @@ function LoginView({
   return (
     <main className="auth-page">
       <Container className="auth-card" size={456} px={0}>
-        <Paper withBorder shadow="sm" radius="md" p={{ base: 'xl', sm: 40 }}>
+        <Paper withBorder radius="md" p={{ base: 'xl', sm: 40 }}>
           <div className="brand-lockup" aria-label="Apophis-TeamSeatWatch Owner">
             <span className="brand-mark" aria-hidden="true">TS</span>
             <span className="brand-name">Apophis-TeamSeatWatch</span>
@@ -184,9 +184,6 @@ function LoginView({
             </Stack>
           </form>
 
-          <Text className="auth-footnote">
-            会话由本机服务签发；请求继续使用 CSRF 双提交保护。
-          </Text>
         </Paper>
       </Container>
     </main>
@@ -264,12 +261,9 @@ function SignedInView({
               <Title order={1} size="h2" mt="md">
                 Owner 控制台入口
               </Title>
-              <Text c="dimmed" mt="xs">
-                本切片只建立可靠的登录、会话确认、刷新和退出边界；业务页面将在后续票据中从零实现。
-              </Text>
             </div>
 
-            <Paper withBorder shadow="sm" radius="md" p={{ base: 'lg', sm: 'xl' }}>
+            <Paper withBorder radius="md" p={{ base: 'lg', sm: 'xl' }}>
               <Stack gap="lg">
                 <Group justify="space-between" align="flex-start" wrap="nowrap">
                   <div>
@@ -287,7 +281,7 @@ function SignedInView({
                 <Divider />
                 <Group justify="space-between" align="center" gap="md">
                   <Text size="sm" c="dimmed">
-                    服务端已确认此会话仍然有效。
+                    当前登录有效。
                   </Text>
                   <Button
                     variant="light"
