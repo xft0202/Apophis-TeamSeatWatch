@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { canChooseDestination, draftStatus, wizardStep } from '../src/rebuild/owner/operationWizardState.ts';
+import { createOperationWizardRequests } from '../src/rebuild/owner/operationWizardRequests.ts';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
@@ -62,6 +63,49 @@ test('mocked backtracking and restart preserve exact children until a changed mo
   assert.deepEqual(current.children, []);
   assert.equal(current.destinationId, undefined);
   assert.equal(current.workspaceId, undefined);
+});
+
+test('mocked batch A to B switch keeps B preview and clears pending despite stale child details', async () => {
+  function deferred() {
+    let resolve;
+    const promise = new Promise((done) => { resolve = done; });
+    return { promise, resolve };
+  }
+  const requests = createOperationWizardRequests();
+  const previewA = deferred();
+  const previewB = deferred();
+  const oldDetails = deferred();
+  let candidate = '';
+  let selection = null;
+  let details = null;
+  let pending = false;
+  async function chooseBatch(id, preview) {
+    const generation = requests.preview.begin();
+    candidate = id; selection = null; pending = true;
+    try {
+      const result = await preview.promise;
+      if (requests.preview.isCurrent(generation)) selection = result;
+    } finally {
+      if (requests.preview.isCurrent(generation)) pending = false;
+    }
+  }
+  const first = chooseBatch('A', previewA);
+  previewA.resolve({ members: [{ accountId: 'account-A' }], count: 1 });
+  await first;
+  const oldDetailsGeneration = requests.childDetails.begin();
+  const oldDetailsResult = oldDetails.promise.then((value) => {
+    if (requests.childDetails.isCurrent(oldDetailsGeneration)) details = value;
+  });
+  const second = chooseBatch('B', previewB);
+  requests.childDetails.invalidate(); // cleanup of A's in-flight detail effect on candidate change
+  previewB.resolve({ members: [{ accountId: 'account-B' }], count: 1 });
+  await second;
+  oldDetails.resolve({ accountId: 'account-A', identifier: 'old@example.test' });
+  await oldDetailsResult;
+  assert.equal(candidate, 'B');
+  assert.deepEqual(selection?.members, [{ accountId: 'account-B' }]);
+  assert.equal(pending, false);
+  assert.equal(details, null, 'A details cannot reappear after switching to B');
 });
 
 test('errors and stale evidence block progress without guessing eligible seats or write permission', () => {

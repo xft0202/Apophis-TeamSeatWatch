@@ -5,6 +5,7 @@ import { getMotherDiscovery, getSelectedWorkspaceAccess, getSelectedWorkspaceVer
 import { destinationApi, type Destination } from './deliveryDestination';
 import { operationDraftApi, type Draft, type DraftChange, type DraftChild } from './operationDraft';
 import { canChooseDestination, draftStatus } from './operationWizardState';
+import { createOperationWizardRequests } from './operationWizardRequests';
 import { standbyApi, type Batch, type Selection } from './standbyBatches';
 import { canShowSelectedWorkspaceFacts } from './workspaceVerification';
 
@@ -19,7 +20,7 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
   const [discovery, setDiscovery] = useState<Discovery | null>(null);
   const [verifiedWorkspace, setVerifiedWorkspace] = useState(false);
   const [workspaceStatus, setWorkspaceStatus] = useState('');
-  const requestGeneration = useRef(0);
+  const requests = useRef(createOperationWizardRequests());
   const [batches, setBatches] = useState<Batch[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -39,7 +40,7 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
         throw error;
       });
       setDraft(current);
-      requestGeneration.current++;
+      requests.current.invalidateAll();
       setCandidate(''); setVerifiedWorkspace(false); setWorkspaceStatus(''); setSelection(null); setSelectedChildren(new Set()); setChildDetails({});
       if (current?.step === 'mother') setMothers(await listAllMotherAccounts());
       if (current?.step === 'workspace' && current.motherAccountId) setDiscovery(await getMotherDiscovery(current.motherAccountId));
@@ -50,26 +51,26 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
       setNotice(ownerProblem(error).status === 401 ? '登录已过期，请重新登录。' : '当前步骤无法读取，请刷新重试。');
     } finally { setLoading(false); }
   }
-  useEffect(() => { void reload(); return () => { requestGeneration.current++; }; }, []);
+  useEffect(() => { void reload(); return () => { requests.current.invalidateAll(); }; }, []);
   useEffect(() => {
     if (draft?.step !== 'workspace' || !draft.motherAccountId || !candidate) return;
-    const current = ++requestGeneration.current;
+    const current = requests.current.workspace.begin();
     setVerifiedWorkspace(false); setWorkspaceStatus('正在检查所选空间事实…');
     void Promise.all([getSelectedWorkspaceAccess(candidate, draft.motherAccountId), getSelectedWorkspaceVerification(candidate, draft.motherAccountId)])
       .then(([access, facts]) => {
-        if (current !== requestGeneration.current) return;
+        if (!requests.current.workspace.isCurrent(current)) return;
         const ready = canShowSelectedWorkspaceFacts(facts, access, Date.now());
         setVerifiedWorkspace(ready);
         setWorkspaceStatus(ready ? `事实已核验（${facts.permission === 'manage' ? '管理权限已记录' : '仅可读取；不能视作可写'}），仍需明确确认空间。` : '事实、凭据或权限待核验。请进入空间管理修复后返回此步。');
-      }).catch(() => { if (current === requestGeneration.current) setWorkspaceStatus('该空间事实无法读取；请在空间管理核验后重试。'); });
-    return () => { requestGeneration.current++; };
+      }).catch(() => { if (requests.current.workspace.isCurrent(current)) setWorkspaceStatus('该空间事实无法读取；请在空间管理核验后重试。'); });
+    return () => { requests.current.workspace.invalidate(); };
   }, [draft?.step, draft?.motherAccountId, candidate]);
 
   useEffect(() => {
     if (draft?.step !== 'children' || !candidate || !selection) return;
-    const current = ++requestGeneration.current;
+    const current = requests.current.childDetails.begin();
     void operationDraftApi.batchChildren(candidate, childPage).then((result) => {
-      if (current !== requestGeneration.current) return;
+      if (!requests.current.childDetails.isCurrent(current)) return;
       const batch = batches.find((item) => item.id === candidate);
       if (result.batchVersion !== batch?.version) { setNotice('批次已变化；请刷新并重新确认精确范围。'); return; }
       const details: Record<string, { identifier: string; materialStatus: 'complete' | 'needs_totp' }> = {};
@@ -79,8 +80,8 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
         }
       }
       setChildDetails(details);
-    }).catch(() => { if (current === requestGeneration.current) setNotice('账号名称读取失败；请刷新后重试。'); });
-    return () => { requestGeneration.current++; };
+    }).catch(() => { if (requests.current.childDetails.isCurrent(current)) setNotice('账号名称读取失败；请刷新后重试。'); });
+    return () => { requests.current.childDetails.invalidate(); };
   }, [draft?.step, candidate, selection, childPage, batches]);
 
   async function save(change?: Omit<DraftChange, 'expectedVersion'>) {
@@ -99,13 +100,13 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
     } finally { setPending(false); }
   }
   async function previewBatch(batchId: string) {
-    const current = ++requestGeneration.current;
+    const current = requests.current.preview.begin();
     setCandidate(batchId); setSelection(null); setSelectedChildren(new Set()); setChildDetails({}); setChildPage(1);
-    if (!batchId) return;
+    if (!batchId) { setPending(false); return; }
     setPending(true); setNotice('');
-    try { const result = await standbyApi.preview('batch', [], '', batchId); if (current === requestGeneration.current) setSelection(result); }
-    catch (error: unknown) { if (current === requestGeneration.current) setNotice(ownerProblem(error).status === 409 ? '批次范围已变化，请刷新后重新选择。' : '批次子号无法读取，请刷新重试。'); }
-    finally { if (current === requestGeneration.current) setPending(false); }
+    try { const result = await standbyApi.preview('batch', [], '', batchId); if (requests.current.preview.isCurrent(current)) setSelection(result); }
+    catch (error: unknown) { if (requests.current.preview.isCurrent(current)) setNotice(ownerProblem(error).status === 409 ? '批次范围已变化，请刷新后重新选择。' : '批次子号无法读取，请刷新重试。'); }
+    finally { if (requests.current.preview.isCurrent(current)) setPending(false); }
   }
   function toggleChild(id: string) {
     const next = new Set(selectedChildren);
