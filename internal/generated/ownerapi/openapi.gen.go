@@ -3688,6 +3688,12 @@ type ImportMotherAccountsJSONRequestBody = ImportMotherAccounts
 // UpdateMotherAccountJSONRequestBody defines body for UpdateMotherAccount for application/json ContentType.
 type UpdateMotherAccountJSONRequestBody = UpdateMotherAccount
 
+// CreatePersonalProbesJSONRequestBody defines body for CreatePersonalProbes for application/json ContentType.
+type CreatePersonalProbesJSONRequestBody = CreatePersonalProbes
+
+// PreviewPersonalProbesJSONRequestBody defines body for PreviewPersonalProbes for application/json ContentType.
+type PreviewPersonalProbesJSONRequestBody = PersonalProbeScope
+
 // CreateStandbyChildBatchJSONRequestBody defines body for CreateStandbyChildBatch for application/json ContentType.
 type CreateStandbyChildBatchJSONRequestBody = StandbyChildBatchChange
 
@@ -3699,12 +3705,6 @@ type UpdateStandbyChildBatchJSONRequestBody = StandbyChildBatchChange
 
 // ExportStandbyChildBatchJSONRequestBody defines body for ExportStandbyChildBatch for application/json ContentType.
 type ExportStandbyChildBatchJSONRequestBody = StandbyChildBatchExport
-
-// CreatePersonalProbesJSONRequestBody defines body for CreatePersonalProbes for application/json ContentType.
-type CreatePersonalProbesJSONRequestBody = CreatePersonalProbes
-
-// PreviewPersonalProbesJSONRequestBody defines body for PreviewPersonalProbes for application/json ContentType.
-type PreviewPersonalProbesJSONRequestBody = PersonalProbeScope
 
 // CreateTargetAccountProbesJSONRequestBody defines body for CreateTargetAccountProbes for application/json ContentType.
 type CreateTargetAccountProbesJSONRequestBody = CreateTargetAccountProbes
