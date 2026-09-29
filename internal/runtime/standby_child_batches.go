@@ -16,10 +16,12 @@ import (
 	targetdomain "github.com/xft0202/Apophis-TeamSeatWatch/internal/target"
 )
 
+const standbyChildBatchLimit = 10000
+
 func standbyBatchTx(r *http.Request, tx pgx.Tx, id uuid.UUID) (ownerapi.StandbyChildBatch, error) {
 	var item ownerapi.StandbyChildBatch
-	err := tx.QueryRow(r.Context(), `SELECT b.id,b.name,b.version,count(m.target_account_id),count(DISTINCT split_part(a.identifier,'@',2)),
- coalesce(array_agg(DISTINCT split_part(a.identifier,'@',2) ORDER BY split_part(a.identifier,'@',2)) FILTER (WHERE a.id IS NOT NULL), ARRAY[]::text[])
+	err := tx.QueryRow(r.Context(), `SELECT b.id,b.name,b.version,count(m.target_account_id),count(DISTINCT nullif(split_part(a.identifier,'@',2),'')),
+ coalesce(array_agg(DISTINCT split_part(a.identifier,'@',2) ORDER BY split_part(a.identifier,'@',2)) FILTER (WHERE a.id IS NOT NULL AND split_part(a.identifier,'@',2)<>''), ARRAY[]::text[])
  FROM tsw_standby_child_batches b LEFT JOIN tsw_standby_child_memberships m ON m.batch_id=b.id
  LEFT JOIN tsw_target_accounts a ON a.id=m.target_account_id WHERE b.id=$1 GROUP BY b.id`, id).Scan(&item.Id, &item.Name, &item.Version, &item.MemberCount, &item.DomainCount, &item.Domains)
 	return item, err
@@ -29,8 +31,8 @@ func (h *OwnerAuthHandler) ListStandbyChildBatches(w http.ResponseWriter, r *htt
 	if _, ok := h.authenticated(w, r, false); !ok {
 		return
 	}
-	rows, err := h.pool.Query(r.Context(), `SELECT b.id,b.name,b.version,count(m.target_account_id),count(DISTINCT split_part(a.identifier,'@',2)),
- coalesce(array_agg(DISTINCT split_part(a.identifier,'@',2) ORDER BY split_part(a.identifier,'@',2)) FILTER (WHERE a.id IS NOT NULL), ARRAY[]::text[])
+	rows, err := h.pool.Query(r.Context(), `SELECT b.id,b.name,b.version,count(m.target_account_id),count(DISTINCT nullif(split_part(a.identifier,'@',2),'')),
+ coalesce(array_agg(DISTINCT split_part(a.identifier,'@',2) ORDER BY split_part(a.identifier,'@',2)) FILTER (WHERE a.id IS NOT NULL AND split_part(a.identifier,'@',2)<>''), ARRAY[]::text[])
  FROM tsw_standby_child_batches b LEFT JOIN tsw_standby_child_memberships m ON m.batch_id=b.id
  LEFT JOIN tsw_target_accounts a ON a.id=m.target_account_id GROUP BY b.id ORDER BY b.created_at DESC,b.id`)
 	if err != nil {
@@ -65,11 +67,11 @@ func (h *OwnerAuthHandler) PreviewStandbyChildSelection(w http.ResponseWriter, r
 		writeProblem(w, r, 422, "invalid_selection", "Invalid Selection", "Invalid selection", 0)
 		return
 	}
-	query := `SELECT a.id,coalesce(m.version,0) FROM tsw_target_accounts a LEFT JOIN tsw_standby_child_memberships m ON m.target_account_id=a.id WHERE `
+	query := `SELECT a.id,coalesce(m.version,0),count(*) OVER() FROM tsw_target_accounts a LEFT JOIN tsw_standby_child_memberships m ON m.target_account_id=a.id WHERE `
 	var arg any
 	switch request.Scope {
 	case ownerapi.StandbyChildSelectionRequestScopeSelected:
-		if request.AccountIds == nil || request.Search != nil || request.BatchId != nil || len(*request.AccountIds) == 0 || len(*request.AccountIds) > 10000 {
+		if request.AccountIds == nil || request.Search != nil || request.BatchId != nil || len(*request.AccountIds) == 0 || len(*request.AccountIds) > standbyChildBatchLimit {
 			writeProblem(w, r, 422, "invalid_selection", "Invalid Selection", "Invalid selection", 0)
 			return
 		}
@@ -100,9 +102,10 @@ func (h *OwnerAuthHandler) PreviewStandbyChildSelection(w http.ResponseWriter, r
 	}
 	defer rows.Close()
 	result := ownerapi.StandbyChildSelection{Scope: ownerapi.StandbyChildSelectionScope(request.Scope), Members: []ownerapi.StandbyChildSelectionMember{}}
+	var actualCount int64
 	for rows.Next() {
 		var member ownerapi.StandbyChildSelectionMember
-		if err = rows.Scan(&member.AccountId, &member.MembershipVersion); err != nil {
+		if err = rows.Scan(&member.AccountId, &member.MembershipVersion, &actualCount); err != nil {
 			h.targetFailure(w, r, err)
 			return
 		}
@@ -112,7 +115,11 @@ func (h *OwnerAuthHandler) PreviewStandbyChildSelection(w http.ResponseWriter, r
 		h.targetFailure(w, r, err)
 		return
 	}
-	if len(result.Members) > 10000 || request.Scope == ownerapi.StandbyChildSelectionRequestScopeSelected && len(result.Members) != len(*request.AccountIds) {
+	if actualCount > standbyChildBatchLimit {
+		writeStandbyRangeLimit(w, r, actualCount)
+		return
+	}
+	if request.Scope == ownerapi.StandbyChildSelectionRequestScopeSelected && len(result.Members) != len(*request.AccountIds) {
 		writeProblem(w, r, 409, "selection_changed", "Selection Changed", "Refresh the selection", 0)
 		return
 	}
@@ -132,7 +139,7 @@ func decodeStandbyChange(w http.ResponseWriter, r *http.Request, value any) bool
 }
 
 func validStandbySelection(selection ownerapi.StandbyChildSelection, expected int) bool {
-	if expected != selection.Count || expected != len(selection.Members) || expected < 0 || expected > 10000 || !selection.Scope.Valid() {
+	if expected != selection.Count || expected != len(selection.Members) || expected < 0 || expected > standbyChildBatchLimit || !selection.Scope.Valid() {
 		return false
 	}
 	seen := make(map[uuid.UUID]bool, len(selection.Members))
@@ -175,6 +182,17 @@ func lockStandbySelection(r *http.Request, tx pgx.Tx, selection ownerapi.Standby
 }
 
 var errStandbyConflict = errors.New("standby selection or batch changed")
+
+func writeStandbyRangeLimit(w http.ResponseWriter, r *http.Request, actualCount int64) {
+	const code = "range_limit_exceeded"
+	detail := fmt.Sprintf("Scope contains %d accounts; a standby batch supports at most %d. Narrow the filter or selection.", actualCount, standbyChildBatchLimit)
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(http.StatusConflict)
+	_ = json.NewEncoder(w).Encode(ownerapi.Problem{
+		Type: "urn:teamseatwatch:problem:" + code, Title: "Range Limit Exceeded", Status: http.StatusConflict,
+		Code: code, RequestId: requestID(r), Detail: &detail, ActualCount: &actualCount,
+	})
+}
 
 func standbyError(h *OwnerAuthHandler, w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, errStandbyConflict) || errors.Is(err, pgx.ErrNoRows) {
@@ -250,6 +268,24 @@ func (h *OwnerAuthHandler) changeStandbyBatch(w http.ResponseWriter, r *http.Req
 	action := ownerapi.Add
 	if request.Action != nil {
 		action = *request.Action
+	}
+	if action == ownerapi.Add {
+		// Every supported writer holds the destination batch row before changing
+		// memberships. The count therefore includes committed competing additions.
+		var count int64
+		if err = tx.QueryRow(r.Context(), `SELECT count(*) FROM tsw_standby_child_memberships WHERE batch_id=$1`, id).Scan(&count); err != nil {
+			standbyError(h, w, r, err)
+			return
+		}
+		for _, previous := range current {
+			if previous == nil || *previous != id {
+				count++
+			}
+		}
+		if count > standbyChildBatchLimit {
+			writeStandbyRangeLimit(w, r, count)
+			return
+		}
 	}
 	changed := false
 	for _, member := range request.Selection.Members {

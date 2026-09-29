@@ -2114,6 +2114,8 @@ type ProbeDeliveryResponse struct {
 
 // Problem defines model for Problem.
 type Problem struct {
+	// ActualCount Exact scope or projected size when the limit is exceeded.
+	ActualCount       *int64  `json:"actualCount,omitempty"`
 	Code              string  `json:"code"`
 	Detail            *string `json:"detail,omitempty"`
 	RequestId         string  `json:"request_id"`
@@ -2260,7 +2262,9 @@ type SessionList struct {
 
 // StandbyChildBatch defines model for StandbyChildBatch.
 type StandbyChildBatch struct {
-	DomainCount int64              `json:"domainCount"`
+	DomainCount int64 `json:"domainCount"`
+
+	// Domains Nonempty domains only; usernames are excluded.
 	Domains     []string           `json:"domains"`
 	Id          openapi_types.UUID `json:"id"`
 	MemberCount int64              `json:"memberCount"`

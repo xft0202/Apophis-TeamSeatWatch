@@ -662,6 +662,10 @@ paths:
           $ref: '#/components/responses/Problem'
     post:
       operationId: createStandbyChildBatch
+      description: >-
+        The confirmed destination is limited to 10000 distinct children.
+        Over-limit additions fail atomically with range_limit_exceeded and
+        actualCount; no member is moved.
       security:
         - ownerSession: []
       parameters:
@@ -684,6 +688,11 @@ paths:
   /api/owner/v1/standby-child-batches/selection:
     post:
       operationId: previewStandbyChildSelection
+      description: >-
+        Resolves the entire selected, filtered, or batch scope into at most
+        10000 frozen account IDs. A filtered result above that limit returns
+        range_limit_exceeded with the exact actualCount; narrow the filter.
+        No partial selection is returned.
       security:
         - ownerSession: []
       parameters:
@@ -706,6 +715,10 @@ paths:
   /api/owner/v1/standby-child-batches/{standbyBatchId}:
     patch:
       operationId: updateStandbyChildBatch
+      description: >-
+        A destination batch cannot exceed 10000 members even through repeated
+        adds or transfers. Exceeding it fails atomically with
+        range_limit_exceeded and actualCount.
       security:
         - ownerSession: []
       parameters:
@@ -729,6 +742,9 @@ paths:
   /api/owner/v1/standby-child-batches/{standbyBatchId}/export:
     post:
       operationId: exportStandbyChildBatch
+      description: >-
+        Exports one entire frozen batch (at most 10000 members) as a
+        three-field TXT. No partial or silently truncated batch export.
       security:
         - ownerSession: []
       parameters:
@@ -2552,11 +2568,13 @@ components:
         memberCount:
           type: integer
           format: int64
+          maximum: 10000
         domainCount:
           type: integer
           format: int64
         domains:
           type: array
+          description: Nonempty domains only; usernames are excluded.
           items:
             type: string
     StandbyChildSelectionRequest:
@@ -2605,6 +2623,7 @@ components:
             $ref: '#/components/schemas/StandbyChildSelectionMember'
         count:
           type: integer
+          maximum: 10000
     StandbyChildBatchChange:
       type: object
       additionalProperties: false
@@ -2617,6 +2636,7 @@ components:
           $ref: '#/components/schemas/StandbyChildSelection'
         expectedCount:
           type: integer
+          maximum: 10000
         confirmed:
           type: boolean
         expectedVersion:
@@ -2634,6 +2654,7 @@ components:
           $ref: '#/components/schemas/StandbyChildSelection'
         expectedCount:
           type: integer
+          maximum: 10000
         confirmed:
           type: boolean
         expectedVersion:
@@ -4105,6 +4126,11 @@ components:
         retryAfterSeconds:
           type: integer
           minimum: 1
+        actualCount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Exact scope or projected size when the limit is exceeded.
     ExitPoolStatus:
       type: object
       additionalProperties: false

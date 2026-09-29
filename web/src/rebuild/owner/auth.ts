@@ -214,13 +214,14 @@ export function ownerProblem(error: unknown): {
   status: number | undefined;
   code: string | undefined;
   retryAfterSeconds: number | undefined;
+  actualCount: number | undefined;
 } {
   if (!(error instanceof OwnerApiError)) {
-    return { status: undefined, code: undefined, retryAfterSeconds: undefined };
+    return { status: undefined, code: undefined, retryAfterSeconds: undefined, actualCount: undefined };
   }
 
   const body = typeof error.body === 'object' && error.body !== null
-    ? error.body as { code?: unknown; retryAfterSeconds?: unknown }
+    ? error.body as { code?: unknown; retryAfterSeconds?: unknown; actualCount?: unknown }
     : {};
 
   return {
@@ -229,5 +230,6 @@ export function ownerProblem(error: unknown): {
     retryAfterSeconds: typeof body.retryAfterSeconds === 'number'
       ? body.retryAfterSeconds
       : undefined,
+    actualCount: typeof body.actualCount === 'number' ? body.actualCount : undefined,
   };
 }

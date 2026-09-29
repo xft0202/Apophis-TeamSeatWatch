@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { exportChildMaterials, listChildMaterials, ownerProblem } from './auth';
 import { standbyApi, type Batch, type Scope, type Selection } from './standbyBatches';
 import { togglePage } from './childSelection';
-import { frozenStandbyPreview } from './standbySelection';
+import { frozenStandbyPreview, standbyRangeLimitNotice } from './standbySelection';
 import type { components } from '../../generated/owner';
 
 type Child = components['schemas']['TargetAccount'];
@@ -56,7 +56,12 @@ export default function StandbyChildBatchesView() {
       if (selection.count === 0 && action !== 'add') { setNotice('当前范围为空。'); return; }
       setFrozen({ selection, batch, name: name.trim(), action });
     } catch (error: unknown) {
-      if (generation.current === requestGeneration) setNotice(ownerProblem(error).status === 409 ? '所选账号已变化，请刷新。' : '无法确认范围，请重试。');
+      if (generation.current === requestGeneration) {
+        const problem = ownerProblem(error);
+        setNotice(problem.code === 'range_limit_exceeded'
+          ? standbyRangeLimitNotice(problem.actualCount, 'preview')
+          : problem.status === 409 ? '所选账号已变化，请刷新。' : '无法确认范围，请重试。');
+      }
     } finally { setPending(false); }
   }
 
@@ -78,13 +83,17 @@ export default function StandbyChildBatchesView() {
       }
       invalidate(); setRevision((value) => value + 1);
     } catch (error: unknown) {
-      invalidate(); setNotice(ownerProblem(error).status === 409 ? '批次或账号归属已变化，未保存或导出；请重新预览确认。' : '操作失败，请重试。');
+      invalidate();
+      const problem = ownerProblem(error);
+      setNotice(problem.code === 'range_limit_exceeded'
+        ? standbyRangeLimitNotice(problem.actualCount, 'save')
+        : problem.status === 409 ? '批次或账号归属已变化，未保存或导出；请重新预览确认。' : '操作失败，请重试。');
     } finally { setPending(false); }
   }
 
   return <Stack gap="lg">
     {notice ? <Alert color="indigo">{notice}</Alert> : null}
-    <Text size="sm" c="dimmed">待用批次仅整理账号，不绑定空间、不邀请、不交付；一个子号可同时属于多个空间，但当前只归属一个待用批次。成员数不代表目标空间可用席位。</Text>
+    <Text size="sm" c="dimmed">待用批次仅整理账号，不绑定空间、不邀请、不交付；一个子号可同时属于多个空间，但当前只归属一个待用批次。成员数不代表目标空间可用席位。每个批次及单次冻结范围硬上限均为 10000 个账号；当前筛选超过上限时请缩小条件，不能仅处理前 10000 个。</Text>
     <Group align="end"><Select label="待用批次" placeholder="新建批次" clearable data={batches.map((item) => ({ value: item.id, label: `${item.name} · ${item.memberCount} 个账号 / ${item.domainCount} 个域名（${item.domains.join('、') || '无'}）` }))} value={batchId} onChange={(value) => { const next = batches.find((item) => item.id === value); setBatchId(value); setName(next?.name ?? ''); setAction('add'); invalidate(); }} />
       <TextInput label="批次名称" maxLength={120} value={name} onChange={(event) => { setName(event.currentTarget.value); invalidate(); }} /></Group>
     <Group><TextInput label="筛选账号或域名" value={search} onChange={(event) => { setSearch(event.currentTarget.value); setPage(1); setSelected(new Set()); invalidate(); }} /><Button variant="light" onClick={() => { invalidate(); setRevision((value) => value + 1); }}>刷新</Button></Group>

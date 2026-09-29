@@ -429,6 +429,7 @@ export interface paths {
         };
         get: operations["listStandbyChildBatches"];
         put?: never;
+        /** @description The confirmed destination is limited to 10000 distinct children. Over-limit additions fail atomically with range_limit_exceeded and actualCount; no member is moved. */
         post: operations["createStandbyChildBatch"];
         delete?: never;
         options?: never;
@@ -445,6 +446,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Resolves the entire selected, filtered, or batch scope into at most 10000 frozen account IDs. A filtered result above that limit returns range_limit_exceeded with the exact actualCount; narrow the filter. No partial selection is returned. */
         post: operations["previewStandbyChildSelection"];
         delete?: never;
         options?: never;
@@ -465,6 +467,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /** @description A destination batch cannot exceed 10000 members even through repeated adds or transfers. Exceeding it fails atomically with range_limit_exceeded and actualCount. */
         patch: operations["updateStandbyChildBatch"];
         trace?: never;
     };
@@ -477,6 +480,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Exports one entire frozen batch (at most 10000 members) as a three-field TXT. No partial or silently truncated batch export. */
         post: operations["exportStandbyChildBatch"];
         delete?: never;
         options?: never;
@@ -1270,6 +1274,7 @@ export interface components {
             memberCount: number;
             /** Format: int64 */
             domainCount: number;
+            /** @description Nonempty domains only; usernames are excluded. */
             domains: string[];
         };
         StandbyChildSelectionRequest: {
@@ -1878,6 +1883,11 @@ export interface components {
             request_id: string;
             detail?: string;
             retryAfterSeconds?: number;
+            /**
+             * Format: int64
+             * @description Exact scope or projected size when the limit is exceeded.
+             */
+            actualCount?: number;
         };
         ExitPoolStatus: {
             /** @enum {string} */
