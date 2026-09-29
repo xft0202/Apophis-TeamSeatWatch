@@ -1,9 +1,11 @@
-import { Alert, Badge, Button, Checkbox, Group, Pagination, Paper, Radio, Stack, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Checkbox, Group, Pagination, Paper, Radio, Select, Stack, Text, Title } from '@mantine/core';
 import { useEffect, useRef, useState } from 'react';
 import type { components } from '../../generated/owner';
 import { getMotherDiscovery, getSelectedWorkspaceAccess, getSelectedWorkspaceVerification, listAllMotherAccounts, ownerProblem } from './auth';
 import { destinationApi, type Destination } from './deliveryDestination';
 import { operationDraftApi, type Draft, type DraftChange, type DraftChild } from './operationDraft';
+import { expiryRotationApi, type ExpiryPreview } from './expiryRotation';
+import { canConfirmRotation, explicitRotationAssignments, rotationStatus } from './rotationPreviewState';
 import { canChooseDestination, draftStatus } from './operationWizardState';
 import { createOperationWizardRequests } from './operationWizardRequests';
 import { standbyApi, type Batch, type Selection } from './standbyBatches';
@@ -16,6 +18,9 @@ const stepNames = { mother: '母号', workspace: '目标空间', children: '待�
 
 export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTab) => void }) {
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [rotation, setRotation] = useState<ExpiryPreview | null>(null);
+  const [rotationChoices, setRotationChoices] = useState<Record<string, string>>({});
+  const confirmationKeys = useRef(new Map<string, string>());
   const [mothers, setMothers] = useState<Mother[]>([]);
   const [discovery, setDiscovery] = useState<Discovery | null>(null);
   const [verifiedWorkspace, setVerifiedWorkspace] = useState(false);
@@ -40,6 +45,15 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
         throw error;
       });
       setDraft(current);
+      setRotation(null);
+      setRotationChoices({});
+      if (current?.step === 'complete') {
+        const latest = await expiryRotationApi.latest().catch((error: unknown) => {
+          if (ownerProblem(error).status === 404) return null;
+          throw error;
+        });
+        if (latest?.draftId === current.id && latest.draftVersion === current.version) setRotation(latest);
+      }
       requests.current.invalidateAll();
       setCandidate(''); setVerifiedWorkspace(false); setWorkspaceStatus(''); setSelection(null); setSelectedChildren(new Set()); setChildDetails({});
       if (current?.step === 'mother') setMothers(await listAllMotherAccounts());
@@ -97,6 +111,23 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
     } catch (error: unknown) {
       const problem = ownerProblem(error);
       setNotice(problem.code === 'child_material_incomplete' ? '部分子号资料待补；请补齐资料后回到当前步骤重新确认。' : problem.status === 409 ? '资料或草案已变化；未改写已选对象。请刷新，再明确选择。' : problem.status === 403 ? '安全校验失败；请刷新页面。' : '本步未保存；请检查资料并重试。');
+    } finally { setPending(false); }
+  }
+  async function rotationAction(action: 'preview' | 'confirm' | 'revoke') {
+    if (pending || !draft) return;
+    setPending(true); setNotice('');
+    try {
+      let next: ExpiryPreview;
+      if (action === 'preview') { next = await expiryRotationApi.preview(); setRotationChoices({}); }
+      else if (action === 'revoke' && rotation) next = await expiryRotationApi.revoke(rotation);
+      else if (action === 'confirm' && rotation && canConfirmRotation(rotation, draft.version, Date.now()) && explicitRotationAssignments(rotation, rotationChoices) && !draftStatus(draft)) {
+        let key = confirmationKeys.current.get(rotation.id);
+        if (!key) { key = crypto.randomUUID(); confirmationKeys.current.set(rotation.id, key); }
+        next = await expiryRotationApi.confirm(rotation, key, explicitRotationAssignments(rotation, rotationChoices)!);
+      } else return;
+      setRotation(next);
+    } catch (error: unknown) {
+      setNotice(ownerProblem(error).status === 409 ? '草案或证据已变化，必须重新预览；本次未授权。' : '操作未保存，请刷新后重试。');
     } finally { setPending(false); }
   }
   async function previewBatch(batchId: string) {
@@ -163,7 +194,28 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
       {step === 'complete' ? <Stack gap="sm"><Alert color={stale ? 'yellow' : 'green'}>{stale || '本轮选择已保存。这里只是范围草案，不是加入资格、席位预览、写入授权或交付完成。'}</Alert>
         <Text size="sm">母号 {draft.motherAccountId} · 修订 {draft.motherRevision}</Text><Text size="sm">空间 {draft.workspaceId} · 核验 #{draft.verificationId}</Text>
         <Text size="sm">批次 {draft.batchId} · 修订 {draft.batchVersion} · 已冻结 {draft.children.length} 个精确子号</Text>
-        <Text size="sm">去向 {draft.destinationId} · 修订 {draft.destinationRevision}</Text><Text size="sm">不会邀请、加入、清退、推送或切换生产路由。</Text></Stack> : null}
+        <Text size="sm">去向 {draft.destinationId} · 修订 {draft.destinationRevision}</Text><Text size="sm">不会邀请、加入、清退、推送或切换生产路由。</Text>
+        <Button variant="light" disabled={Boolean(stale) || pending} loading={pending} onClick={() => void rotationAction('preview')}>重新预览到期换批（只读）</Button>
+        {rotation ? <Paper withBorder p="md"><Stack gap="sm">
+          <Alert color={rotation.status === 'ready' || rotation.status === 'authorized' ? 'green' : 'yellow'} role="status">{rotationStatus(rotation)}</Alert>
+          <Text size="sm">核验 #{rotation.verificationId} · 到期 {rotation.activeUntil} · 来源 {rotation.source} · 证据截止 {rotation.expiresAt}</Text>
+          <Text size="sm">目标空间 {rotation.workspaceId} · 母号 {rotation.motherAccountId} · 来源批次 {rotation.batchId}（修订 {rotation.batchVersion}） · 交付去向 {rotation.destinationId}（修订 {rotation.destinationRevision}）</Text>
+          <Text size="sm">席位类型计数：{Object.entries(rotation.seatTypeCounts).map(([kind, count]) => `${kind} ${count}`).join(' · ') || '待核验'}</Text>
+          <Text size="sm">成员快照（{rotation.members.length}）：{rotation.members.join('；') || '无'}</Text>
+          <Text size="sm">发出邀请快照（{rotation.invitations.length}）：{rotation.invitations.join('；') || '无'}</Text>
+          <Title order={4}>原席位逐项处理</Title>
+          {rotation.slots.map((slot) => <Text size="sm" key={slot.platformMemberId}>{slot.identifier} · {slot.platformMemberId} · {slot.seatType || '类型待核验'} · {slot.decision} · {slot.reason}</Text>)}
+          <Title order={4}>候选与排除原因</Title>
+          {rotation.candidates.map((child) => <Text size="sm" key={child.accountId}>{child.identifier} · {child.accountId} · {child.seatType || '类型待核验'} · {child.decision} · {child.reason}</Text>)}
+          <Text size="xs">预览指纹：{rotation.digest}。缺少邀请的候选仅标记“需邀请”；任何新邀请是独立的明确准备步骤，本阶段不会发出邀请。</Text>
+          {rotation.status === 'authorized' ? <Button variant="light" color="red" loading={pending} onClick={() => void rotationAction('revoke')}>撤销授权（尚未执行）</Button> : null}
+          {rotation.status === 'authorized' ? <Text size="sm">明确匹配：{rotation.assignments.map((mapping) => `${mapping.platformMemberId} → ${mapping.accountId}`).join('；')} · 授权指纹 {rotation.authorizationDigest}</Text> : null}
+          {canConfirmRotation(rotation, draft.version, Date.now()) && !stale ? <Stack gap="xs">
+            <Text size="sm">逐席选择替换子号；不会按顺序自动配对。一个候选不能占用多个席位。</Text>
+            {rotation.slots.filter((slot) => slot.decision === 'replaceable').map((slot) => <Select key={slot.platformMemberId} label={`${slot.identifier} · ${slot.platformMemberId} · ${slot.seatType}`} placeholder="明确选择此席候选" data={rotation.candidates.filter((child) => child.decision === 'eligible' && child.seatType === slot.seatType).map((child) => ({ value: child.accountId, label: `${child.identifier} · ${child.accountId}`, disabled: Object.entries(rotationChoices).some(([selectedSlot, id]) => selectedSlot !== slot.platformMemberId && id === child.accountId) }))} value={rotationChoices[slot.platformMemberId] || null} onChange={(value) => setRotationChoices((current) => ({ ...current, [slot.platformMemberId]: value || '' }))} />)}
+            <Button disabled={!explicitRotationAssignments(rotation, rotationChoices)} loading={pending} onClick={() => void rotationAction('confirm')}>明确确认逐席匹配、冻结范围与去向（不执行）</Button>
+          </Stack> : null}
+        </Stack></Paper> : null}</Stack> : null}
       {step !== 'mother' ? <Group gap="xs"><Text size="sm" c="dimmed">返回修改：</Text>{(['mother','workspace','children','destination'] as const).filter((item) => ['mother','workspace','children','destination','complete'].indexOf(item) < ['mother','workspace','children','destination','complete'].indexOf(draft.step)).map((item) => <Button key={item} size="xs" variant="subtle" disabled={pending} onClick={() => void save({ choice: 'back', backTo: item })}>{stepNames[item]}</Button>)}</Group> : null}
     </Stack></Paper> : null}
     <Group><Button variant="subtle" onClick={() => void reload()} disabled={pending}>刷新当前步骤</Button></Group>

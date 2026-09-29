@@ -14,7 +14,7 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// Rehearse the real embedded 24 -> 25 migration with existing selection dependencies.
+// Rehearse the embedded 24 -> 25 -> 26 migrations with existing selection dependencies.
 func TestOperationSelectionUpgradeFrom24Integration(t *testing.T) {
 	dsn := os.Getenv("TSW_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -79,6 +79,9 @@ func TestOperationSelectionUpgradeFrom24Integration(t *testing.T) {
 		t.Fatalf("second Apply: %v", err)
 	}
 	var count int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='tsw_expiry_rotation_previews'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("migration 26 preview table missing: count=%d err=%v", count, err)
+	}
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_operation_selection_drafts WHERE id=$1 AND owner_id=$2 AND mother_account_id=$3 AND workspace_id=$4 AND batch_id=$5 AND destination_id=$6`, id, owner, mother, workspace, batch, destination).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("idempotent upgrade lost selection dependencies: count=%d err=%v", count, err)
 	}

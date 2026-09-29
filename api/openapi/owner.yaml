@@ -173,6 +173,107 @@ paths:
                 $ref: '#/components/schemas/OperationDraft'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews:
+    post:
+      operationId: previewExpiryRotation
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: Frozen, non-executing review of the current selection and evidence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpiryRotationPreview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/latest:
+    get:
+      operationId: getLatestExpiryRotationPreview
+      security:
+        - ownerSession: []
+      responses:
+        '200':
+          description: Most recent persisted preview; may be stale
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpiryRotationPreview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}:
+    parameters:
+      - name: previewId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getExpiryRotationPreview
+      security:
+        - ownerSession: []
+      responses:
+        '200':
+          description: Persisted preview or revocable authorization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpiryRotationPreview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/confirm:
+    post:
+      operationId: confirmExpiryRotation
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpiryRotationConfirmation'
+      responses:
+        '200':
+          description: Recorded authorization only; no remote mutation is scheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpiryRotationPreview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/revoke:
+    post:
+      operationId: revokeExpiryRotation
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: Revoked before any remote mutation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpiryRotationPreview'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/mother-accounts:
     get:
       operationId: listMotherAccounts
@@ -2169,6 +2270,163 @@ components:
         membershipVersion:
           type: integer
           format: int64
+    ExpiryRotationAssignment:
+      type: object
+      additionalProperties: false
+      required: [platformMemberId, accountId]
+      properties:
+        platformMemberId:
+          type: string
+        accountId:
+          type: string
+          format: uuid
+    ExpiryRotationConfirmation:
+      type: object
+      additionalProperties: false
+      required: [confirmed, digest, idempotencyKey, assignments]
+      properties:
+        confirmed:
+          type: boolean
+        digest:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        idempotencyKey:
+          type: string
+          format: uuid
+        assignments:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/ExpiryRotationAssignment'
+    ExpiryRotationSlot:
+      type: object
+      additionalProperties: false
+      required: [identifier, platformMemberId, seatType, decision, reason]
+      properties:
+        identifier:
+          type: string
+        platformMemberId:
+          type: string
+        seatType:
+          type: string
+        decision:
+          type: string
+          enum: [replaceable, retained, needs_verification]
+        reason:
+          type: string
+    ExpiryRotationCandidate:
+      type: object
+      additionalProperties: false
+      required: [accountId, identifier, seatType, decision, reason]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        identifier:
+          type: string
+        seatType:
+          type: string
+        decision:
+          type: string
+          enum: [eligible, excluded]
+        reason:
+          type: string
+    ExpiryRotationPreview:
+      type: object
+      additionalProperties: false
+      required: [id, status, digest, draftId, draftVersion, motherAccountId, workspaceId, verificationId, batchId, batchVersion, destinationId, destinationRevision, activeUntil, seatTypeCounts, members, invitations, slots, candidates, source, evidenceFingerprint, sourceRevisions, assignments, observedAt, expiresAt, authorized]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ready, pending_permission, facts_incomplete, not_expired, needs_verification, authorized, revoked]
+        digest:
+          type: string
+        draftId:
+          type: string
+          format: uuid
+        draftVersion:
+          type: integer
+          format: int64
+        motherAccountId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        verificationId:
+          type: integer
+          format: int64
+        batchId:
+          type: string
+          format: uuid
+        batchVersion:
+          type: integer
+          format: int64
+        destinationId:
+          type: string
+          format: uuid
+        destinationRevision:
+          type: integer
+          format: int64
+        activeUntil:
+          type: string
+          format: date-time
+        seatTypeCounts:
+          type: object
+          additionalProperties:
+            type: integer
+        members:
+          type: array
+          items:
+            type: string
+        invitations:
+          type: array
+          items:
+            type: string
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpiryRotationSlot'
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpiryRotationCandidate'
+        source:
+          type: string
+        evidenceFingerprint:
+          type: string
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpiryRotationAssignment'
+        authorizationDigest:
+          type: string
+        sourceRevisions:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        observedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        authorized:
+          type: boolean
+        authorizedBy:
+          type: string
+          format: uuid
+        authorizedAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
     OperationDraft:
       type: object
       additionalProperties: false

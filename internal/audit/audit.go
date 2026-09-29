@@ -55,6 +55,8 @@ const (
 	JoinTargetUnknown              EventType = "join.target_unknown"
 	JoinReconciliationQueued       EventType = "join.reconciliation_queued"
 	JoinReconciliationDone         EventType = "join.reconciliation_done"
+	ExpiryRotationAuthorized       EventType = "expiry_rotation.authorized"
+	ExpiryRotationRevoked          EventType = "expiry_rotation.revoked"
 	RemoveOperationAuthorized      EventType = "remove.operation_authorized"
 	RemoveTargetAttempted          EventType = "remove.target_attempted"
 	RemoveTargetConfirmed          EventType = "remove.target_confirmed"
@@ -215,6 +217,13 @@ type CardDetails struct {
 
 func (CardDetails) auditDetails() {}
 
+type ExpiryRotationDetails struct {
+	Digest string `json:"digest"`
+	Action string `json:"action"`
+}
+
+func (ExpiryRotationDetails) auditDetails() {}
+
 type CardRevocationDetails struct {
 	Action            string `json:"action"`
 	Result            string `json:"result"`
@@ -334,6 +343,8 @@ var registry = map[EventType]spec{
 	JoinTargetUnknown:              {ActorSystem, "operation_target", []Outcome{OutcomeFailed}, "join_target", "workspace"},
 	JoinReconciliationQueued:       {ActorSystem, "task", []Outcome{OutcomeSucceeded}, "task", "workspace"},
 	JoinReconciliationDone:         {ActorSystem, "task", []Outcome{OutcomeSucceeded, OutcomeFailed}, "task", "workspace"},
+	ExpiryRotationAuthorized:       {ActorOwner, "expiry_rotation_preview", []Outcome{OutcomeSucceeded}, "expiry_rotation", "workspace"},
+	ExpiryRotationRevoked:          {ActorOwner, "expiry_rotation_preview", []Outcome{OutcomeSucceeded}, "expiry_rotation", "workspace"},
 	RemoveOperationAuthorized:      {ActorOwner, "operation", []Outcome{OutcomeSucceeded}, "operation", "workspace"},
 	RemoveTargetAttempted:          {ActorSystem, "operation_target", []Outcome{OutcomeSucceeded}, "remove_target", "workspace"},
 	RemoveTargetConfirmed:          {ActorSystem, "operation_target", []Outcome{OutcomeSucceeded}, "remove_target", "workspace"},
@@ -483,6 +494,9 @@ func validate(event Event) ([]byte, spec, error) {
 	case "card":
 		value, ok := event.Details.(CardDetails)
 		validDetails = ok && value.Result == "activated" && value.KeyVersion > 0 && len(value.DisplaySuffix) >= 4 && len(value.DisplaySuffix) <= 12
+	case "expiry_rotation":
+		value, ok := event.Details.(ExpiryRotationDetails)
+		validDetails = ok && len(value.Digest) == 64 && (event.Type == ExpiryRotationAuthorized && value.Action == "authorized" || event.Type == ExpiryRotationRevoked && value.Action == "revoked")
 	case "card_revocation":
 		value, ok := event.Details.(CardRevocationDetails)
 		validDetails = ok && value.Action == "owner_revoked" && value.Result == "revoked" && value.RevokedTokenCount >= 0

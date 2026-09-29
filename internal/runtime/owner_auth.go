@@ -54,6 +54,7 @@ type OwnerAuthHandler struct {
 	personalRefresh         platform.PersonalSessionRefresher
 	selectedWorkspaceReader platform.SelectedWorkspaceReader
 	workspaceTokenExchanger platform.WorkspaceTokenExchanger
+	rotationCapability      rotationCapability // mock-only; never configured by production constructor
 	secureCookies           bool
 }
 

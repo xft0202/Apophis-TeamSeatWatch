@@ -477,6 +477,78 @@ func (e ExitPoolStatusMode) Valid() bool {
 	}
 }
 
+// Defines values for ExpiryRotationCandidateDecision.
+const (
+	Eligible ExpiryRotationCandidateDecision = "eligible"
+	Excluded ExpiryRotationCandidateDecision = "excluded"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryRotationCandidateDecision enum.
+func (e ExpiryRotationCandidateDecision) Valid() bool {
+	switch e {
+	case Eligible:
+		return true
+	case Excluded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpiryRotationPreviewStatus.
+const (
+	ExpiryRotationPreviewStatusAuthorized        ExpiryRotationPreviewStatus = "authorized"
+	ExpiryRotationPreviewStatusFactsIncomplete   ExpiryRotationPreviewStatus = "facts_incomplete"
+	ExpiryRotationPreviewStatusNeedsVerification ExpiryRotationPreviewStatus = "needs_verification"
+	ExpiryRotationPreviewStatusNotExpired        ExpiryRotationPreviewStatus = "not_expired"
+	ExpiryRotationPreviewStatusPendingPermission ExpiryRotationPreviewStatus = "pending_permission"
+	ExpiryRotationPreviewStatusReady             ExpiryRotationPreviewStatus = "ready"
+	ExpiryRotationPreviewStatusRevoked           ExpiryRotationPreviewStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryRotationPreviewStatus enum.
+func (e ExpiryRotationPreviewStatus) Valid() bool {
+	switch e {
+	case ExpiryRotationPreviewStatusAuthorized:
+		return true
+	case ExpiryRotationPreviewStatusFactsIncomplete:
+		return true
+	case ExpiryRotationPreviewStatusNeedsVerification:
+		return true
+	case ExpiryRotationPreviewStatusNotExpired:
+		return true
+	case ExpiryRotationPreviewStatusPendingPermission:
+		return true
+	case ExpiryRotationPreviewStatusReady:
+		return true
+	case ExpiryRotationPreviewStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpiryRotationSlotDecision.
+const (
+	ExpiryRotationSlotDecisionNeedsVerification ExpiryRotationSlotDecision = "needs_verification"
+	ExpiryRotationSlotDecisionReplaceable       ExpiryRotationSlotDecision = "replaceable"
+	ExpiryRotationSlotDecisionRetained          ExpiryRotationSlotDecision = "retained"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryRotationSlotDecision enum.
+func (e ExpiryRotationSlotDecision) Valid() bool {
+	switch e {
+	case ExpiryRotationSlotDecisionNeedsVerification:
+		return true
+	case ExpiryRotationSlotDecisionReplaceable:
+		return true
+	case ExpiryRotationSlotDecisionRetained:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for JoinOperationStatus.
 const (
 	JoinOperationStatusBlocked   JoinOperationStatus = "blocked"
@@ -2405,6 +2477,80 @@ type ExitPoolStatus struct {
 // ExitPoolStatusMode defines model for ExitPoolStatus.Mode.
 type ExitPoolStatusMode string
 
+// ExpiryRotationAssignment defines model for ExpiryRotationAssignment.
+type ExpiryRotationAssignment struct {
+	AccountId        openapi_types.UUID `json:"accountId"`
+	PlatformMemberId string             `json:"platformMemberId"`
+}
+
+// ExpiryRotationCandidate defines model for ExpiryRotationCandidate.
+type ExpiryRotationCandidate struct {
+	AccountId  openapi_types.UUID              `json:"accountId"`
+	Decision   ExpiryRotationCandidateDecision `json:"decision"`
+	Identifier string                          `json:"identifier"`
+	Reason     string                          `json:"reason"`
+	SeatType   string                          `json:"seatType"`
+}
+
+// ExpiryRotationCandidateDecision defines model for ExpiryRotationCandidate.Decision.
+type ExpiryRotationCandidateDecision string
+
+// ExpiryRotationConfirmation defines model for ExpiryRotationConfirmation.
+type ExpiryRotationConfirmation struct {
+	Assignments    []ExpiryRotationAssignment `json:"assignments"`
+	Confirmed      bool                       `json:"confirmed"`
+	Digest         string                     `json:"digest"`
+	IdempotencyKey openapi_types.UUID         `json:"idempotencyKey"`
+}
+
+// ExpiryRotationPreview defines model for ExpiryRotationPreview.
+type ExpiryRotationPreview struct {
+	ActiveUntil         time.Time                   `json:"activeUntil"`
+	Assignments         []ExpiryRotationAssignment  `json:"assignments"`
+	AuthorizationDigest *string                     `json:"authorizationDigest,omitempty"`
+	Authorized          bool                        `json:"authorized"`
+	AuthorizedAt        *time.Time                  `json:"authorizedAt,omitempty"`
+	AuthorizedBy        *openapi_types.UUID         `json:"authorizedBy,omitempty"`
+	BatchId             openapi_types.UUID          `json:"batchId"`
+	BatchVersion        int64                       `json:"batchVersion"`
+	Candidates          []ExpiryRotationCandidate   `json:"candidates"`
+	DestinationId       openapi_types.UUID          `json:"destinationId"`
+	DestinationRevision int64                       `json:"destinationRevision"`
+	Digest              string                      `json:"digest"`
+	DraftId             openapi_types.UUID          `json:"draftId"`
+	DraftVersion        int64                       `json:"draftVersion"`
+	EvidenceFingerprint string                      `json:"evidenceFingerprint"`
+	ExpiresAt           time.Time                   `json:"expiresAt"`
+	Id                  openapi_types.UUID          `json:"id"`
+	Invitations         []string                    `json:"invitations"`
+	Members             []string                    `json:"members"`
+	MotherAccountId     openapi_types.UUID          `json:"motherAccountId"`
+	ObservedAt          time.Time                   `json:"observedAt"`
+	RevokedAt           *time.Time                  `json:"revokedAt,omitempty"`
+	SeatTypeCounts      map[string]int              `json:"seatTypeCounts"`
+	Slots               []ExpiryRotationSlot        `json:"slots"`
+	Source              string                      `json:"source"`
+	SourceRevisions     map[string]int64            `json:"sourceRevisions"`
+	Status              ExpiryRotationPreviewStatus `json:"status"`
+	VerificationId      int64                       `json:"verificationId"`
+	WorkspaceId         openapi_types.UUID          `json:"workspaceId"`
+}
+
+// ExpiryRotationPreviewStatus defines model for ExpiryRotationPreview.Status.
+type ExpiryRotationPreviewStatus string
+
+// ExpiryRotationSlot defines model for ExpiryRotationSlot.
+type ExpiryRotationSlot struct {
+	Decision         ExpiryRotationSlotDecision `json:"decision"`
+	Identifier       string                     `json:"identifier"`
+	PlatformMemberId string                     `json:"platformMemberId"`
+	Reason           string                     `json:"reason"`
+	SeatType         string                     `json:"seatType"`
+}
+
+// ExpiryRotationSlotDecision defines model for ExpiryRotationSlot.Decision.
+type ExpiryRotationSlotDecision string
+
 // ExportMotherAccounts defines model for ExportMotherAccounts.
 type ExportMotherAccounts struct {
 	AccountIds    *[]openapi_types.UUID `json:"accountIds,omitempty"`
@@ -3558,6 +3704,21 @@ type TestDeliveryDestinationParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// PreviewExpiryRotationParams defines parameters for PreviewExpiryRotation.
+type PreviewExpiryRotationParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// ConfirmExpiryRotationParams defines parameters for ConfirmExpiryRotation.
+type ConfirmExpiryRotationParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// RevokeExpiryRotationParams defines parameters for RevokeExpiryRotation.
+type RevokeExpiryRotationParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // ListJoinOperationsNeedingAttentionParams defines parameters for ListJoinOperationsNeedingAttention.
 type ListJoinOperationsNeedingAttentionParams struct {
 	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
@@ -3851,6 +4012,9 @@ type CreateDeliveryDestinationJSONRequestBody = CreateDeliveryDestination
 // UpdateDeliveryDestinationJSONRequestBody defines body for UpdateDeliveryDestination for application/json ContentType.
 type UpdateDeliveryDestinationJSONRequestBody = UpdateDeliveryDestination
 
+// ConfirmExpiryRotationJSONRequestBody defines body for ConfirmExpiryRotation for application/json ContentType.
+type ConfirmExpiryRotationJSONRequestBody = ExpiryRotationConfirmation
+
 // LoginOwnerJSONRequestBody defines body for LoginOwner for application/json ContentType.
 type LoginOwnerJSONRequestBody = LoginRequest
 
@@ -4027,6 +4191,21 @@ type ServerInterface interface {
 
 	// (GET /api/owner/v1/exit-pool)
 	GetExitPoolStatus(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/owner/v1/expiry-rotation/previews)
+	PreviewExpiryRotation(w http.ResponseWriter, r *http.Request, params PreviewExpiryRotationParams)
+
+	// (GET /api/owner/v1/expiry-rotation/previews/latest)
+	GetLatestExpiryRotationPreview(w http.ResponseWriter, r *http.Request)
+
+	// (GET /api/owner/v1/expiry-rotation/previews/{previewId})
+	GetExpiryRotationPreview(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/confirm)
+	ConfirmExpiryRotation(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params ConfirmExpiryRotationParams)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/revoke)
+	RevokeExpiryRotation(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params RevokeExpiryRotationParams)
 
 	// (GET /api/owner/v1/join-operations/needs-attention)
 	ListJoinOperationsNeedingAttention(w http.ResponseWriter, r *http.Request, params ListJoinOperationsNeedingAttentionParams)
@@ -5952,6 +6131,199 @@ func (siw *ServerInterfaceWrapper) GetExitPoolStatus(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetExitPoolStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewExpiryRotation operation middleware
+func (siw *ServerInterfaceWrapper) PreviewExpiryRotation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreviewExpiryRotationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewExpiryRotation(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLatestExpiryRotationPreview operation middleware
+func (siw *ServerInterfaceWrapper) GetLatestExpiryRotationPreview(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLatestExpiryRotationPreview(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetExpiryRotationPreview operation middleware
+func (siw *ServerInterfaceWrapper) GetExpiryRotationPreview(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetExpiryRotationPreview(w, r, previewId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmExpiryRotation operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmExpiryRotation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ConfirmExpiryRotationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmExpiryRotation(w, r, previewId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeExpiryRotation operation middleware
+func (siw *ServerInterfaceWrapper) RevokeExpiryRotation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RevokeExpiryRotationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeExpiryRotation(w, r, previewId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8573,6 +8945,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/operation-draft", wrapper.GetOperationDraft)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/operation-draft", wrapper.ChangeOperationDraft)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/operation-draft", wrapper.StartOperationDraft)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews", wrapper.PreviewExpiryRotation)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/latest", wrapper.GetLatestExpiryRotationPreview)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}", wrapper.GetExpiryRotationPreview)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/confirm", wrapper.ConfirmExpiryRotation)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/revoke", wrapper.RevokeExpiryRotation)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/mother-accounts", wrapper.ListMotherAccounts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts", wrapper.CreateMotherAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts/import", wrapper.ImportMotherAccounts)

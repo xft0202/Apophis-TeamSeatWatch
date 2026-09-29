@@ -149,6 +149,88 @@ export interface paths {
         patch: operations["changeOperationDraft"];
         trace?: never;
     };
+    "/api/owner/v1/expiry-rotation/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["previewExpiryRotation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getLatestExpiryRotationPreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getExpiryRotationPreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["confirmExpiryRotation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revokeExpiryRotation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/mother-accounts": {
         parameters: {
             query?: never;
@@ -1155,6 +1237,87 @@ export interface components {
             accountId: string;
             /** Format: int64 */
             membershipVersion: number;
+        };
+        ExpiryRotationAssignment: {
+            platformMemberId: string;
+            /** Format: uuid */
+            accountId: string;
+        };
+        ExpiryRotationConfirmation: {
+            confirmed: boolean;
+            digest: string;
+            /** Format: uuid */
+            idempotencyKey: string;
+            assignments: components["schemas"]["ExpiryRotationAssignment"][];
+        };
+        ExpiryRotationSlot: {
+            identifier: string;
+            platformMemberId: string;
+            seatType: string;
+            /** @enum {string} */
+            decision: "replaceable" | "retained" | "needs_verification";
+            reason: string;
+        };
+        ExpiryRotationCandidate: {
+            /** Format: uuid */
+            accountId: string;
+            identifier: string;
+            seatType: string;
+            /** @enum {string} */
+            decision: "eligible" | "excluded";
+            reason: string;
+        };
+        ExpiryRotationPreview: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "ready" | "pending_permission" | "facts_incomplete" | "not_expired" | "needs_verification" | "authorized" | "revoked";
+            digest: string;
+            /** Format: uuid */
+            draftId: string;
+            /** Format: int64 */
+            draftVersion: number;
+            /** Format: uuid */
+            motherAccountId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: int64 */
+            verificationId: number;
+            /** Format: uuid */
+            batchId: string;
+            /** Format: int64 */
+            batchVersion: number;
+            /** Format: uuid */
+            destinationId: string;
+            /** Format: int64 */
+            destinationRevision: number;
+            /** Format: date-time */
+            activeUntil: string;
+            seatTypeCounts: {
+                [key: string]: number;
+            };
+            members: string[];
+            invitations: string[];
+            slots: components["schemas"]["ExpiryRotationSlot"][];
+            candidates: components["schemas"]["ExpiryRotationCandidate"][];
+            source: string;
+            evidenceFingerprint: string;
+            assignments: components["schemas"]["ExpiryRotationAssignment"][];
+            authorizationDigest?: string;
+            sourceRevisions: {
+                [key: string]: number;
+            };
+            /** Format: date-time */
+            observedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            authorized: boolean;
+            /** Format: uuid */
+            authorizedBy?: string;
+            /** Format: date-time */
+            authorizedAt?: string;
+            /** Format: date-time */
+            revokedAt?: string;
         };
         OperationDraft: {
             /** Format: uuid */
@@ -2569,6 +2732,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OperationDraft"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    previewExpiryRotation: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Frozen, non-executing review of the current selection and evidence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpiryRotationPreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getLatestExpiryRotationPreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Most recent persisted preview; may be stale */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpiryRotationPreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getExpiryRotationPreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted preview or revocable authorization */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpiryRotationPreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    confirmExpiryRotation: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpiryRotationConfirmation"];
+            };
+        };
+        responses: {
+            /** @description Recorded authorization only; no remote mutation is scheduled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpiryRotationPreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    revokeExpiryRotation: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked before any remote mutation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpiryRotationPreview"];
                 };
             };
             default: components["responses"]["Problem"];
