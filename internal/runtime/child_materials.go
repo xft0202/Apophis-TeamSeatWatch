@@ -202,7 +202,7 @@ func (h *OwnerAuthHandler) ExportChildMaterials(w http.ResponseWriter, r *http.R
 	query := `SELECT target.identifier,credentials.password_secret,credentials.totp_secret FROM tsw_target_accounts target JOIN tsw_target_credentials credentials ON credentials.target_account_id=target.id WHERE `
 	var args []any
 	switch request.Scope {
-	case ownerapi.Selected:
+	case ownerapi.ChildMaterialsExportScopeSelected:
 		if request.AccountIds == nil || len(*request.AccountIds) == 0 || len(*request.AccountIds) > 10000 || request.Search != nil {
 			h.rejectOwnerMutation(w, r, owner, "child_material.export", "invalid_request", 422, "invalid_export", "Invalid Export", "导出范围无效")
 			return
@@ -217,7 +217,7 @@ func (h *OwnerAuthHandler) ExportChildMaterials(w http.ResponseWriter, r *http.R
 		}
 		query += `target.id=ANY($1) `
 		args = append(args, *request.AccountIds)
-	case ownerapi.Filtered:
+	case ownerapi.ChildMaterialsExportScopeFiltered:
 		if request.AccountIds != nil || len(strings.TrimSpace(stringValue(request.Search))) > 254 {
 			h.rejectOwnerMutation(w, r, owner, "child_material.export", "invalid_request", 422, "invalid_export", "Invalid Export", "导出范围无效")
 			return

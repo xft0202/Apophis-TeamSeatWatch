@@ -616,6 +616,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/personal-probes/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["previewPersonalProbes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/personal-probes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPersonalProbes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/personal-probes/request/{requestKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPersonalProbesByRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/personal-probes/{batchId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPersonalProbes"];
+        put?: never;
+        post?: never;
+        delete: operations["cancelPersonalProbes"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/batches": {
         parameters: {
             query?: never;
@@ -1510,6 +1574,61 @@ export interface components {
         TargetAccountImportResult: {
             created: number;
             existing: number;
+        };
+        PersonalProbeScope: {
+            targetAccountIds?: string[];
+            search?: string;
+        };
+        PersonalProbePreview: {
+            /** @enum {string} */
+            scope: "selected" | "filtered";
+            label: string;
+            count: number;
+        };
+        CreatePersonalProbes: {
+            targetAccountIds?: string[];
+            search?: string;
+            expectedCount: number;
+            confirmed: boolean;
+            /** Format: uuid */
+            requestKey: string;
+        };
+        PersonalProbeItem: {
+            /** Format: uuid */
+            targetAccountId: string;
+            identifier: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+            /** @enum {string} */
+            outcome?: "available" | "missing_personal_credential" | "credential_invalid" | "forbidden" | "banned" | "network_error" | "unknown";
+            endpoint?: string;
+            httpStatus?: number;
+            evidenceCode?: string;
+            verifiedEvidence: boolean;
+            attemptCount: number;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            finishedAt?: string;
+        };
+        PersonalProbeBatch: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            scope: "selected" | "filtered";
+            label: string;
+            total: number;
+            queued: number;
+            running: number;
+            succeeded: number;
+            failed: number;
+            canceled: number;
+            notSavedOrRetained: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            canceledAt?: string;
+            items: components["schemas"]["PersonalProbeItem"][];
         };
         CreateTargetAccountProbes: {
             idempotencyKey: string;
@@ -3336,6 +3455,131 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TargetProbeStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    previewPersonalProbes: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonalProbeScope"];
+            };
+        };
+        responses: {
+            /** @description Exact scope count across all pages */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalProbePreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createPersonalProbes: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePersonalProbes"];
+            };
+        };
+        responses: {
+            /** @description Durable Personal probe batch */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalProbeBatch"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getPersonalProbesByRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recover a committed batch after a lost create response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalProbeBatch"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getPersonalProbes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted batch and per-account outcomes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalProbeBatch"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    cancelPersonalProbes: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                batchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Canceled pending attempts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalProbeBatch"];
                 };
             };
             default: components["responses"]["Problem"];

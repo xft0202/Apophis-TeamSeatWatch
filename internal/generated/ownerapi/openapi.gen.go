@@ -792,6 +792,102 @@ func (e MotherVisibleWorkspaceAccessStatus) Valid() bool {
 	}
 }
 
+// Defines values for PersonalProbeBatchScope.
+const (
+	PersonalProbeBatchScopeFiltered PersonalProbeBatchScope = "filtered"
+	PersonalProbeBatchScopeSelected PersonalProbeBatchScope = "selected"
+)
+
+// Valid indicates whether the value is a known member of the PersonalProbeBatchScope enum.
+func (e PersonalProbeBatchScope) Valid() bool {
+	switch e {
+	case PersonalProbeBatchScopeFiltered:
+		return true
+	case PersonalProbeBatchScopeSelected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PersonalProbeItemOutcome.
+const (
+	PersonalProbeItemOutcomeAvailable                 PersonalProbeItemOutcome = "available"
+	PersonalProbeItemOutcomeBanned                    PersonalProbeItemOutcome = "banned"
+	PersonalProbeItemOutcomeCredentialInvalid         PersonalProbeItemOutcome = "credential_invalid"
+	PersonalProbeItemOutcomeForbidden                 PersonalProbeItemOutcome = "forbidden"
+	PersonalProbeItemOutcomeMissingPersonalCredential PersonalProbeItemOutcome = "missing_personal_credential"
+	PersonalProbeItemOutcomeNetworkError              PersonalProbeItemOutcome = "network_error"
+	PersonalProbeItemOutcomeUnknown                   PersonalProbeItemOutcome = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the PersonalProbeItemOutcome enum.
+func (e PersonalProbeItemOutcome) Valid() bool {
+	switch e {
+	case PersonalProbeItemOutcomeAvailable:
+		return true
+	case PersonalProbeItemOutcomeBanned:
+		return true
+	case PersonalProbeItemOutcomeCredentialInvalid:
+		return true
+	case PersonalProbeItemOutcomeForbidden:
+		return true
+	case PersonalProbeItemOutcomeMissingPersonalCredential:
+		return true
+	case PersonalProbeItemOutcomeNetworkError:
+		return true
+	case PersonalProbeItemOutcomeUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PersonalProbeItemStatus.
+const (
+	PersonalProbeItemStatusCanceled  PersonalProbeItemStatus = "canceled"
+	PersonalProbeItemStatusFailed    PersonalProbeItemStatus = "failed"
+	PersonalProbeItemStatusQueued    PersonalProbeItemStatus = "queued"
+	PersonalProbeItemStatusRunning   PersonalProbeItemStatus = "running"
+	PersonalProbeItemStatusSucceeded PersonalProbeItemStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the PersonalProbeItemStatus enum.
+func (e PersonalProbeItemStatus) Valid() bool {
+	switch e {
+	case PersonalProbeItemStatusCanceled:
+		return true
+	case PersonalProbeItemStatusFailed:
+		return true
+	case PersonalProbeItemStatusQueued:
+		return true
+	case PersonalProbeItemStatusRunning:
+		return true
+	case PersonalProbeItemStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PersonalProbePreviewScope.
+const (
+	PersonalProbePreviewScopeFiltered PersonalProbePreviewScope = "filtered"
+	PersonalProbePreviewScopeSelected PersonalProbePreviewScope = "selected"
+)
+
+// Valid indicates whether the value is a known member of the PersonalProbePreviewScope enum.
+func (e PersonalProbePreviewScope) Valid() bool {
+	switch e {
+	case PersonalProbePreviewScopeFiltered:
+		return true
+	case PersonalProbePreviewScopeSelected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RemovalDifferenceReason.
 const (
 	OtherBatchMember RemovalDifferenceReason = "other_batch_member"
@@ -1968,6 +2064,15 @@ type CreateMotherAccount struct {
 	TotpSecret         *string `json:"totpSecret,omitempty"`
 }
 
+// CreatePersonalProbes defines model for CreatePersonalProbes.
+type CreatePersonalProbes struct {
+	Confirmed        bool                  `json:"confirmed"`
+	ExpectedCount    int                   `json:"expectedCount"`
+	RequestKey       openapi_types.UUID    `json:"requestKey"`
+	Search           *string               `json:"search,omitempty"`
+	TargetAccountIds *[]openapi_types.UUID `json:"targetAccountIds,omitempty"`
+}
+
 // CreateTargetAccount defines model for CreateTargetAccount.
 type CreateTargetAccount struct {
 	DisplayLabel      *string `json:"displayLabel,omitempty"`
@@ -2357,6 +2462,63 @@ type MotherVisibleWorkspaceAccessStatus string
 // OpenRecoveryGateRequest defines model for OpenRecoveryGateRequest.
 type OpenRecoveryGateRequest struct {
 	RestoredAt time.Time `json:"restoredAt"`
+}
+
+// PersonalProbeBatch defines model for PersonalProbeBatch.
+type PersonalProbeBatch struct {
+	Canceled           int                     `json:"canceled"`
+	CanceledAt         *time.Time              `json:"canceledAt,omitempty"`
+	CreatedAt          time.Time               `json:"createdAt"`
+	Failed             int                     `json:"failed"`
+	Id                 openapi_types.UUID      `json:"id"`
+	Items              []PersonalProbeItem     `json:"items"`
+	Label              string                  `json:"label"`
+	NotSavedOrRetained int                     `json:"notSavedOrRetained"`
+	Queued             int                     `json:"queued"`
+	Running            int                     `json:"running"`
+	Scope              PersonalProbeBatchScope `json:"scope"`
+	Succeeded          int                     `json:"succeeded"`
+	Total              int                     `json:"total"`
+}
+
+// PersonalProbeBatchScope defines model for PersonalProbeBatch.Scope.
+type PersonalProbeBatchScope string
+
+// PersonalProbeItem defines model for PersonalProbeItem.
+type PersonalProbeItem struct {
+	AttemptCount     int                       `json:"attemptCount"`
+	Endpoint         *string                   `json:"endpoint,omitempty"`
+	EvidenceCode     *string                   `json:"evidenceCode,omitempty"`
+	FinishedAt       *time.Time                `json:"finishedAt,omitempty"`
+	HttpStatus       *int                      `json:"httpStatus,omitempty"`
+	Identifier       string                    `json:"identifier"`
+	Outcome          *PersonalProbeItemOutcome `json:"outcome,omitempty"`
+	StartedAt        *time.Time                `json:"startedAt,omitempty"`
+	Status           PersonalProbeItemStatus   `json:"status"`
+	TargetAccountId  openapi_types.UUID        `json:"targetAccountId"`
+	VerifiedEvidence bool                      `json:"verifiedEvidence"`
+}
+
+// PersonalProbeItemOutcome defines model for PersonalProbeItem.Outcome.
+type PersonalProbeItemOutcome string
+
+// PersonalProbeItemStatus defines model for PersonalProbeItem.Status.
+type PersonalProbeItemStatus string
+
+// PersonalProbePreview defines model for PersonalProbePreview.
+type PersonalProbePreview struct {
+	Count int                       `json:"count"`
+	Label string                    `json:"label"`
+	Scope PersonalProbePreviewScope `json:"scope"`
+}
+
+// PersonalProbePreviewScope defines model for PersonalProbePreview.Scope.
+type PersonalProbePreviewScope string
+
+// PersonalProbeScope defines model for PersonalProbeScope.
+type PersonalProbeScope struct {
+	Search           *string               `json:"search,omitempty"`
+	TargetAccountIds *[]openapi_types.UUID `json:"targetAccountIds,omitempty"`
 }
 
 // PreviewBlocker defines model for PreviewBlocker.
@@ -3242,6 +3404,21 @@ type RefreshMotherPersonalAccessParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// CreatePersonalProbesParams defines parameters for CreatePersonalProbes.
+type CreatePersonalProbesParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// PreviewPersonalProbesParams defines parameters for PreviewPersonalProbes.
+type PreviewPersonalProbesParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// CancelPersonalProbesParams defines parameters for CancelPersonalProbes.
+type CancelPersonalProbesParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // ListRemovalOperationsNeedingAttentionParams defines parameters for ListRemovalOperationsNeedingAttention.
 type ListRemovalOperationsNeedingAttentionParams struct {
 	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
@@ -3467,6 +3644,12 @@ type UpdateStandbyChildBatchJSONRequestBody = StandbyChildBatchChange
 // ExportStandbyChildBatchJSONRequestBody defines body for ExportStandbyChildBatch for application/json ContentType.
 type ExportStandbyChildBatchJSONRequestBody = StandbyChildBatchExport
 
+// CreatePersonalProbesJSONRequestBody defines body for CreatePersonalProbes for application/json ContentType.
+type CreatePersonalProbesJSONRequestBody = CreatePersonalProbes
+
+// PreviewPersonalProbesJSONRequestBody defines body for PreviewPersonalProbes for application/json ContentType.
+type PreviewPersonalProbesJSONRequestBody = PersonalProbeScope
+
 // CreateTargetAccountProbesJSONRequestBody defines body for CreateTargetAccountProbes for application/json ContentType.
 type CreateTargetAccountProbesJSONRequestBody = CreateTargetAccountProbes
 
@@ -3643,6 +3826,21 @@ type ServerInterface interface {
 
 	// (POST /api/owner/v1/mother-accounts/{accountId}/personal-session)
 	RefreshMotherPersonalAccess(w http.ResponseWriter, r *http.Request, accountId AccountId, params RefreshMotherPersonalAccessParams)
+
+	// (POST /api/owner/v1/personal-probes)
+	CreatePersonalProbes(w http.ResponseWriter, r *http.Request, params CreatePersonalProbesParams)
+
+	// (POST /api/owner/v1/personal-probes/preview)
+	PreviewPersonalProbes(w http.ResponseWriter, r *http.Request, params PreviewPersonalProbesParams)
+
+	// (GET /api/owner/v1/personal-probes/request/{requestKey})
+	GetPersonalProbesByRequest(w http.ResponseWriter, r *http.Request, requestKey openapi_types.UUID)
+
+	// (DELETE /api/owner/v1/personal-probes/{batchId})
+	CancelPersonalProbes(w http.ResponseWriter, r *http.Request, batchId openapi_types.UUID, params CancelPersonalProbesParams)
+
+	// (GET /api/owner/v1/personal-probes/{batchId})
+	GetPersonalProbes(w http.ResponseWriter, r *http.Request, batchId openapi_types.UUID)
 
 	// (GET /api/owner/v1/removal-operations/needs-attention)
 	ListRemovalOperationsNeedingAttention(w http.ResponseWriter, r *http.Request, params ListRemovalOperationsNeedingAttentionParams)
@@ -6139,6 +6337,202 @@ func (siw *ServerInterfaceWrapper) RefreshMotherPersonalAccess(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// CreatePersonalProbes operation middleware
+func (siw *ServerInterfaceWrapper) CreatePersonalProbes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreatePersonalProbesParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePersonalProbes(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewPersonalProbes operation middleware
+func (siw *ServerInterfaceWrapper) PreviewPersonalProbes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreviewPersonalProbesParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewPersonalProbes(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPersonalProbesByRequest operation middleware
+func (siw *ServerInterfaceWrapper) GetPersonalProbesByRequest(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "requestKey" -------------
+	var requestKey openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "requestKey", r.PathValue("requestKey"), &requestKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPersonalProbesByRequest(w, r, requestKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CancelPersonalProbes operation middleware
+func (siw *ServerInterfaceWrapper) CancelPersonalProbes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "batchId" -------------
+	var batchId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "batchId", r.PathValue("batchId"), &batchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "batchId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelPersonalProbesParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelPersonalProbes(w, r, batchId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPersonalProbes operation middleware
+func (siw *ServerInterfaceWrapper) GetPersonalProbes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "batchId" -------------
+	var batchId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "batchId", r.PathValue("batchId"), &batchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "batchId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPersonalProbes(w, r, batchId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRemovalOperationsNeedingAttention operation middleware
 func (siw *ServerInterfaceWrapper) ListRemovalOperationsNeedingAttention(w http.ResponseWriter, r *http.Request) {
 
@@ -7733,6 +8127,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/target-accounts/{targetAccountId}", wrapper.UpdateTargetAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/target-account-probes", wrapper.CreateTargetAccountProbes)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/target-account-probes/{probeId}", wrapper.GetTargetAccountProbe)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/personal-probes/preview", wrapper.PreviewPersonalProbes)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/personal-probes", wrapper.CreatePersonalProbes)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/personal-probes/request/{requestKey}", wrapper.GetPersonalProbesByRequest)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/owner/v1/personal-probes/{batchId}", wrapper.CancelPersonalProbes)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/personal-probes/{batchId}", wrapper.GetPersonalProbes)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/batches", wrapper.ListBatches)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/batches", wrapper.CreateBatch)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/batches/{batchId}", wrapper.GetBatch)

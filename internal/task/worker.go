@@ -33,6 +33,7 @@ type Worker struct {
 	Egress          egress.LeaseProvider
 	Reader          ReaderFactory
 	TargetProber    TargetProberFactory
+	PersonalProber  PersonalProbeProvider
 	Joiner          JoinerFactory
 	Remover         RemoverFactory
 	DeliveryAdapter DeliveryAdapterFactory
@@ -88,9 +89,22 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		}
 	}
 
+	personalProcessed := false
+	// Personal jobs never obtain an egress lease or preempt the existing network
+	// queue. Bounded slices make large filtered scopes progress without starvation.
+	for i := 0; i < 10; i++ {
+		processed, personalErr := w.Store.ProcessPersonalProbes(ctx, w.PersonalProber)
+		if personalErr != nil {
+			return personalProcessed || processed, personalErr
+		}
+		if !processed {
+			break
+		}
+		personalProcessed = true
+	}
 	taskType, err := w.Store.NextNetworkTaskType(ctx)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
+		return personalProcessed, nil
 	}
 	if err != nil {
 		return false, err

@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import type { components } from '../../generated/owner';
 import { exportChildMaterials, importChildMaterials, listChildMaterials, ownerProblem, updateChildMaterial } from './auth';
 import { exportRange, togglePage, type ChildScope } from './childSelection';
+import PersonalProbesView from './PersonalProbesView';
 
 type Child = components['schemas']['TargetAccount'];
 type ImportResult = components['schemas']['ChildMaterialsImportResult'];
@@ -128,5 +129,6 @@ export default function ChildMaterialsView() {
       <Radio.Group label="导出范围" value={scope} onChange={(value) => { setScope(value as ChildScope); setConfirmed(false); }}><Group mt="xs"><Radio value="selected" label={`已选跨页 ${selected.size} 条`} /><Radio value="filtered" label={`全部筛选结果 ${total} 条`} /></Group></Radio.Group>
       <Group justify="space-between"><Checkbox checked={confirmed} onChange={(event) => setConfirmed(event.currentTarget.checked)} disabled={loading || range.count < 1} label={`确认导出${scope === 'selected' ? '已选跨页' : '全部筛选结果'} ${range.count} 条`} /><Button onClick={() => void download()} loading={pending} disabled={loading || !confirmed || range.count < 1}>导出 TXT</Button></Group>
     </Stack></Paper>
+    <PersonalProbesView selected={selected} search={search} loading={loading} />
   </Stack>;
 }

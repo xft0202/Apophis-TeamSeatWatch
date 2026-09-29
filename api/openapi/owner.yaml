@@ -1029,6 +1029,113 @@ paths:
                 $ref: '#/components/schemas/TargetProbeStatus'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/personal-probes/preview:
+    post:
+      operationId: previewPersonalProbes
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonalProbeScope'
+      responses:
+        '200':
+          description: Exact scope count across all pages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalProbePreview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/personal-probes:
+    post:
+      operationId: createPersonalProbes
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePersonalProbes'
+      responses:
+        '202':
+          description: Durable Personal probe batch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalProbeBatch'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/personal-probes/request/{requestKey}:
+    get:
+      operationId: getPersonalProbesByRequest
+      security:
+        - ownerSession: []
+      parameters:
+        - name: requestKey
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Recover a committed batch after a lost create response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalProbeBatch'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/personal-probes/{batchId}:
+    get:
+      operationId: getPersonalProbes
+      security:
+        - ownerSession: []
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Persisted batch and per-account outcomes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalProbeBatch'
+        default:
+          $ref: '#/components/responses/Problem'
+    delete:
+      operationId: cancelPersonalProbes
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Canceled pending attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalProbeBatch'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/batches:
     get:
       operationId: listBatches
@@ -3154,6 +3261,148 @@ components:
           type: integer
         existing:
           type: integer
+    PersonalProbeScope:
+      type: object
+      additionalProperties: false
+      properties:
+        targetAccountIds:
+          type: array
+          maxItems: 10000
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        search:
+          type: string
+          maxLength: 254
+    PersonalProbePreview:
+      type: object
+      additionalProperties: false
+      required: [scope, label, count]
+      properties:
+        scope:
+          type: string
+          enum: [selected, filtered]
+        label:
+          type: string
+        count:
+          type: integer
+    CreatePersonalProbes:
+      type: object
+      additionalProperties: false
+      required: [expectedCount, confirmed, requestKey]
+      properties:
+        targetAccountIds:
+          type: array
+          maxItems: 10000
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        search:
+          type: string
+          maxLength: 254
+        expectedCount:
+          type: integer
+          minimum: 1
+        confirmed:
+          type: boolean
+        requestKey:
+          type: string
+          format: uuid
+    PersonalProbeItem:
+      type: object
+      additionalProperties: false
+      required:
+        - targetAccountId
+        - identifier
+        - status
+        - attemptCount
+        - verifiedEvidence
+      properties:
+        targetAccountId:
+          type: string
+          format: uuid
+        identifier:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, canceled]
+        outcome:
+          type: string
+          enum:
+            - available
+            - missing_personal_credential
+            - credential_invalid
+            - forbidden
+            - banned
+            - network_error
+            - unknown
+        endpoint:
+          type: string
+        httpStatus:
+          type: integer
+        evidenceCode:
+          type: string
+        verifiedEvidence:
+          type: boolean
+        attemptCount:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+    PersonalProbeBatch:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - scope
+        - label
+        - total
+        - queued
+        - running
+        - succeeded
+        - failed
+        - canceled
+        - notSavedOrRetained
+        - items
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          enum: [selected, filtered]
+        label:
+          type: string
+        total:
+          type: integer
+        queued:
+          type: integer
+        running:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        canceled:
+          type: integer
+        notSavedOrRetained:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        canceledAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonalProbeItem'
     CreateTargetAccountProbes:
       type: object
       additionalProperties: false

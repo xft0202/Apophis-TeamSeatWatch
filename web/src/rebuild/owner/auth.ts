@@ -118,6 +118,50 @@ export async function exportChildMaterials(scope: 'selected' | 'filtered', accou
   return response.data;
 }
 
+type PersonalScope = components['schemas']['PersonalProbeScope'];
+
+export async function previewPersonalProbes(scope: PersonalScope): Promise<components['schemas']['PersonalProbePreview']> {
+  const response = await ownerApi.POST('/api/owner/v1/personal-probes/preview', {
+    params: { header: await mutationHeaders() }, body: scope,
+  });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function createPersonalProbes(scope: PersonalScope, count: number, requestKey: string): Promise<components['schemas']['PersonalProbeBatch']> {
+  const response = await ownerApi.POST('/api/owner/v1/personal-probes', {
+    params: { header: await mutationHeaders() },
+    body: { ...scope, expectedCount: count, confirmed: true, requestKey },
+  });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function getPersonalProbes(batchId: string): Promise<components['schemas']['PersonalProbeBatch']> {
+  const response = await ownerApi.GET('/api/owner/v1/personal-probes/{batchId}', { params: { path: { batchId } } });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function getPersonalProbesByRequest(requestKey: string): Promise<components['schemas']['PersonalProbeBatch']> {
+  const response = await ownerApi.GET('/api/owner/v1/personal-probes/request/{requestKey}', { params: { path: { requestKey } } });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function cancelPersonalProbes(batchId: string): Promise<components['schemas']['PersonalProbeBatch']> {
+  const response = await ownerApi.DELETE('/api/owner/v1/personal-probes/{batchId}', {
+    params: { path: { batchId }, header: await mutationHeaders() },
+  });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
 export async function listMotherAccounts(search = ''): Promise<components['schemas']['MotherAccountList']> {
   const query = search ? { page: 1, page_size: 100, search } : { page: 1, page_size: 100 };
   const response = await ownerApi.GET('/api/owner/v1/mother-accounts', {
