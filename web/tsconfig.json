@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["vite/client"]
   },
-  "include": ["src", "vite.owner.config.ts", "vite.public.config.ts"]
+  "include": ["src/rebuild", "src/generated", "vite.owner.config.ts", "vite.public.config.ts"]
 }
