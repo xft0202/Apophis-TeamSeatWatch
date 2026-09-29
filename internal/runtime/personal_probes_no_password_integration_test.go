@@ -18,8 +18,9 @@ func TestPersonalProbeSavedPasswordNeverEnablesBasicAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The canonical graph account has sealed password/TOTP, but no Personal session.
+	preview := personalPreview(t, h, session, csrf, map[string]any{"targetAccountIds": []string{targetID}})
 	batch := decodePersonalBatch(t, personalRequest(t, h, session, csrf, "POST", "/create", map[string]any{
-		"targetAccountIds": []string{targetID}, "expectedCount": 1, "confirmed": true, "requestKey": uuid.NewString(),
+		"targetAccountIds": []string{targetID}, "expectedCount": 1, "confirmed": true, "requestKey": uuid.NewString(), "scopeToken": preview.ScopeToken,
 	}), 202)
 	worker := &task.Worker{Store: task.NewStore(pool, cardIntegrationKeyRing{}), PersonalProber: task.MissingPersonalProvider{}}
 	// No platform client/egress/reader is supplied: a password-backed call would fail.

@@ -2069,6 +2069,7 @@ type CreatePersonalProbes struct {
 	Confirmed        bool                  `json:"confirmed"`
 	ExpectedCount    int                   `json:"expectedCount"`
 	RequestKey       openapi_types.UUID    `json:"requestKey"`
+	ScopeToken       string                `json:"scopeToken"`
 	Search           *string               `json:"search,omitempty"`
 	TargetAccountIds *[]openapi_types.UUID `json:"targetAccountIds,omitempty"`
 }
@@ -2510,6 +2511,9 @@ type PersonalProbePreview struct {
 	Count int                       `json:"count"`
 	Label string                    `json:"label"`
 	Scope PersonalProbePreviewScope `json:"scope"`
+
+	// ScopeToken Keyed snapshot of resolved account IDs and versions.
+	ScopeToken string `json:"scopeToken"`
 }
 
 // PersonalProbePreviewScope defines model for PersonalProbePreview.Scope.

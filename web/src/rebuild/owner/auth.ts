@@ -129,10 +129,10 @@ export async function previewPersonalProbes(scope: PersonalScope): Promise<compo
   return response.data;
 }
 
-export async function createPersonalProbes(scope: PersonalScope, count: number, requestKey: string): Promise<components['schemas']['PersonalProbeBatch']> {
+export async function createPersonalProbes(scope: PersonalScope, count: number, scopeToken: string, requestKey: string): Promise<components['schemas']['PersonalProbeBatch']> {
   const response = await ownerApi.POST('/api/owner/v1/personal-probes', {
     params: { header: await mutationHeaders() },
-    body: { ...scope, expectedCount: count, confirmed: true, requestKey },
+    body: { ...scope, expectedCount: count, confirmed: true, requestKey, scopeToken },
   });
   throwIfFailed(response);
   if (!response.data) throw new OwnerApiError(response.response.status, undefined);

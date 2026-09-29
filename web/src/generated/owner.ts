@@ -1584,8 +1584,11 @@ export interface components {
             scope: "selected" | "filtered";
             label: string;
             count: number;
+            /** @description Keyed snapshot of resolved account IDs and versions. */
+            scopeToken: string;
         };
         CreatePersonalProbes: {
+            scopeToken: string;
             targetAccountIds?: string[];
             search?: string;
             expectedCount: number;

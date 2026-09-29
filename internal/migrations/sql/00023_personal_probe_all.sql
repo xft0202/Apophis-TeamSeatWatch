@@ -6,12 +6,13 @@ CREATE TABLE tsw_personal_probe_batches (
  request_key text NOT NULL,
  scope_hash text NOT NULL,
  scope_key_version smallint NOT NULL,
+ confirmed_scope_token text NOT NULL,
  scope text NOT NULL CHECK (scope IN ('selected','filtered')),
  scope_label text NOT NULL,
  total integer NOT NULL CHECK (total > 0),
  canceled_at timestamptz,
  created_at timestamptz NOT NULL DEFAULT now(),
- UNIQUE (owner_id,request_key)
+ CONSTRAINT tsw_personal_probe_batches_request_key_uq UNIQUE (owner_id,request_key)
 );
 CREATE TABLE tsw_personal_probe_items (
  batch_id uuid NOT NULL REFERENCES tsw_personal_probe_batches(id) ON DELETE CASCADE,

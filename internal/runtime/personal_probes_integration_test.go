@@ -56,6 +56,22 @@ func personalRequest(t *testing.T, h *OwnerAuthHandler, session, csrf, method, p
 	}
 	return recorder
 }
+func personalPreview(t *testing.T, h *OwnerAuthHandler, session, csrf string, scope any) ownerapi.PersonalProbePreview {
+	t.Helper()
+	response := personalRequest(t, h, session, csrf, "POST", "/preview", scope)
+	if response.Code != 200 {
+		t.Fatalf("preview %d: %s", response.Code, response.Body.String())
+	}
+	var preview ownerapi.PersonalProbePreview
+	if err := json.Unmarshal(response.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.ScopeToken == "" {
+		t.Fatal("preview omitted confirmed ID/version token")
+	}
+	return preview
+}
+
 func decodePersonalBatch(t *testing.T, rec *httptest.ResponseRecorder, status int) ownerapi.PersonalProbeBatch {
 	t.Helper()
 	if rec.Code != status {
@@ -83,11 +99,11 @@ func TestPersonalProbeScopeProgressSaveFailureAndCancel(t *testing.T) {
 		ids = append(ids, id)
 	}
 	selected := map[string]any{"targetAccountIds": []string{ids[0], ids[35]}, "search": "no-match"}
-	preview := personalRequest(t, h, session, csrf, "POST", "/preview", selected)
-	if preview.Code != 200 || !bytes.Contains(preview.Body.Bytes(), []byte(`"count":2`)) {
-		t.Fatalf("selected precedence: %d %s", preview.Code, preview.Body.String())
+	preview := personalPreview(t, h, session, csrf, selected)
+	if preview.Count != 2 {
+		t.Fatalf("selected precedence: %+v", preview)
 	}
-	create := map[string]any{"targetAccountIds": []string{ids[0], ids[35]}, "search": "no-match", "expectedCount": 2, "confirmed": true, "requestKey": uuid.NewString()}
+	create := map[string]any{"targetAccountIds": []string{ids[0], ids[35]}, "search": "no-match", "expectedCount": 2, "confirmed": true, "requestKey": uuid.NewString(), "scopeToken": preview.ScopeToken}
 	batch := decodePersonalBatch(t, personalRequest(t, h, session, csrf, "POST", "/create", create), 202)
 	if batch.Total != 2 || batch.Queued != 2 {
 		t.Fatalf("selection ignored: %+v", batch)
@@ -110,10 +126,11 @@ func TestPersonalProbeScopeProgressSaveFailureAndCancel(t *testing.T) {
 		t.Fatalf("canceled job processed: %t %v", worked, err)
 	}
 	filtered := map[string]any{"search": "crosspage.test"}
-	preview = personalRequest(t, h, session, csrf, "POST", "/preview", filtered)
-	if preview.Code != 200 || !bytes.Contains(preview.Body.Bytes(), []byte(`"count":45`)) {
-		t.Fatalf("cross-page preview: %d %s", preview.Code, preview.Body.String())
+	preview = personalPreview(t, h, session, csrf, filtered)
+	if preview.Count != 45 {
+		t.Fatalf("cross-page preview: %+v", preview)
 	}
+	filtered["scopeToken"] = preview.ScopeToken
 	filtered["expectedCount"] = 44
 	filtered["confirmed"] = true
 	filtered["requestKey"] = uuid.NewString()
@@ -194,7 +211,8 @@ func TestPersonalProbeMockClassificationAndDeletionDuringAttempt(t *testing.T) {
 		}
 		ids = append(ids, id)
 	}
-	request := map[string]any{"targetAccountIds": ids, "expectedCount": 6, "confirmed": true, "requestKey": uuid.NewString()}
+	preview := personalPreview(t, h, session, csrf, map[string]any{"targetAccountIds": ids})
+	request := map[string]any{"targetAccountIds": ids, "expectedCount": 6, "confirmed": true, "requestKey": uuid.NewString(), "scopeToken": preview.ScopeToken}
 	batch := decodePersonalBatch(t, personalRequest(t, h, session, csrf, "POST", "/create", request), 202)
 	provider := personalFixtureProvider{responses: map[string]platform.PersonalProbeEvidence{
 		ids[0]: {HTTPStatus: 200, VerifiedUsage: true}, ids[1]: {HTTPStatus: 401}, ids[2]: {HTTPStatus: 403},
@@ -231,7 +249,8 @@ func TestPersonalProbeMockClassificationAndDeletionDuringAttempt(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE tsw_personal_probe_items SET outcome='banned' WHERE batch_id=$1 AND target_account_id=$2`, batch.Id, ids[2]); err == nil {
 		t.Fatal("ordinary 403 bypassed verified ban evidence constraint")
 	}
-	second := decodePersonalBatch(t, personalRequest(t, h, session, csrf, "POST", "/create", map[string]any{"targetAccountIds": []string{ids[4]}, "expectedCount": 1, "confirmed": true, "requestKey": uuid.NewString()}), 202)
+	secondPreview := personalPreview(t, h, session, csrf, map[string]any{"targetAccountIds": []string{ids[4]}})
+	second := decodePersonalBatch(t, personalRequest(t, h, session, csrf, "POST", "/create", map[string]any{"targetAccountIds": []string{ids[4]}, "expectedCount": 1, "confirmed": true, "requestKey": uuid.NewString(), "scopeToken": secondPreview.ScopeToken}), 202)
 	provider.onProbe = func(id string) {
 		if _, err := pool.Exec(ctx, `DELETE FROM tsw_target_accounts WHERE id=$1`, id); err != nil {
 			t.Fatal(err)

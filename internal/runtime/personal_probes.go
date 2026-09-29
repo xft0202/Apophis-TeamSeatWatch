@@ -6,16 +6,21 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
 )
+
+var errPersonalRequestKeyConflict = errors.New("Personal probe request key belongs to another scope")
 
 type personalScope struct {
 	ids    []uuid.UUID
@@ -67,6 +72,34 @@ func personalScopeHash(scope personalScope, ring auth.KeyRing, version uint16) (
 	return hex.EncodeToString(mac.Sum(nil)), nil
 }
 
+// The signed snapshot binds Owner, normalized filter/selection and every resolved
+// ID/version. A matching count alone is never authority to enqueue a different set.
+func personalScopeToken(scope personalScope, targets []personalTarget, ownerID string, ring auth.KeyRing, version uint16) (string, error) {
+	scopeHash, err := personalScopeHash(scope, ring, version)
+	if err != nil {
+		return "", err
+	}
+	key, ok := ring.Lookup(version)
+	if !ok {
+		return "", errors.New("Personal scope key unavailable")
+	}
+	mac := hmac.New(sha256.New, key[:])
+	fmt.Fprintf(mac, "personal-probe-confirm-v1:%s:%s:", ownerID, scopeHash)
+	sorted := append([]personalTarget(nil), targets...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].id.String() < sorted[j].id.String() })
+	for _, target := range sorted {
+		fmt.Fprintf(mac, "%s:%d;", target.id, target.version)
+	}
+	return fmt.Sprintf("%d.%s", version, hex.EncodeToString(mac.Sum(nil))), nil
+}
+
+func personalScopeTokenVersion(token string) (uint16, bool) {
+	prefix, digest, found := strings.Cut(token, ".")
+	version, err := strconv.ParseUint(prefix, 10, 16)
+	decoded, hexErr := hex.DecodeString(digest)
+	return uint16(version), found && err == nil && version > 0 && version <= 32767 && hexErr == nil && len(decoded) == sha256.Size && strconv.FormatUint(version, 10) == prefix
+}
+
 func uuidList(ids []uuid.UUID) string {
 	parts := make([]string, len(ids))
 	for i, id := range ids {
@@ -75,7 +108,7 @@ func uuidList(ids []uuid.UUID) string {
 	return strings.Join(parts, ",")
 }
 
-const personalScopeSQL = `SELECT target.id,target.identifier FROM tsw_target_accounts target WHERE
+const personalScopeSQL = `SELECT target.id,target.identifier,target.version FROM tsw_target_accounts target WHERE
  ($1::boolean AND target.id=ANY($2::uuid[])) OR
  (NOT $1::boolean AND ($3='' OR target.identifier ILIKE '%'||$3||'%' OR target.display_label ILIKE '%'||$3||'%'))
  ORDER BY target.identifier,target.id`
@@ -89,7 +122,7 @@ func personalTargets(ctx context.Context, tx pgx.Tx, scope personalScope) ([]per
 	targets := []personalTarget{}
 	for rows.Next() {
 		var item personalTarget
-		if err = rows.Scan(&item.id, &item.identifier); err != nil {
+		if err = rows.Scan(&item.id, &item.identifier, &item.version); err != nil {
 			return nil, err
 		}
 		targets = append(targets, item)
@@ -100,10 +133,12 @@ func personalTargets(ctx context.Context, tx pgx.Tx, scope personalScope) ([]per
 type personalTarget struct {
 	id         uuid.UUID
 	identifier string
+	version    int64
 }
 
 func (h *OwnerAuthHandler) PreviewPersonalProbes(w http.ResponseWriter, r *http.Request, _ ownerapi.PreviewPersonalProbesParams) {
-	if _, ok := h.authenticated(w, r, true); !ok {
+	owner, ok := h.authenticated(w, r, true)
+	if !ok {
 		return
 	}
 	var request ownerapi.PersonalProbeScope
@@ -131,7 +166,17 @@ func (h *OwnerAuthHandler) PreviewPersonalProbes(w http.ResponseWriter, r *http.
 		writeProblem(w, r, 409, "scope_changed", "Scope Changed", "Selected account no longer exists", 0)
 		return
 	}
-	writeJSON(w, 200, ownerapi.PersonalProbePreview{Scope: ownerapi.PersonalProbePreviewScope(scope.name), Label: scope.label, Count: len(targets)})
+	if h.keyRing == nil {
+		h.targetFailure(w, r, errors.New("Personal scope key unavailable"))
+		return
+	}
+	version, _ := h.keyRing.Current()
+	token, err := personalScopeToken(scope, targets, owner.OwnerID, h.keyRing, version)
+	if err != nil {
+		h.targetFailure(w, r, err)
+		return
+	}
+	writeJSON(w, 200, ownerapi.PersonalProbePreview{Scope: ownerapi.PersonalProbePreviewScope(scope.name), Label: scope.label, Count: len(targets), ScopeToken: token})
 }
 
 func (h *OwnerAuthHandler) CreatePersonalProbes(w http.ResponseWriter, r *http.Request, _ ownerapi.CreatePersonalProbesParams) {
@@ -149,6 +194,11 @@ func (h *OwnerAuthHandler) CreatePersonalProbes(w http.ResponseWriter, r *http.R
 		h.rejectOwnerMutation(w, r, owner, "personal_probe.create", "invalid_request", 422, "invalid_scope", "Invalid Scope", "Invalid probe scope")
 		return
 	}
+	previewVersion, validToken := personalScopeTokenVersion(request.ScopeToken)
+	if !validToken {
+		h.rejectOwnerMutation(w, r, owner, "personal_probe.create", "invalid_request", 422, "invalid_scope_token", "Invalid Scope", "Preview confirmation is invalid")
+		return
+	}
 	tx, err := h.pool.BeginTx(r.Context(), pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		h.targetFailure(w, r, err)
@@ -161,26 +211,13 @@ func (h *OwnerAuthHandler) CreatePersonalProbes(w http.ResponseWriter, r *http.R
 		return
 	}
 	keyVersion, _ := h.keyRing.Current()
-	var existingID, existingHash string
-	var existingCount int
-	var existingVersion uint16
-	err = tx.QueryRow(r.Context(), `SELECT id,scope_hash,total,scope_key_version FROM tsw_personal_probe_batches WHERE owner_id=$1 AND request_key=$2`, owner.OwnerID, request.RequestKey).Scan(&existingID, &existingHash, &existingCount, &existingVersion)
+	existing, err := h.replayPersonalBatch(r.Context(), tx, owner.OwnerID, request, scope)
 	if err == nil {
-		fingerprint, hashErr := personalScopeHash(scope, h.keyRing, existingVersion)
-		if hashErr != nil {
-			h.targetFailure(w, r, hashErr)
-			return
-		}
-		if existingHash != fingerprint || existingCount != request.ExpectedCount {
-			writeProblem(w, r, 409, "request_key_conflict", "Conflict", "Request key belongs to another scope", 0)
-			return
-		}
-		batch, readErr := h.personalBatch(r.Context(), tx, existingID)
-		if readErr != nil {
-			h.targetFailure(w, r, readErr)
-			return
-		}
-		writeJSON(w, 202, batch)
+		writeJSON(w, 202, existing)
+		return
+	}
+	if errors.Is(err, errPersonalRequestKeyConflict) {
+		writeProblem(w, r, 409, "request_key_conflict", "Conflict", "Request key belongs to another scope", 0)
 		return
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -196,14 +233,49 @@ func (h *OwnerAuthHandler) CreatePersonalProbes(w http.ResponseWriter, r *http.R
 		writeProblem(w, r, 409, "scope_changed", "Scope Changed", "Account scope changed; preview again", 0)
 		return
 	}
+	confirmedToken, err := personalScopeToken(scope, targets, owner.OwnerID, h.keyRing, previewVersion)
+	if err != nil {
+		h.targetFailure(w, r, err)
+		return
+	}
+	if !hmac.Equal([]byte(confirmedToken), []byte(request.ScopeToken)) {
+		writeProblem(w, r, 409, "scope_changed", "Scope Changed", "Account identities or versions changed; preview again", 0)
+		return
+	}
 	fingerprint, err := personalScopeHash(scope, h.keyRing, keyVersion)
 	if err != nil {
 		h.targetFailure(w, r, err)
 		return
 	}
 	var id string
-	err = tx.QueryRow(r.Context(), `INSERT INTO tsw_personal_probe_batches(owner_id,request_key,scope_hash,scope_key_version,scope,scope_label,total) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, owner.OwnerID, request.RequestKey, fingerprint, keyVersion, scope.name, scope.label, len(targets)).Scan(&id)
+	err = tx.QueryRow(r.Context(), `INSERT INTO tsw_personal_probe_batches(owner_id,request_key,scope_hash,scope_key_version,confirmed_scope_token,scope,scope_label,total) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, owner.OwnerID, request.RequestKey, fingerprint, keyVersion, request.ScopeToken, scope.name, scope.label, len(targets)).Scan(&id)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "tsw_personal_probe_batches_request_key_uq" {
+			// Repeatable-read cannot see the concurrent winner in this transaction.
+			// Roll it back, then validate the committed batch under a fresh snapshot.
+			if rollbackErr := tx.Rollback(r.Context()); rollbackErr != nil {
+				h.targetFailure(w, r, rollbackErr)
+				return
+			}
+			fresh, beginErr := h.pool.BeginTx(r.Context(), pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+			if beginErr != nil {
+				h.targetFailure(w, r, beginErr)
+				return
+			}
+			defer fresh.Rollback(r.Context())
+			replayed, readErr := h.replayPersonalBatch(r.Context(), fresh, owner.OwnerID, request, scope)
+			if errors.Is(readErr, errPersonalRequestKeyConflict) {
+				writeProblem(w, r, 409, "request_key_conflict", "Conflict", "Request key belongs to another scope", 0)
+				return
+			}
+			if readErr != nil {
+				h.targetFailure(w, r, readErr)
+				return
+			}
+			writeJSON(w, 202, replayed)
+			return
+		}
 		h.targetFailure(w, r, err)
 		return
 	}
@@ -223,6 +295,24 @@ func (h *OwnerAuthHandler) CreatePersonalProbes(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, 202, batch)
+}
+
+func (h *OwnerAuthHandler) replayPersonalBatch(ctx context.Context, tx pgx.Tx, ownerID string, request ownerapi.CreatePersonalProbesJSONRequestBody, scope personalScope) (ownerapi.PersonalProbeBatch, error) {
+	var id, fingerprint, token string
+	var count int
+	var version uint16
+	err := tx.QueryRow(ctx, `SELECT id,scope_hash,total,scope_key_version,confirmed_scope_token FROM tsw_personal_probe_batches WHERE owner_id=$1 AND request_key=$2`, ownerID, request.RequestKey).Scan(&id, &fingerprint, &count, &version, &token)
+	if err != nil {
+		return ownerapi.PersonalProbeBatch{}, err
+	}
+	expected, err := personalScopeHash(scope, h.keyRing, version)
+	if err != nil {
+		return ownerapi.PersonalProbeBatch{}, err
+	}
+	if fingerprint != expected || count != request.ExpectedCount || !hmac.Equal([]byte(token), []byte(request.ScopeToken)) {
+		return ownerapi.PersonalProbeBatch{}, errPersonalRequestKeyConflict
+	}
+	return h.personalBatch(ctx, tx, id)
 }
 
 func (h *OwnerAuthHandler) GetPersonalProbes(w http.ResponseWriter, r *http.Request, id uuid.UUID) {

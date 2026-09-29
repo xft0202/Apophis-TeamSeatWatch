@@ -20,8 +20,9 @@ func TestPersonalProbeCancelWhileProviderRunningFencesLateSuccess(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	preview := personalPreview(t, h, session, csrf, map[string]any{"targetAccountIds": []string{id}})
 	batch := decodePersonalBatch(t, personalRequest(t, h, session, csrf, "POST", "/create", map[string]any{
-		"targetAccountIds": []string{id}, "expectedCount": 1, "confirmed": true, "requestKey": uuid.NewString(),
+		"targetAccountIds": []string{id}, "expectedCount": 1, "confirmed": true, "requestKey": uuid.NewString(), "scopeToken": preview.ScopeToken,
 	}), 202)
 	provider := personalFixtureProvider{responses: map[string]platform.PersonalProbeEvidence{id: {HTTPStatus: 200, VerifiedUsage: true}}}
 	provider.onProbe = func(string) {

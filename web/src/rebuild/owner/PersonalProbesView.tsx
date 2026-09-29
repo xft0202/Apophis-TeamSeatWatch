@@ -1,8 +1,9 @@
 import { Alert, Badge, Button, Checkbox, Group, Paper, ScrollArea, Stack, Table, Text } from '@mantine/core';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { components } from '../../generated/owner';
 import { cancelPersonalProbes, createPersonalProbes, getPersonalProbes, getPersonalProbesByRequest, ownerProblem, previewPersonalProbes } from './auth';
 import { personalProbeScope } from './personalProbeScope';
+import { PersonalPreviewGate } from './personalPreviewGate';
 
 type Batch = components['schemas']['PersonalProbeBatch'];
 type Preview = components['schemas']['PersonalProbePreview'];
@@ -16,7 +17,9 @@ const outcomeLabels: Record<string, string> = {
 };
 
 export default function PersonalProbesView({ selected, search, loading }: { selected: ReadonlySet<string>; search: string; loading: boolean }) {
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const [preview, setPreview] = useState<{ value: Preview; scopeKey: string; request: number } | null>(null);
+  const previewGate = useRef(new PersonalPreviewGate()).current;
+  const [previewPending, setPreviewPending] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [batch, setBatch] = useState<Batch | null>(null);
   const [batchId, setBatchId] = useState(() => sessionStorage.getItem(storageKey));
@@ -26,10 +29,12 @@ export default function PersonalProbesView({ selected, search, loading }: { sele
   const [pending, setPending] = useState(false);
   const scope = personalProbeScope(selected, search);
   const selectionKey = selected.size ? `selected:${[...selected].sort().join(',')}` : `filtered:${search}`;
+  previewGate.updateScope(selectionKey);
+  const confirmedPreview = preview && preview.scopeKey === selectionKey && previewGate.accepts(selectionKey, preview.request) ? preview.value : null;
   const saveFailures = batch?.items.filter((item) => item.status === 'running' && item.evidenceCode === 'result_persistence_failed').length ?? 0;
   const staleAttempts = batch?.items.filter((item) => item.status === 'running' && item.startedAt && Date.now() - Date.parse(item.startedAt) > 5 * 60_000).length ?? 0;
 
-  useEffect(() => { setPreview(null); setConfirmed(false); }, [selectionKey]);
+  useEffect(() => { setPreview(null); setConfirmed(false); setPreviewPending(false); }, [selectionKey]);
   useEffect(() => {
     if (!pendingKey) return;
     let active = true;
@@ -68,19 +73,23 @@ export default function PersonalProbesView({ selected, search, loading }: { sele
   }, [batchId]);
 
   async function inspect() {
-    setPending(true); setNotice(''); setPreview(null); setConfirmed(false);
-    try { setPreview(await previewPersonalProbes(scope)); }
-    catch (error: unknown) { setNotice(ownerProblem(error).status === 409 ? '账号范围已变化，请刷新后重试。' : '无法确认范围，请勿开始探测。'); }
-    finally { setPending(false); }
+    setPreviewPending(true); setNotice(''); setPreview(null); setConfirmed(false);
+    await previewGate.load(
+      selectionKey,
+      () => previewPersonalProbes(scope),
+      (value, request) => setPreview({ value, scopeKey: selectionKey, request }),
+      (error) => setNotice(ownerProblem(error).status === 409 ? '账号范围已变化，请刷新后重试。' : '无法确认范围，请勿开始探测。'),
+      () => setPreviewPending(false),
+    );
   }
   async function start() {
-    if (!preview || !confirmed || preview.count < 1) return;
+    if (!confirmedPreview || !confirmed || confirmedPreview.count < 1) return;
     setPending(true); setNotice('');
     try {
       const requestKey = crypto.randomUUID();
       sessionStorage.setItem(pendingKeyStorage, requestKey);
       setPendingKey(requestKey);
-      const result = await createPersonalProbes(scope, preview.count, requestKey);
+      const result = await createPersonalProbes(scope, confirmedPreview.count, confirmedPreview.scopeToken, requestKey);
       sessionStorage.removeItem(pendingKeyStorage);
       setPendingKey(null);
       sessionStorage.setItem(storageKey, result.id);
@@ -105,10 +114,10 @@ export default function PersonalProbesView({ selected, search, loading }: { sele
     <Text fw={600}>账号级 Personal 探测</Text>
     <Text size="sm" c="dimmed">仅使用已有 Personal 凭据；不使用密码重新登录。结果不代表空间成员、目标 Workspace 用量或交付资格。</Text>
     {notice ? <Alert color="error">{notice}</Alert> : null}
-    <Group><Button variant="light" disabled={loading || pending} onClick={() => void inspect()}>确认探测范围</Button>
-      {preview ? <Text size="sm">{preview.label} · 确定 {preview.count} 个账号（不受分页限制）</Text> : null}</Group>
-    {preview ? <Group><Checkbox checked={confirmed} disabled={preview.count === 0} onChange={(event) => setConfirmed(event.currentTarget.checked)} label={`确认探测 ${preview.count} 个账号`} />
-      <Button disabled={!confirmed || preview.count === 0 || pending || !!pendingKey} loading={pending} onClick={() => void start()}>开始探测</Button></Group> : null}
+    <Group><Button variant="light" disabled={loading || pending} loading={previewPending} onClick={() => void inspect()}>确认探测范围</Button>
+      {confirmedPreview ? <Text size="sm">{confirmedPreview.label} · 确定 {confirmedPreview.count} 个账号（不受分页限制）</Text> : null}</Group>
+    {confirmedPreview ? <Group><Checkbox checked={confirmed} disabled={confirmedPreview.count === 0} onChange={(event) => setConfirmed(event.currentTarget.checked)} label={`确认探测 ${confirmedPreview.count} 个账号`} />
+      <Button disabled={!confirmed || confirmedPreview.count === 0 || pending || previewPending || !!pendingKey} loading={pending} onClick={() => void start()}>开始探测</Button></Group> : null}
     {pendingKey ? <Alert color="yellow">正在按请求编号核对上次提交；如持续显示，请检查服务，不能把未知状态视作完成。<Button size="xs" variant="subtle" onClick={() => {
       if (window.confirm('无法确认上次请求是否已执行。放弃本次请求追踪后可能重复探测，确定放弃？')) {
         sessionStorage.removeItem(pendingKeyStorage); setPendingKey(null);

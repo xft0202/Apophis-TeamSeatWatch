@@ -3278,7 +3278,7 @@ components:
     PersonalProbePreview:
       type: object
       additionalProperties: false
-      required: [scope, label, count]
+      required: [scope, label, count, scopeToken]
       properties:
         scope:
           type: string
@@ -3287,11 +3287,16 @@ components:
           type: string
         count:
           type: integer
+        scopeToken:
+          type: string
+          description: Keyed snapshot of resolved account IDs and versions.
     CreatePersonalProbes:
       type: object
       additionalProperties: false
-      required: [expectedCount, confirmed, requestKey]
+      required: [expectedCount, confirmed, requestKey, scopeToken]
       properties:
+        scopeToken:
+          type: string
         targetAccountIds:
           type: array
           maxItems: 10000
