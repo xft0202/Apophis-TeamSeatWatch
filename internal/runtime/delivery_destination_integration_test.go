@@ -13,7 +13,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,6 +41,21 @@ type destinationFixtureProbe struct {
 func (p *destinationFixtureProbe) ProbeDestination(_ context.Context, _, _, secret string) (ownerapi.DeliveryDestinationTestConnection, ownerapi.DeliveryDestinationTestTarget) {
 	p.seenSecret = secret
 	return p.connection, p.target
+}
+
+type orderedDestinationProbe struct {
+	calls        atomic.Int32
+	firstStarted chan struct{}
+	releaseFirst chan struct{}
+}
+
+func (p *orderedDestinationProbe) ProbeDestination(_ context.Context, _, _, _ string) (ownerapi.DeliveryDestinationTestConnection, ownerapi.DeliveryDestinationTestTarget) {
+	if p.calls.Add(1) == 1 {
+		close(p.firstStarted)
+		<-p.releaseFirst
+		return ownerapi.DeliveryDestinationTestConnectionConnected, ownerapi.DeliveryDestinationTestTargetConnected
+	}
+	return ownerapi.DeliveryDestinationTestConnectionPermissionDenied, ownerapi.DeliveryDestinationTestTargetPermissionDenied
 }
 
 func TestDeliveryDestinationOwnerPersistenceIntegration(t *testing.T) {
@@ -163,6 +180,36 @@ func TestDeliveryDestinationOwnerPersistenceIntegration(t *testing.T) {
 	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"selected":true`) || strings.Contains(listed.Body.String(), "hub-key") {
 		t.Fatalf("redacted list status=%d body=%s", listed.Code, listed.Body.String())
 	}
+
+	// A slow earlier success must never supersede a later permission failure.
+	ordered := &orderedDestinationProbe{firstStarted: make(chan struct{}), releaseFirst: make(chan struct{})}
+	h.destinationProbe = ordered
+	firstResult := make(chan *httptest.ResponseRecorder, 1)
+	go func() { firstResult <- call(http.MethodPost, path+"/"+item.Id.String()+"/test", nil, true, true) }()
+	select {
+	case <-ordered.firstStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first probe did not start")
+	}
+	later := call(http.MethodPost, path+"/"+item.Id.String()+"/test", nil, true, true)
+	if later.Code != http.StatusOK || !strings.Contains(later.Body.String(), "permission_denied") {
+		t.Fatalf("later permission failure=%d %s", later.Code, later.Body.String())
+	}
+	close(ordered.releaseFirst)
+	select {
+	case earlier := <-firstResult:
+		if earlier.Code != http.StatusConflict {
+			t.Fatalf("earlier result overwrote later result: status=%d body=%s", earlier.Code, earlier.Body.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("first probe did not complete")
+	}
+	listed = call(http.MethodGet, path, nil, true, false)
+	if strings.Contains(listed.Body.String(), `"selected":true`) || !strings.Contains(listed.Body.String(), "permission_denied") {
+		t.Fatalf("newer failure was not retained: %s", listed.Body.String())
+	}
+	h.destinationProbe = probe
+
 	updated := call(http.MethodPatch, path+"/"+item.Id.String(), map[string]any{"name": "Hub renamed", "endpoint": "https://hub.example.test/api/v1", "targetGroup": "43", "enabled": false}, true, true)
 	if updated.Code != http.StatusOK || strings.Contains(updated.Body.String(), "hub-key") {
 		t.Fatalf("update=%d %s", updated.Code, updated.Body.String())

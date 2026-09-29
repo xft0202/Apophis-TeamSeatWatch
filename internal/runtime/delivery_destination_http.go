@@ -150,12 +150,21 @@ func (h *OwnerAuthHandler) testDeliveryDestination(w http.ResponseWriter, r *htt
 	if probe == nil {
 		probe = NewSub2APIProbe(Sub2APIProbeConfig{})
 	}
+
+	// Reserve this attempt before the network request. A later test supersedes
+	// earlier in-flight tests, and an unverified destination is not selectable.
+	startTx, err := h.pool.Begin(r.Context())
+	if err != nil {
+		h.destinationFailure(w, r, err)
+		return
+	}
+	defer startTx.Rollback(r.Context())
 	var endpoint, targetGroup string
 	var version uint16
 	var nonce, ciphertext []byte
 	var enabled bool
-	var revision int64
-	err := h.pool.QueryRow(r.Context(), `SELECT endpoint,target_group,secret_key_version,secret_nonce,secret_ciphertext,enabled,revision FROM tsw_delivery_destinations WHERE id=$1`, destinationID).Scan(&endpoint, &targetGroup, &version, &nonce, &ciphertext, &enabled, &revision)
+	var revision, attempt int64
+	err = startTx.QueryRow(r.Context(), `SELECT endpoint,target_group,secret_key_version,secret_nonce,secret_ciphertext,enabled,revision FROM tsw_delivery_destinations WHERE id=$1 FOR UPDATE`, destinationID).Scan(&endpoint, &targetGroup, &version, &nonce, &ciphertext, &enabled, &revision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		h.destinationNotFound(w, r, owner, "test")
 		return
@@ -168,6 +177,20 @@ func (h *OwnerAuthHandler) testDeliveryDestination(w http.ResponseWriter, r *htt
 		h.destinationProblem(w, r, owner, "test", http.StatusConflict, "destination_disabled", "The destination is disabled")
 		return
 	}
+	err = startTx.QueryRow(r.Context(), `UPDATE tsw_delivery_destinations SET test_attempt=test_attempt+1,test_connection=NULL,test_target=NULL,test_revision=NULL,tested_at=NULL,updated_at=now() WHERE id=$1 RETURNING test_attempt`, destinationID).Scan(&attempt)
+	if err != nil {
+		h.destinationFailure(w, r, err)
+		return
+	}
+	if _, err = startTx.Exec(r.Context(), `DELETE FROM tsw_delivery_destination_selection WHERE destination_id=$1`, destinationID); err != nil {
+		h.destinationFailure(w, r, err)
+		return
+	}
+	if err = startTx.Commit(r.Context()); err != nil {
+		h.destinationFailure(w, r, err)
+		return
+	}
+
 	secret, err := auth.DecryptSecret(version, nonce, ciphertext, h.keyRing)
 	if err != nil {
 		h.destinationFailure(w, r, err)
@@ -178,15 +201,16 @@ func (h *OwnerAuthHandler) testDeliveryDestination(w http.ResponseWriter, r *htt
 	if !connection.Valid() || !target.Valid() || connection != ownerapi.DeliveryDestinationTestConnectionConnected && target == ownerapi.DeliveryDestinationTestTargetConnected {
 		connection, target = ownerapi.DeliveryDestinationTestConnectionConnectionFailed, ownerapi.DeliveryDestinationTestTargetUntested
 	}
-	tx, err := h.pool.Begin(r.Context())
+
+	resultTx, err := h.pool.Begin(r.Context())
 	if err != nil {
 		h.destinationFailure(w, r, err)
 		return
 	}
-	defer tx.Rollback(r.Context())
+	defer resultTx.Rollback(r.Context())
 	var item ownerapi.DeliveryDestination
 	var testedAt time.Time
-	err = tx.QueryRow(r.Context(), `UPDATE tsw_delivery_destinations SET test_connection=$2,test_target=$3,test_revision=revision,tested_at=now(),updated_at=now() WHERE id=$1 AND revision=$4 AND enabled RETURNING id,name,endpoint,target_group,enabled,true,revision,tested_at`, destinationID, connection, target, revision).Scan(&item.Id, &item.Name, &item.Endpoint, &item.TargetGroup, &item.Enabled, &item.HasSecret, &item.Revision, &testedAt)
+	err = resultTx.QueryRow(r.Context(), `UPDATE tsw_delivery_destinations SET test_connection=$2,test_target=$3,test_revision=revision,tested_at=now(),updated_at=now() WHERE id=$1 AND revision=$4 AND test_attempt=$5 AND enabled RETURNING id,name,endpoint,target_group,enabled,true,revision,tested_at`, destinationID, connection, target, revision, attempt).Scan(&item.Id, &item.Name, &item.Endpoint, &item.TargetGroup, &item.Enabled, &item.HasSecret, &item.Revision, &testedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		h.destinationProblem(w, r, owner, "test", http.StatusConflict, "test_stale", "The destination changed while it was being tested; test it again")
 		return
@@ -196,18 +220,18 @@ func (h *OwnerAuthHandler) testDeliveryDestination(w http.ResponseWriter, r *htt
 		return
 	}
 	if connection != ownerapi.DeliveryDestinationTestConnectionConnected || target != ownerapi.DeliveryDestinationTestTargetConnected {
-		_, err = tx.Exec(r.Context(), `DELETE FROM tsw_delivery_destination_selection WHERE destination_id=$1`, destinationID)
+		_, err = resultTx.Exec(r.Context(), `DELETE FROM tsw_delivery_destination_selection WHERE destination_id=$1`, destinationID)
 		if err != nil {
 			h.destinationFailure(w, r, err)
 			return
 		}
 	}
-	err = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM tsw_delivery_destination_selection WHERE destination_id=$1)`, destinationID).Scan(&item.Selected)
+	err = resultTx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM tsw_delivery_destination_selection WHERE destination_id=$1)`, destinationID).Scan(&item.Selected)
 	if err != nil {
 		h.destinationFailure(w, r, err)
 		return
 	}
-	if err = tx.Commit(r.Context()); err != nil {
+	if err = resultTx.Commit(r.Context()); err != nil {
 		h.destinationFailure(w, r, err)
 		return
 	}
