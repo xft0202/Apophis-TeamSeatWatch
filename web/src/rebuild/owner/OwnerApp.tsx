@@ -2,6 +2,7 @@ import {
   Alert,
   Badge,
   Button,
+  Card,
   Container,
   Divider,
   Group,
@@ -10,6 +11,7 @@ import {
   Paper,
   PasswordInput,
   Stack,
+  Switch,
   Text,
   TextInput,
   Title,
@@ -25,6 +27,13 @@ import {
   refreshOwnerSession,
 } from './auth';
 import { appTheme } from '../shared/theme';
+import MotherMaterialsView from './MotherMaterialsView';
+import {
+  destinationStore,
+  type Destination,
+  type DestinationError,
+  type TestOutcome,
+} from './deliveryDestination';
 
 type AuthStatus = components['schemas']['AuthStatus'];
 type AuthState =
@@ -276,51 +285,159 @@ function SignedInView({
       </header>
 
       <main className="session-main">
-        <Container size="md" px={{ base: 'md', sm: 'xl' }}>
+        <Container size="lg" px={{ base: 'md', sm: 'xl' }}>
           <Stack gap="xl">
             <div>
               <div className="session-status">会话已确认</div>
-              <Title order={1} size="h2" mt="md">
-                Owner 控制台入口
-              </Title>
+              <Title order={1} size="h2" mt="md">Owner 控制台</Title>
+              <Text c="dimmed" mt="xs">管理可用的交付去向。连接测试不是客户交付，也不会发送客户账号资料。</Text>
             </div>
 
             <Paper withBorder radius={12} p={{ base: 'lg', sm: 'xl' }}>
               <Stack gap="lg">
                 <Group justify="space-between" align="flex-start" wrap="nowrap">
                   <div>
-                    <Text size="xs" tt="uppercase" fw={600} c="dimmed" lts="0.08em">
-                      当前身份
-                    </Text>
-                    <Text className="session-username" size="lg" fw={600} mt={4}>
-                      {status.username}
-                    </Text>
+                    <Text size="xs" tt="uppercase" fw={600} c="dimmed" lts="0.08em">当前身份</Text>
+                    <Text className="session-username" size="lg" fw={600} mt={4}>{status.username}</Text>
                   </div>
-                  <Badge color="success" variant="light">
-                    已登录
-                  </Badge>
+                  <Badge color="success" variant="light">已登录</Badge>
                 </Group>
                 <Divider />
                 <Group justify="space-between" align="center" gap="md">
-                  <Text size="sm" c="dimmed">
-                    当前登录有效。
-                  </Text>
-                  <Button
-                    variant="light"
-                    radius={6}
-                    onClick={refresh}
-                    loading={pendingAction === 'refresh'}
-                    disabled={pendingAction !== null}
-                  >
-                    刷新会话
-                  </Button>
+                  <Text size="sm" c="dimmed">当前登录有效。</Text>
+                  <Button variant="light" radius={6} onClick={refresh} loading={pendingAction === 'refresh'} disabled={pendingAction !== null}>刷新会话</Button>
                 </Group>
                 {message ? <Alert color="indigo">{message}</Alert> : null}
               </Stack>
             </Paper>
+
+            <MotherMaterialsView />
+            <DeliveryDestinationPanel />
           </Stack>
         </Container>
       </main>
     </div>
+  );
+}
+
+type DestinationForm = { name: string; endpoint: string; targetGroup: string; secret: string };
+const blankDestinationForm: DestinationForm = { name: '', endpoint: '', targetGroup: '', secret: '' };
+
+function destinationErrorMessage(error: unknown): string {
+  const code = (error as Partial<DestinationError>).code;
+  switch (code) {
+    case 'permission_denied': return '没有权限修改交付去向，请使用 Owner 会话后重试。';
+    case 'invalid_destination': return '请填写名称、HTTPS 地址、目标组和连接秘密。不要填写客户账号密码或 2FA。';
+    case 'not_found': return '该交付去向已不存在，请刷新列表。';
+    case 'not_selectable': return '必须先启用并通过连接、目标组两项测试，才能选择去向。';
+    case 'test_stale': return '测试完成前配置已变化，请重新测试当前配置。';
+    default: return '操作未完成，请稍后重试。';
+  }
+}
+
+function outcomeLabel(outcome: TestOutcome): { label: string; color: 'gray' | 'green' | 'red' | 'yellow' } {
+  switch (outcome) {
+    case 'connected': return { label: '通过', color: 'green' };
+    case 'connection_failed': return { label: '连接失败：检查地址或网络', color: 'red' };
+    case 'permission_denied': return { label: '权限不足：检查去向授权', color: 'red' };
+    case 'target_mismatch': return { label: '目标组不匹配：检查目标范围', color: 'yellow' };
+    default: return { label: '未测试', color: 'gray' };
+  }
+}
+
+function DestinationTestSummary({ destination }: { destination: Destination }) {
+  const connection = outcomeLabel(destination.test?.connection ?? 'untested');
+  const target = outcomeLabel(destination.test?.target ?? 'untested');
+  return (
+    <Stack gap={4} mt="sm">
+      <Group gap="xs"><Text size="sm" c="dimmed">连接</Text><Badge color={connection.color} variant="light">{connection.label}</Badge></Group>
+      <Group gap="xs"><Text size="sm" c="dimmed">目标组</Text><Badge color={target.color} variant="light">{target.label}</Badge></Group>
+    </Stack>
+  );
+}
+
+function DeliveryDestinationPanel() {
+  const [destinations, setDestinations] = useState<Destination[]>(() => destinationStore.list(true));
+  const [selectedId, setSelectedId] = useState<string | null>(() => destinationStore.selected(true));
+  const [form, setForm] = useState<DestinationForm>(blankDestinationForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [pending, setPending] = useState<string | null>(null);
+
+  const sync = () => {
+    setDestinations(destinationStore.list(true));
+    setSelectedId(destinationStore.selected(true));
+  };
+  const performAction = async (key: string, action: () => unknown | Promise<unknown>) => {
+    setPending(key); setNotice('');
+    try { await action(); sync(); } catch (error: unknown) { setNotice(destinationErrorMessage(error)); } finally { setPending(null); }
+  };
+  const submit = (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void performAction('save', () => {
+      if (editingId) destinationStore.update(true, editingId, form);
+      else destinationStore.create(true, form);
+      setForm(blankDestinationForm); setEditingId(null); setWizardOpen(false);
+    });
+  };
+  const startEdit = (destination: Destination) => {
+    setEditingId(destination.id);
+    setForm({ name: destination.name, endpoint: destination.endpoint, targetGroup: destination.targetGroup, secret: '' });
+    setWizardOpen(false); setNotice('');
+  };
+  const cancelEdit = () => { setEditingId(null); setForm(blankDestinationForm); setWizardOpen(false); };
+
+  return (
+    <section aria-labelledby="destination-heading">
+      <Group justify="space-between" align="flex-end" mb="md">
+        <div>
+          <Text size="xs" tt="uppercase" fw={600} c="dimmed" lts="0.08em">交付去向</Text>
+          <Title id="destination-heading" order={2} size="h3" mt={4}>连接与目标范围</Title>
+        </div>
+        {!destinations.length ? <Button radius={6} onClick={() => setWizardOpen(true)}>开始配置</Button> : <Button variant="light" radius={6} onClick={() => { setWizardOpen(true); setEditingId(null); setForm(blankDestinationForm); }}>添加去向</Button>}
+      </Group>
+      <Alert color="yellow" mb="lg" title="安全边界">这里只保存交付渠道连接秘密；不会收集、回显或发送客户账号密码、Cookie、2FA 或其它客户凭据。通过连接测试也不代表已经完成交付。</Alert>
+      {notice ? <Alert color="red" mb="lg" title="操作未完成">{notice}</Alert> : null}
+
+      {!destinations.length && !wizardOpen ? (
+        <Paper withBorder radius={12} p={{ base: 'lg', sm: 'xl' }}>
+          <Stack gap="sm"><Title order={3} size="h4">还没有可用的交付去向</Title><Text c="dimmed">按向导完成连接、目标组和可用性测试后，才能选择交付去向。</Text><Group><Button radius={6} onClick={() => setWizardOpen(true)}>进入配置向导</Button></Group></Stack>
+        </Paper>
+      ) : null}
+
+      {wizardOpen ? (
+        <Paper withBorder radius={12} p={{ base: 'lg', sm: 'xl' }} mb="lg">
+          <form onSubmit={submit} noValidate>
+            <Stack gap="md">
+              <div><Title order={3} size="h4">{editingId ? '修改交付去向' : '配置交付去向'}</Title><Text size="sm" c="dimmed" mt={4}>保存后仍需重新测试；任何配置变更都会使旧测试结果失效。</Text></div>
+              <TextInput label="名称" required value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} />
+              <TextInput label="HTTPS 连接地址" placeholder="https://delivery.example.test" required value={form.endpoint} onChange={(event) => setForm({ ...form, endpoint: event.currentTarget.value })} />
+              <TextInput label="目标组" placeholder="例如：team-seatwatch" required value={form.targetGroup} onChange={(event) => setForm({ ...form, targetGroup: event.currentTarget.value })} />
+              <PasswordInput label={editingId ? '连接秘密（留空则保留原秘密）' : '连接秘密'} required={!editingId} autoComplete="new-password" value={form.secret} onChange={(event) => setForm({ ...form, secret: event.currentTarget.value })} />
+              <Group justify="flex-end"><Button type="button" variant="default" radius={6} onClick={cancelEdit}>返回</Button><Button type="submit" radius={6} loading={pending === 'save'}>{editingId ? '保存修改' : '保存配置'}</Button></Group>
+            </Stack>
+          </form>
+        </Paper>
+      ) : null}
+
+      <Stack gap="md">
+        {destinations.map((destination) => (
+          <Card key={destination.id} withBorder radius={12} padding="lg">
+            <Group justify="space-between" align="flex-start" wrap="nowrap">
+              <div><Title order={3} size="h4">{destination.name}</Title><Text size="sm" c="dimmed" mt={4}>{destination.endpoint}</Text><Text size="sm" c="dimmed">目标组：{destination.targetGroup}</Text></div>
+              <Badge color={destination.enabled ? 'green' : 'gray'} variant="light">{destination.enabled ? '已启用' : '已停用'}</Badge>
+            </Group>
+            <DestinationTestSummary destination={destination} />
+            <Divider my="md" />
+            <Group justify="space-between" align="center">
+              <Switch label={destination.enabled ? '启用' : '停用'} checked={destination.enabled} onChange={(event) => void performAction(`toggle:${destination.id}`, () => destinationStore.setEnabled(true, destination.id, event.currentTarget.checked))} disabled={pending !== null} />
+              <Group gap="xs"><Button variant="subtle" radius={6} onClick={() => startEdit(destination)} disabled={pending !== null}>修改</Button><Button variant="light" radius={6} onClick={() => void performAction(`test:${destination.id}`, () => destinationStore.test(true, destination.id))} loading={pending === `test:${destination.id}`} disabled={pending !== null || !destination.enabled}>测试连接与目标组</Button><Button radius={6} onClick={() => void performAction(`select:${destination.id}`, () => destinationStore.select(true, destination.id))} disabled={pending !== null || !destination.enabled || destination.test?.connection !== 'connected' || destination.test?.target !== 'connected'}>{selectedId === destination.id ? '当前已选择' : '选择去向'}</Button></Group>
+            </Group>
+          </Card>
+        ))}
+      </Stack>
+      {selectedId ? <Text size="sm" c="dimmed" mt="md">当前选择只表示后续操作的目标配置，不表示任何客户资料已经发送或交付完成。</Text> : null}
+    </section>
   );
 }
