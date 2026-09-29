@@ -266,6 +266,7 @@ func (h *OwnerAuthHandler) selectedWorkspace(ctx context.Context, workspaceID, m
 	if err != nil {
 		return response, err
 	}
+	response.ExchangeId = &binding.exchangeID
 	var id int64
 	var source, status, permission, completeness string
 	var observed, expires time.Time

@@ -91,37 +91,38 @@ export default function SelectedWorkspaceConsole({ workspaceId, motherAccountId,
   }
 
   const accessReady = access?.status === 'ready' && access.expiresAt !== undefined && Date.parse(access.expiresAt) > now;
-  const verified = !pending && canShowSelectedWorkspaceFacts(verification, access, now);
+  const displayVerification = access?.exchangeId && verification?.exchangeId === access.exchangeId ? verification : null;
+  const verified = !pending && canShowSelectedWorkspaceFacts(displayVerification, access, now);
   return (
     <section aria-labelledby="selected-workspace-heading">
       <Stack gap="lg">
         <Group justify="space-between" align="start">
           <div>
             <Text size="xs" c="dimmed">空间事实</Text>
-            <Title id="selected-workspace-heading" order={2} size="h3">{verification?.workspaceName ?? '选定空间'}</Title>
+            <Title id="selected-workspace-heading" order={2} size="h3">{displayVerification?.workspaceName ?? '选定空间'}</Title>
           </div>
           <Button variant="subtle" onClick={onBack}>更换入口</Button>
         </Group>
         {notice ? <Alert color="yellow" role="alert">{notice}</Alert> : null}
         {pending ? <Alert color="yellow" role="status">正在处理已选空间，先前事实暂不可用。</Alert> : null}
-        {!verification && !access && !notice && !pending ? <Loader size="sm" aria-label="读取空间核验状态" /> : null}
+        {!displayVerification && !access && !notice && !pending ? <Loader size="sm" aria-label="读取空间核验状态" /> : null}
         {access ? <Badge color={accessReady ? 'green' : 'yellow'} variant="light">空间读取凭据：{accessReady ? '已核验' : access.status === 'exchanging' ? '交换中' : '待核验'}</Badge> : null}
         {access && !accessReady ? <Alert color="yellow">空间读取凭据尚未核验；发现空间不等于取得空间管理或读取权限。</Alert> : null}
-        {verification ? (
+        {displayVerification ? (
           <>
             <Group gap="sm">
-              <Badge color={verified ? 'green' : 'yellow'}>{verified ? statusLabels.verified : verification.status === 'verified' ? statusLabels.stale : statusLabels[verification.status]}</Badge>
-              <Badge color={verified ? 'green' : 'gray'} variant="light">{verified ? permissionLabels[verification.permission] : verification.permission === 'denied' ? permissionLabels.denied : '管理权限待核验'}</Badge>
+              <Badge color={verified ? 'green' : 'yellow'}>{verified ? statusLabels.verified : displayVerification.status === 'verified' ? statusLabels.stale : statusLabels[displayVerification.status]}</Badge>
+              <Badge color={verified ? 'green' : 'gray'} variant="light">{verified ? permissionLabels[displayVerification.permission] : displayVerification.permission === 'denied' ? permissionLabels.denied : '管理权限待核验'}</Badge>
               <Text size="sm" c="dimmed">完整性：{verified ? '完整' : '待核验'}</Text>
             </Group>
-            <Text size="sm" c="dimmed">来源：{verification.source ?? '待核验'} · 观测：{date(verification.observedAt)} · 有效至：{date(verification.expiresAt)}</Text>
-            {verification.readSources?.map((source) => <Text key={source.source} size="xs" c="dimmed">{source.source} · {source.completeness} · {source.permission} · {source.outcome} · {date(source.observedAt)}</Text>)}
+            <Text size="sm" c="dimmed">来源：{displayVerification.source ?? '待核验'} · 观测：{date(displayVerification.observedAt)} · 有效至：{date(displayVerification.expiresAt)}</Text>
+            {displayVerification.readSources?.map((source) => <Text key={source.source} size="xs" c="dimmed">{source.source} · {source.completeness} · {source.permission} · {source.outcome} · {date(source.observedAt)}</Text>)}
             <Table striped withTableBorder horizontalSpacing="md" verticalSpacing="sm">
               <Table.Tbody>
-                <Table.Tr><Table.Th scope="row">订阅到期</Table.Th><Table.Td>{verified ? date(verification.activeUntil) : '待核验'}</Table.Td></Table.Tr>
-                <Table.Tr><Table.Th scope="row">默认付费席位（非硬上限）</Table.Th><Table.Td>{verified ? verification.seatLimit : '待核验'}</Table.Td></Table.Tr>
-                <Table.Tr><Table.Th scope="row">成员</Table.Th><Table.Td>{verified ? verification.memberCount : '待核验'}</Table.Td></Table.Tr>
-                <Table.Tr><Table.Th scope="row">已发送待接受邀请</Table.Th><Table.Td>{verified ? verification.pendingInviteCount : '待核验'}</Table.Td></Table.Tr>
+                <Table.Tr><Table.Th scope="row">订阅到期</Table.Th><Table.Td>{verified ? date(displayVerification.activeUntil) : '待核验'}</Table.Td></Table.Tr>
+                <Table.Tr><Table.Th scope="row">默认付费席位（非硬上限）</Table.Th><Table.Td>{verified ? displayVerification.seatLimit : '待核验'}</Table.Td></Table.Tr>
+                <Table.Tr><Table.Th scope="row">成员</Table.Th><Table.Td>{verified ? displayVerification.memberCount : '待核验'}</Table.Td></Table.Tr>
+                <Table.Tr><Table.Th scope="row">已发送待接受邀请</Table.Th><Table.Td>{verified ? displayVerification.pendingInviteCount : '待核验'}</Table.Td></Table.Tr>
               </Table.Tbody>
             </Table>
             {verified ? (
@@ -130,7 +131,7 @@ export default function SelectedWorkspaceConsole({ workspaceId, motherAccountId,
                 <Table striped withTableBorder horizontalSpacing="md" verticalSpacing="sm">
                   <Table.Thead><Table.Tr><Table.Th>身份</Table.Th><Table.Th>账号</Table.Th><Table.Th>状态</Table.Th><Table.Th>角色</Table.Th><Table.Th>子号关系</Table.Th><Table.Th>最近核验</Table.Th></Table.Tr></Table.Thead>
                   <Table.Tbody>
-                    {verification.members.map((entry) => (
+                    {displayVerification.members.map((entry) => (
                       <Table.Tr key={`${entry.kind}:${entry.identifier}`}>
                         <Table.Td>{entry.kind === 'member' ? '成员' : '邀请'}</Table.Td>
                         <Table.Td>{entry.identifier}</Table.Td>
@@ -142,16 +143,16 @@ export default function SelectedWorkspaceConsole({ workspaceId, motherAccountId,
                     ))}
                   </Table.Tbody>
                 </Table>
-                {!verification.members.length ? <Text c="dimmed" size="sm" mt="sm">无成员或邀请记录</Text> : null}
+                {!displayVerification.members.length ? <Text c="dimmed" size="sm" mt="sm">无成员或邀请记录</Text> : null}
               </div>
             ) : <Alert color="yellow">当前无可用管理事实；请核验权限或更换可管理的母号入口。</Alert>}
             <Group justify="flex-end">
-              {verification.accessStatus === 'readable' && accessReady ? <Button variant="light" loading={pending} onClick={() => void refresh()}>核验空间事实</Button> : null}
+              {displayVerification.accessStatus === 'readable' && accessReady ? <Button variant="light" loading={pending} onClick={() => void refresh()}>核验空间事实</Button> : null}
               {verified ? <Button onClick={onNextAction}>继续处理子号资料</Button> : null}
             </Group>
           </>
         ) : null}
-        {accessReady && !verification ? <Group justify="flex-end"><Button disabled={pending} loading={pending} onClick={() => void refresh()}>核验空间事实</Button></Group> : null}
+        {accessReady && !displayVerification ? <Group justify="flex-end"><Button disabled={pending} loading={pending} onClick={() => void refresh()}>核验空间事实</Button></Group> : null}
         {access && !accessReady && access.status !== 'exchanging' && access.status !== 'permission_denied' ? (
           <Group justify="flex-end"><Button loading={pending} disabled={pending} onClick={() => void exchange()}>明确确认并获取本空间读取凭据</Button></Group>
         ) : null}

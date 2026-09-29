@@ -1257,6 +1257,8 @@ export interface components {
             motherAccountId: string;
             /** @enum {string} */
             status: "required" | "exchanging" | "ready" | "failed" | "permission_denied";
+            /** Format: uuid */
+            exchangeId?: string;
             /** Format: date-time */
             expiresAt?: string;
         };
@@ -1266,6 +1268,8 @@ export interface components {
             /** Format: uuid */
             motherAccountId: string;
             workspaceName: string;
+            /** Format: uuid */
+            exchangeId?: string;
             /** @enum {string} */
             accessStatus: "readable" | "permission_denied" | "unknown";
             /** @enum {string} */

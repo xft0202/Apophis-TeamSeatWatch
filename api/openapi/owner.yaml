@@ -2529,6 +2529,9 @@ components:
         status:
           type: string
           enum: [required, exchanging, ready, failed, permission_denied]
+        exchangeId:
+          type: string
+          format: uuid
         expiresAt:
           type: string
           format: date-time
@@ -2553,6 +2556,9 @@ components:
           format: uuid
         workspaceName:
           type: string
+        exchangeId:
+          type: string
+          format: uuid
         accessStatus:
           type: string
           enum: [readable, permission_denied, unknown]

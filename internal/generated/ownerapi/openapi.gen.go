@@ -2511,6 +2511,7 @@ type SaveBatch struct {
 
 // SelectedWorkspaceAccessStatus defines model for SelectedWorkspaceAccessStatus.
 type SelectedWorkspaceAccessStatus struct {
+	ExchangeId      *openapi_types.UUID                 `json:"exchangeId,omitempty"`
 	ExpiresAt       *time.Time                          `json:"expiresAt,omitempty"`
 	MotherAccountId openapi_types.UUID                  `json:"motherAccountId"`
 	Status          SelectedWorkspaceAccessStatusStatus `json:"status"`
@@ -2566,6 +2567,7 @@ type SelectedWorkspaceVerification struct {
 	AccessStatus       SelectedWorkspaceVerificationAccessStatus `json:"accessStatus"`
 	ActiveUntil        *time.Time                                `json:"activeUntil,omitempty"`
 	Completeness       SelectedWorkspaceVerificationCompleteness `json:"completeness"`
+	ExchangeId         *openapi_types.UUID                       `json:"exchangeId,omitempty"`
 	ExpiresAt          *time.Time                                `json:"expiresAt,omitempty"`
 	MemberCount        *int                                      `json:"memberCount,omitempty"`
 	Members            []SelectedWorkspaceMember                 `json:"members"`

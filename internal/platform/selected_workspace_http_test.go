@@ -3,7 +3,7 @@ package platform
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -32,9 +32,14 @@ func (t *selectedTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	status, body, headers := t.answer(req)
 	return &http.Response{StatusCode: status, Header: headers, Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
 }
+func workspaceFixtureTokenWithClaims(claims map[string]any) string {
+	claims["exp"] = time.Now().Add(2 * time.Hour).Unix()
+	payload, _ := json.Marshal(claims)
+	return "header." + base64.RawURLEncoding.EncodeToString(payload) + ".signature"
+}
 func workspaceFixtureToken(workspaceID string) string {
-	payload := fmt.Sprintf(`{"exp":%d,"https://api.openai.com/auth":{"chatgpt_account_id":%q}}`, time.Now().Add(2*time.Hour).Unix(), workspaceID)
-	return "header." + base64.RawURLEncoding.EncodeToString([]byte(payload)) + ".signature"
+	return workspaceFixtureTokenWithClaims(map[string]any{"https://api.openai.com/auth": map[string]any{
+		"chatgpt_account_id": workspaceID, "chatgpt_plan_type": "k12", "scp": []string{"organization.read"}}})
 }
 func selectedSession() WorkspaceAccess {
 	return WorkspaceAccess{AccessToken: workspaceFixtureToken("canonical-space"), WorkspaceID: "canonical-space", DeviceID: "saved-device", SessionID: uuid.NewString(), Cookies: []SessionCookie{

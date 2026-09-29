@@ -4,7 +4,7 @@ import { canShowWorkspaceFacts, canShowSelectedWorkspaceFacts, createWorkspaceRe
 
 const fact = {
   status: 'verified', permission: 'manage', accessStatus: 'readable',
-  completeness: 'complete', expiresAt: '2026-01-08T00:00:00Z',
+  completeness: 'complete', expiresAt: '2026-01-08T00:00:00Z', exchangeId: 'exchange-1',
 };
 
 test('verified facts need current, complete read evidence', () => {
@@ -27,13 +27,28 @@ test('verified facts need current, complete read evidence', () => {
 
 test('Workspace bearer status and expiry fence visible facts without implicit exchange', () => {
   const now = Date.parse('2026-01-07T00:00:00Z');
-  const access = { status: 'ready', expiresAt: '2026-01-08T00:00:00Z' };
+  const access = { status: 'ready', expiresAt: '2026-01-08T00:00:00Z', exchangeId: 'exchange-1' };
   assert.equal(canShowSelectedWorkspaceFacts(fact, access, now), true);
   for (const status of ['required','exchanging','failed','permission_denied']) {
     assert.equal(canShowSelectedWorkspaceFacts(fact, { ...access, status }, now), false, status);
   }
   assert.equal(canShowSelectedWorkspaceFacts(fact, access, Date.parse(access.expiresAt)), false);
   assert.equal(canShowSelectedWorkspaceFacts(fact, null, now), false);
+});
+
+test('delayed old facts cannot pair with ready access from a new exchange', async () => {
+  const now = Date.parse('2026-01-07T00:00:00Z');
+  const oldFacts = { ...fact, exchangeId: 'exchange-old' };
+  let finishNewAccess;
+  const oldFactsGet = Promise.resolve(oldFacts); // other tab has not exchanged yet
+  const newAccessGet = new Promise((resolve) => { finishNewAccess = resolve; });
+  const mixedPoll = Promise.all([oldFactsGet, newAccessGet]);
+  await oldFactsGet;
+  finishNewAccess({ status: 'ready', expiresAt: '2026-01-08T00:00:00Z', exchangeId: 'exchange-new' });
+  const [factsFromOldSnapshot, accessFromNewSnapshot] = await mixedPoll;
+  assert.equal(canShowSelectedWorkspaceFacts(factsFromOldSnapshot, accessFromNewSnapshot, now), false);
+  assert.equal(canShowSelectedWorkspaceFacts({ ...fact, exchangeId: 'exchange-new' }, accessFromNewSnapshot, now), true);
+  assert.equal(canShowSelectedWorkspaceFacts(factsFromOldSnapshot, { ...accessFromNewSnapshot, exchangeId: undefined }, now), false);
 });
 
 test('old poll cannot restore prior success over pending or failed POST', () => {

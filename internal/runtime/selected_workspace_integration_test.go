@@ -85,7 +85,7 @@ func (f *sequencedWorkspaceExchange) ExchangeWorkspace(ctx context.Context, _ pl
 }
 
 func fixtureWorkspaceJWT(id string) string {
-	claims := fmt.Sprintf(`{"exp":%d,"https://api.openai.com/auth":{"chatgpt_account_id":%q}}`, time.Now().Add(2*time.Hour).Unix(), id)
+	claims := fmt.Sprintf(`{"exp":%d,"https://api.openai.com/auth":{"chatgpt_account_id":%q,"chatgpt_plan_type":"k12","scp":["organization.read"]}}`, time.Now().Add(2*time.Hour).Unix(), id)
 	return "header." + base64.RawURLEncoding.EncodeToString([]byte(claims)) + ".signature"
 }
 func fixtureWorkspaceAccess(id string) platform.WorkspaceAccess {
@@ -350,6 +350,23 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 	if code, status, _ := callAccess(http.MethodGet, spaceB, motherA, false); code != 200 || status.Status != "required" {
 		t.Fatalf("unexchanged status=%d %+v", code, status)
 	}
+	// Even a sealed row claiming ready cannot admit a Personal-plan JWT with
+	// this canonical ID; the same validator gates status and fact reservation.
+	badAccess := fixtureWorkspaceAccess("canonical-b")
+	badClaims := fmt.Sprintf(`{"exp":%d,"https://api.openai.com/auth":{"chatgpt_account_id":"canonical-b","chatgpt_plan_type":"free","scp":["organization.read"]}}`, time.Now().Add(2*time.Hour).Unix())
+	badAccess.AccessToken = "header." + base64.RawURLEncoding.EncodeToString([]byte(badClaims)) + ".signature"
+	badBinding := workspaceAccessBinding{motherID: motherA, workspaceID: spaceB, run: newRun, generation: newGeneration, revision: 1, attempt: 2, exchangeID: uuid.New()}
+	badVersion, badNonce, badSealed, sealErr := sealWorkspaceAccess(cardIntegrationKeyRing{}, badBinding, badAccess)
+	if sealErr != nil {
+		t.Fatal(sealErr)
+	}
+	seed(`UPDATE tsw_selected_workspace_tokens SET discovery_run_id=$3,session_generation=$4,attempt=2,exchange_id=$5,key_version=$6,nonce=$7,sealed_access=$8,expires_at=$9,status='ready' WHERE mother_account_id=$1 AND workspace_id=$2`, motherA, spaceB, newRun, newGeneration, badBinding.exchangeID, badVersion, badNonce, badSealed, badAccess.ExpiresAt)
+	if code, status, _ := callAccess(http.MethodGet, spaceB, motherA, false); code != 200 || status.Status != "required" || status.ExchangeId != nil {
+		t.Fatalf("Personal-plan sealed bearer became ready: %d %+v", code, status)
+	}
+	if code, _ := call(http.MethodPost, spaceB, motherA, true); code != 409 {
+		t.Fatalf("Personal-plan sealed bearer reached facts: %d", code)
+	}
 	var originalPersonal []byte
 	if err := pool.QueryRow(ctx, `SELECT sealed_session FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, motherA).Scan(&originalPersonal); err != nil {
 		t.Fatal(err)
@@ -452,6 +469,22 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 	httpMode.Store(0)
 	if _, repaired := call(http.MethodPost, spaceB, motherA, true); repaired.Status != "verified" {
 		t.Fatalf("official complete retry: %+v", repaired)
+	}
+	// Two independent Owner GETs may straddle a cross-tab re-exchange. Both
+	// responses must carry non-secret IDs so old facts never pair with new access.
+	_, oldFacts := call(http.MethodGet, spaceB, motherA, true)
+	if oldFacts.ExchangeId == nil {
+		t.Fatal("verified facts omitted exchange identity")
+	}
+	_, newAccess, _ := callAccess(http.MethodPost, spaceB, motherA, true)
+	if newAccess.Status != "ready" || newAccess.ExchangeId == nil || *newAccess.ExchangeId == *oldFacts.ExchangeId {
+		t.Fatalf("new exchange did not advance non-secret identity: %+v", newAccess)
+	}
+	if _, pendingFacts := call(http.MethodGet, spaceB, motherA, true); pendingFacts.Status != "pending" || pendingFacts.ExchangeId == nil || *pendingFacts.ExchangeId != *newAccess.ExchangeId {
+		t.Fatalf("current exchange was paired with older facts: %+v", pendingFacts)
+	}
+	if _, currentFacts := call(http.MethodPost, spaceB, motherA, true); currentFacts.Status != "verified" || currentFacts.ExchangeId == nil || *currentFacts.ExchangeId != *newAccess.ExchangeId {
+		t.Fatalf("new facts lack current exchange identity: %+v", currentFacts)
 	}
 	// A fresh handler sees only current-generation evidence for its reader.
 	h = &OwnerAuthHandler{pool: pool, keyRing: cardIntegrationKeyRing{}, origins: origins, selectedWorkspaceReader: reader}

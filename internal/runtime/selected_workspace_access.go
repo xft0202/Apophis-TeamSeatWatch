@@ -210,7 +210,7 @@ func (h *OwnerAuthHandler) selectedWorkspaceAccess(ctx context.Context, workspac
 		if expires != nil && expires.After(time.Now().Add(30*time.Second)) && keyVersion != nil {
 			access, openErr := openWorkspaceAccess(h.keyRing, b, uint16(*keyVersion), nonce, sealed)
 			if openErr == nil && platform.ValidateWorkspaceAccess(access, platformID, time.Now()) && !access.ExpiresAt.Truncate(time.Microsecond).After(*expires) {
-				result.Status, result.ExpiresAt = "ready", expires
+				result.Status, result.ExpiresAt, result.ExchangeId = "ready", expires, &b.exchangeID
 			}
 		}
 	}

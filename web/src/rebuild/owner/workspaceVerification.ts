@@ -15,6 +15,9 @@ export function canShowWorkspaceFacts(fact: Verification | null, now: number): b
 
 export function canShowSelectedWorkspaceFacts(fact: Verification | null, access: WorkspaceAccessStatus | null, now: number): boolean {
   return access?.status === 'ready'
+    && typeof access.exchangeId === 'string'
+    && access.exchangeId.length > 0
+    && fact?.exchangeId === access.exchangeId
     && access.expiresAt !== undefined
     && Number.isFinite(Date.parse(access.expiresAt))
     && Date.parse(access.expiresAt) > now

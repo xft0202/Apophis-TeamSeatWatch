@@ -150,29 +150,31 @@ func workspaceJWTExpiry(token, workspaceID string, now time.Time) (time.Time, er
 	if err != nil || len(payload) > 16384 {
 		return time.Time{}, ErrWorkspaceExchangeUnavailable
 	}
-	var claims struct {
-		Expires   json.Number `json:"exp"`
-		AccountID string      `json:"chatgpt_account_id"`
-		FlatID    string      `json:"https://api.openai.com/auth.chatgpt_account_id"`
-		Auth      struct {
-			AccountID string `json:"chatgpt_account_id"`
-		} `json:"https://api.openai.com/auth"`
+	var expiryClaim struct {
+		Expires json.Number `json:"exp"`
 	}
-	if json.Unmarshal(payload, &claims) != nil {
+	var claims map[string]any
+	if json.Unmarshal(payload, &expiryClaim) != nil || json.Unmarshal(payload, &claims) != nil || claims == nil {
 		return time.Time{}, ErrWorkspaceExchangeUnavailable
 	}
-	found := false
-	for _, actual := range []string{claims.AccountID, claims.FlatID, claims.Auth.AccountID} {
-		if actual == "" {
-			continue
-		}
-		found = true
-		if actual != workspaceID {
+	var authClaims map[string]any
+	if candidate, present := claims["https://api.openai.com/auth"]; present {
+		var ok bool
+		authClaims, ok = candidate.(map[string]any)
+		if !ok {
 			return time.Time{}, ErrWorkspaceExchangeUnavailable
 		}
 	}
-	seconds, err := claims.Expires.Int64()
-	if !found || err != nil {
+	// The reference classifier identifies Workspace Web ATs by k12 plus a
+	// Workspace account ID. Unlike its precedence rule, disagreement between
+	// flat and nested representations is rejected rather than silently chosen.
+	if !workspaceClaimMatches(claims, authClaims, "chatgpt_account_id", workspaceID) ||
+		!workspaceClaimMatches(claims, authClaims, "chatgpt_plan_type", "k12") ||
+		!workspaceReadScopes(claims, authClaims) {
+		return time.Time{}, ErrWorkspaceExchangeUnavailable
+	}
+	seconds, err := expiryClaim.Expires.Int64()
+	if err != nil {
 		return time.Time{}, ErrWorkspaceExchangeUnavailable
 	}
 	expiry := time.Unix(seconds, 0).UTC()
@@ -180,6 +182,75 @@ func workspaceJWTExpiry(token, workspaceID string, now time.Time) (time.Time, er
 		return time.Time{}, ErrWorkspaceExchangeUnavailable
 	}
 	return expiry, nil
+}
+
+func workspaceClaimMatches(raw, nested map[string]any, key, expected string) bool {
+	found := false
+	for _, candidate := range []struct {
+		source map[string]any
+		key    string
+	}{
+		{raw, key}, {nested, key}, {raw, "https://api.openai.com/auth." + key},
+	} {
+		if candidate.source == nil {
+			continue
+		}
+		value, present := candidate.source[candidate.key]
+		if !present {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok || text != expected {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+// organization.read is a conservative Web read-scope gate. The exact
+// exchanged Workspace JWT scope shape has not been captured, so absent or
+// conflicting claims fail closed rather than falling back to Personal. Neither
+// organization.write nor a successful GET authorizes membership mutation.
+func workspaceReadScopes(raw, nested map[string]any) bool {
+	var admitted map[string]bool
+	for _, candidate := range []struct {
+		source map[string]any
+		key    string
+	}{
+		{raw, "scp"}, {nested, "scp"}, {raw, "scope"}, {nested, "scope"},
+		{raw, "https://api.openai.com/auth.scp"}, {raw, "https://api.openai.com/auth.scope"},
+	} {
+		if candidate.source == nil {
+			continue
+		}
+		value, present := candidate.source[candidate.key]
+		if !present {
+			continue
+		}
+		current := map[string]bool{}
+		switch typed := value.(type) {
+		case string:
+			for _, scope := range strings.Fields(typed) {
+				current[scope] = true
+			}
+		case []any:
+			for _, item := range typed {
+				scope, ok := item.(string)
+				if !ok || strings.TrimSpace(scope) != scope || scope == "" {
+					return false
+				}
+				current[scope] = true
+			}
+		default:
+			return false
+		}
+		if len(current) == 0 || (admitted != nil && !samePersonalScopeSet(admitted, current)) {
+			return false
+		}
+		admitted = current
+	}
+	return admitted != nil && admitted["organization.read"]
 }
 
 func ValidateWorkspaceAccess(access WorkspaceAccess, workspaceID string, now time.Time) bool {
