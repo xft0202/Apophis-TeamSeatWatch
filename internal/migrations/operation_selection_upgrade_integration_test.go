@@ -64,16 +64,23 @@ func TestOperationSelectionUpgradeFrom24Integration(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,secret_revision,token_attempt,token_exchange_id,source,outcome,permission,completeness,observed_at,expires_at) VALUES($1,$2,$3,$4,1,1,$5,'injected_platform_reader','verifying','unknown','unknown',now(),now()+interval '1 day') RETURNING id`, workspace, mother, run, generation, uuid.New()).Scan(&verification); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := provider.UpTo(ctx, 25); err != nil {
+		t.Fatal(err)
+	}
+	version, err = provider.GetDBVersion(ctx)
+	if err != nil || version != 25 {
+		t.Fatalf("before 25 -> 26 upgrade: version=%d err=%v", version, err)
+	}
+	var id uuid.UUID
+	if err := db.QueryRowContext(ctx, `INSERT INTO tsw_operation_selection_drafts(owner_id,mother_account_id,mother_revision,workspace_id,visibility_run_id,session_generation,verification_id,batch_id,batch_version,destination_id,destination_revision) VALUES($1,$2,1,$3,$4,$5,$6,$7,1,$8,1) RETURNING id`, owner, mother, workspace, run, generation, verification, batch, destination).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
 	if err := Apply(ctx, db); err != nil {
 		t.Fatal(err)
 	}
 	version, err = provider.GetDBVersion(ctx)
 	if err != nil || version != RequiredVersion {
 		t.Fatalf("after upgrade: version=%d err=%v", version, err)
-	}
-	var id uuid.UUID
-	if err := db.QueryRowContext(ctx, `INSERT INTO tsw_operation_selection_drafts(owner_id,mother_account_id,mother_revision,workspace_id,visibility_run_id,session_generation,verification_id,batch_id,batch_version,destination_id,destination_revision) VALUES($1,$2,1,$3,$4,$5,$6,$7,1,$8,1) RETURNING id`, owner, mother, workspace, run, generation, verification, batch, destination).Scan(&id); err != nil {
-		t.Fatal(err)
 	}
 	if err := Apply(ctx, db); err != nil {
 		t.Fatalf("second Apply: %v", err)
