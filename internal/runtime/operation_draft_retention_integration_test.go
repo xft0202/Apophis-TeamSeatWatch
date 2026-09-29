@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
@@ -50,11 +49,9 @@ func TestOperationDraftExpiredVerificationRetentionIntegration(t *testing.T) {
 			t.Fatalf("seed: %v (%s)", err, row.query)
 		}
 	}
-	// A verified observation expires soon after the Owner confirms it. Do not
-	// bypass the append-only verification trigger to simulate fact expiry.
+	// Keep the fact valid throughout draft creation, regardless of CI speed.
 	var verificationID int64
-	var expires time.Time
-	err = pool.QueryRow(ctx, `INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,secret_revision,token_attempt,token_exchange_id,source,outcome,permission,completeness,observed_at,expires_at,active_until,seat_limit,member_count,pending_invite_count) VALUES($1,$2,$3,$4,1,1,$5,'injected_platform_reader','verified','read','complete',now()-interval '1 hour',now()+interval '3 seconds',now()+interval '30 days',20,0,0) RETURNING id,expires_at`, space, mother, run, generation, exchange).Scan(&verificationID, &expires)
+	err = pool.QueryRow(ctx, `INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,secret_revision,token_attempt,token_exchange_id,source,outcome,permission,completeness,observed_at,expires_at,active_until,seat_limit,member_count,pending_invite_count) VALUES($1,$2,$3,$4,1,1,$5,'injected_platform_reader','verified','read','complete',now(),now()+interval '1 day',now()+interval '30 days',20,0,0) RETURNING id`, space, mother, run, generation, exchange).Scan(&verificationID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,8 +70,30 @@ func TestOperationDraftExpiredVerificationRetentionIntegration(t *testing.T) {
 	if d.VerificationId == nil || *d.VerificationId != verificationID || !d.DestinationCurrent {
 		t.Fatalf("workspace draft not verified: %+v", d)
 	}
-	if pause := time.Until(expires.Add(150 * time.Millisecond)); pause > 0 {
-		time.Sleep(pause)
+	// In this disposable database only, atomically age the saved fact after
+	// selection. Rollback restores the trigger on every error path; commit only
+	// after re-enabling it, before exercising real production retention.
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `ALTER TABLE tsw_workspace_verifications DISABLE TRIGGER tsw_workspace_verifications_immutable`); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := tx.Exec(ctx, `UPDATE tsw_workspace_verifications SET observed_at=now()-interval '2 hours',expires_at=now()-interval '1 hour' WHERE id=$1`, verificationID)
+	if err != nil || updated.RowsAffected() != 1 {
+		t.Fatalf("expire disposable verification: affected=%d err=%v", updated.RowsAffected(), err)
+	}
+	if _, err = tx.Exec(ctx, `ALTER TABLE tsw_workspace_verifications ENABLE TRIGGER tsw_workspace_verifications_immutable`); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var triggerState string
+	if err = pool.QueryRow(ctx, `SELECT tgenabled FROM pg_trigger WHERE tgrelid='tsw_workspace_verifications'::regclass AND tgname='tsw_workspace_verifications_immutable'`).Scan(&triggerState); err != nil || triggerState != "O" {
+		t.Fatalf("immutable trigger must be enabled before retention: state=%q err=%v", triggerState, err)
 	}
 	cleaned, err := workspace.NewService(pool, nil).DeleteExpired(ctx, 10)
 	if err != nil {
