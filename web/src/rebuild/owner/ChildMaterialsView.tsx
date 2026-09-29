@@ -8,6 +8,7 @@ import type { components } from '../../generated/owner';
 import { exportChildMaterials, getTargetPersonalAccess, importChildMaterials, listChildMaterials, ownerProblem, refreshTargetPersonalAccess, updateChildMaterial } from './auth';
 import { exportRange, togglePage, type ChildScope } from './childSelection';
 import PersonalProbesView from './PersonalProbesView';
+import { visiblePersonalStatus } from './personalSessionStatus';
 
 type Child = components['schemas']['TargetAccount'];
 type ImportResult = components['schemas']['ChildMaterialsImportResult'];
@@ -34,6 +35,7 @@ export default function ChildMaterialsView() {
   const [personalTarget, setPersonalTarget] = useState<Child | null>(null);
   const [personalStatus, setPersonalStatus] = useState<components['schemas']['TargetPersonalAccess'] | null>(null);
   const [personalPending, setPersonalPending] = useState(false);
+  const [, setPersonalClock] = useState(0);
   const personalRequestId = useRef(0);
   const [password, setPassword] = useState('');
   const [totp, setTotp] = useState('');
@@ -45,6 +47,7 @@ export default function ChildMaterialsView() {
   const range = exportRange(scope, selected, search, total);
   const pageIds = items.map((item) => item.id);
   const pageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const displayedPersonalStatus = visiblePersonalStatus(personalStatus?.status, personalStatus?.expiresAt);
 
   useEffect(() => {
     let active = true;
@@ -57,6 +60,17 @@ export default function ChildMaterialsView() {
     });
     return () => { active = false; };
   }, [page, search, revision]);
+
+  useEffect(() => {
+    if (personalStatus?.status !== 'ready' || !personalStatus.expiresAt) return;
+    const remaining = Date.parse(personalStatus.expiresAt) - Date.now();
+    if (!Number.isFinite(remaining) || remaining <= 0) {
+      setPersonalClock(Date.now());
+      return;
+    }
+    const timer = window.setTimeout(() => setPersonalClock(Date.now()), remaining + 1);
+    return () => window.clearTimeout(timer);
+  }, [personalStatus?.status, personalStatus?.expiresAt]);
 
   async function chooseFile(next: File | null) {
     setFile(next);
@@ -147,7 +161,7 @@ export default function ChildMaterialsView() {
       </Table.Tr>)}</Table.Tbody></Table></ScrollArea>
       <Group justify="space-between"><Text size="sm">共 {total} 条 · 已选 {selected.size} 条 · 第 {page} 页</Text><Pagination total={Math.max(1, Math.ceil(total / 20))} value={page} onChange={(value) => { setPage(value); setConfirmed(false); }} /></Group>
       {personalTarget ? <Stack gap="xs"><Group justify="space-between"><Text fw={600}>{personalTarget.identifier} · Personal 会话</Text><Button variant="subtle" size="xs" onClick={() => { personalRequestId.current++; setPersonalTarget(null); setPersonalStatus(null); }}>关闭</Button></Group>
-        <Group><Badge variant="light" color={personalStatus?.status === 'ready' ? 'success' : 'warning'}>{personalStatus?.status ?? '读取中'}</Badge><Button disabled={personalTarget.status !== 'active'} loading={personalPending} onClick={() => void refreshPersonal()}>刷新 Personal 会话</Button></Group>
+        <Group><Badge variant="light" color={displayedPersonalStatus === 'ready' ? 'success' : 'warning'}>{displayedPersonalStatus === 'session_expired' ? '会话已过期' : displayedPersonalStatus}</Badge><Button disabled={personalTarget.status !== 'active'} loading={personalPending} onClick={() => void refreshPersonal()}>刷新 Personal 会话</Button></Group>
         {personalStatus?.expiresAt ? <Text size="xs">有效期至 {new Date(personalStatus.expiresAt).toLocaleString()}</Text> : null}
       </Stack> : null}
       {editing ? <Paper withBorder p="md"><Stack gap="sm"><Text fw={600}>修正 {editing.identifier}</Text><PasswordInput label="新密码" value={password} onChange={(event) => setPassword(event.currentTarget.value)} /><TextInput label="2FA" value={totp} onChange={(event) => setTotp(event.currentTarget.value)} /><Group justify="flex-end"><Button variant="default" onClick={() => setEditing(null)}>取消</Button><Button disabled={!password} loading={pending} onClick={() => void correct()}>保存修正</Button></Group></Stack></Paper> : null}
