@@ -5,11 +5,25 @@ import (
 	"time"
 )
 
-// SelectedWorkspaceReader reads only from the current saved Personal generation.
+// SelectedWorkspaceReader uses only the explicitly exchanged Workspace bearer.
 // It must not log in, mutate membership, or infer write permission from visibility.
 type SelectedWorkspaceReader interface {
 	Source() string
-	VerifySelectedWorkspace(context.Context, PersonalSession, string, string) (SelectedWorkspaceFacts, error)
+	VerifySelectedWorkspace(context.Context, WorkspaceAccess, string, string) (SelectedWorkspaceFacts, error)
+}
+
+// WorkspaceAccess is sealed at rest and never exposed by an Owner API.
+type WorkspaceAccess struct {
+	AccessToken string          `json:"accessToken"`
+	WorkspaceID string          `json:"workspaceId"`
+	Cookies     []SessionCookie `json:"cookies"`
+	DeviceID    string          `json:"deviceId"`
+	SessionID   string          `json:"sessionId"`
+	ExpiresAt   time.Time       `json:"expiresAt"`
+}
+
+type WorkspaceTokenExchanger interface {
+	ExchangeWorkspace(context.Context, PersonalSession, string) (WorkspaceAccess, error)
 }
 
 // ReadEvidence describes one independently attempted capability. Partial reads

@@ -534,6 +534,50 @@ paths:
                 $ref: '#/components/schemas/Binding'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/workspaces/{workspaceId}/access:
+    get:
+      operationId: getSelectedWorkspaceAccess
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: motherAccountId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workspace token status without credential material
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectedWorkspaceAccessStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: exchangeSelectedWorkspaceToken
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifySelectedWorkspaceRequest'
+      responses:
+        '200':
+          description: Explicit token exchange status; no credential material
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectedWorkspaceAccessStatus'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/workspaces/{workspaceId}/verification:
     get:
       operationId: getSelectedWorkspaceVerification
@@ -2471,6 +2515,23 @@ components:
         confirmed:
           type: boolean
           enum: [true]
+    SelectedWorkspaceAccessStatus:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, motherAccountId, status]
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        motherAccountId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [required, exchanging, ready, failed, permission_denied]
+        expiresAt:
+          type: string
+          format: date-time
     SelectedWorkspaceVerification:
       type: object
       additionalProperties: false

@@ -1,10 +1,11 @@
 import { Alert, Badge, Button, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
 import { useEffect, useRef, useState } from 'react';
 import type { components } from '../../generated/owner';
-import { getSelectedWorkspaceVerification, ownerProblem, verifySelectedWorkspace } from './auth';
-import { canShowWorkspaceFacts, createWorkspaceRequestGate } from './workspaceVerification';
+import { exchangeSelectedWorkspaceToken, getSelectedWorkspaceAccess, getSelectedWorkspaceVerification, ownerProblem, verifySelectedWorkspace } from './auth';
+import { canShowSelectedWorkspaceFacts, createWorkspaceRequestGate } from './workspaceVerification';
 
 type Verification = components['schemas']['SelectedWorkspaceVerification'];
+type WorkspaceAccessStatus = components['schemas']['SelectedWorkspaceAccessStatus'];
 
 const statusLabels: Record<Verification['status'], string> = {
   pending: '待核验', verifying: '核验中 · 待核验', verified: '已核验', partial: '部分响应 · 待核验',
@@ -25,6 +26,7 @@ export default function SelectedWorkspaceConsole({ workspaceId, motherAccountId,
   onNextAction: () => void;
 }) {
   const [verification, setVerification] = useState<Verification | null>(null);
+  const [access, setAccess] = useState<WorkspaceAccessStatus | null>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState('');
   const [now, setNow] = useState(Date.now());
@@ -35,17 +37,37 @@ export default function SelectedWorkspaceConsole({ workspaceId, motherAccountId,
   }, []);
   useEffect(() => {
     setVerification(null);
+    setAccess(null);
     const load = () => {
       const current = gate.current.beginPoll();
       if (current === null) return;
-      void getSelectedWorkspaceVerification(workspaceId, motherAccountId)
-        .then((result) => { if (gate.current.acceptPoll(current)) { setVerification(result); setNotice(''); } })
-        .catch(() => { if (gate.current.acceptPoll(current)) { setVerification(null); setNotice('空间入口已失效，请重新发现空间。'); } });
+      void Promise.all([getSelectedWorkspaceAccess(workspaceId,motherAccountId),getSelectedWorkspaceVerification(workspaceId,motherAccountId)])
+        .then(([status,result]) => { if (gate.current.acceptPoll(current)) { setAccess(status); setVerification(result); setNotice(''); } })
+        .catch(() => { if (gate.current.acceptPoll(current)) { setAccess(null); setVerification(null); setNotice('空间入口已失效，请重新发现空间。'); } });
     };
     load();
     const timer = window.setInterval(load, 60_000);
     return () => { gate.current.invalidate(); window.clearInterval(timer); };
   }, [workspaceId, motherAccountId]);
+
+  async function exchange() {
+    const current = gate.current.beginMutation();
+    setPending(true);
+    setAccess(null);
+    setVerification(null);
+    setNotice('');
+    try {
+      const result = await exchangeSelectedWorkspaceToken(workspaceId,motherAccountId);
+      if (gate.current.acceptMutation(current)) {
+        setAccess(result);
+        setNotice(result.status === 'ready' ? '空间读取凭据已核验；请另行核验空间事实。' : '空间读取凭据未通过核验，请检查入口后重试。');
+      }
+    } catch (error) {
+      if (!gate.current.acceptMutation(current)) return;
+      const problem = ownerProblem(error);
+      setNotice(problem.status === 409 || problem.status === 403 ? '空间入口或权限已变化，请重新发现并选择空间。' : '空间读取凭据未通过核验，不能读取管理事实。');
+    } finally { if (gate.current.isCurrentMutation(current)) setPending(false); }
+  }
 
   async function refresh() {
     const current = gate.current.beginMutation();
@@ -59,7 +81,8 @@ export default function SelectedWorkspaceConsole({ workspaceId, motherAccountId,
       if (!gate.current.acceptMutation(current)) return;
       const problem = ownerProblem(error);
       setVerification(null);
-      setNotice(problem.code === 'management_protocol_unavailable'
+      if (problem.code === 'workspace_token_required') setAccess({ workspaceId, motherAccountId, status: 'required' });
+      setNotice(problem.code === 'workspace_token_required' ? '空间读取凭据已失效，请再次明确确认凭据交换。' : problem.code === 'management_protocol_unavailable'
         ? '平台管理核验协议尚未接入，无法确认订阅、席位或成员关系。'
         : problem.status === 409 || problem.status === 403
           ? '空间入口或权限已变化，请重新发现并选择空间。'
@@ -67,7 +90,8 @@ export default function SelectedWorkspaceConsole({ workspaceId, motherAccountId,
     } finally { if (gate.current.isCurrentMutation(current)) setPending(false); }
   }
 
-  const verified = !pending && canShowWorkspaceFacts(verification, now);
+  const accessReady = access?.status === 'ready' && access.expiresAt !== undefined && Date.parse(access.expiresAt) > now;
+  const verified = !pending && canShowSelectedWorkspaceFacts(verification, access, now);
   return (
     <section aria-labelledby="selected-workspace-heading">
       <Stack gap="lg">
@@ -79,8 +103,10 @@ export default function SelectedWorkspaceConsole({ workspaceId, motherAccountId,
           <Button variant="subtle" onClick={onBack}>更换入口</Button>
         </Group>
         {notice ? <Alert color="yellow" role="alert">{notice}</Alert> : null}
-        {pending ? <Alert color="yellow" role="status">正在核验空间事实，先前事实暂不可用。</Alert> : null}
-        {!verification && !notice && !pending ? <Loader size="sm" aria-label="读取空间核验状态" /> : null}
+        {pending ? <Alert color="yellow" role="status">正在处理已选空间，先前事实暂不可用。</Alert> : null}
+        {!verification && !access && !notice && !pending ? <Loader size="sm" aria-label="读取空间核验状态" /> : null}
+        {access ? <Badge color={accessReady ? 'green' : 'yellow'} variant="light">空间读取凭据：{accessReady ? '已核验' : access.status === 'exchanging' ? '交换中' : '待核验'}</Badge> : null}
+        {access && !accessReady ? <Alert color="yellow">空间读取凭据尚未核验；发现空间不等于取得空间管理或读取权限。</Alert> : null}
         {verification ? (
           <>
             <Group gap="sm">
@@ -120,10 +146,14 @@ export default function SelectedWorkspaceConsole({ workspaceId, motherAccountId,
               </div>
             ) : <Alert color="yellow">当前无可用管理事实；请核验权限或更换可管理的母号入口。</Alert>}
             <Group justify="flex-end">
-              {verification.accessStatus === 'readable' ? <Button variant="light" loading={pending} onClick={() => void refresh()}>核验空间事实</Button> : null}
+              {verification.accessStatus === 'readable' && accessReady ? <Button variant="light" loading={pending} onClick={() => void refresh()}>核验空间事实</Button> : null}
               {verified ? <Button onClick={onNextAction}>继续处理子号资料</Button> : null}
             </Group>
           </>
+        ) : null}
+        {accessReady && !verification ? <Group justify="flex-end"><Button disabled={pending} loading={pending} onClick={() => void refresh()}>核验空间事实</Button></Group> : null}
+        {access && !accessReady && access.status !== 'exchanging' && access.status !== 'permission_denied' ? (
+          <Group justify="flex-end"><Button loading={pending} disabled={pending} onClick={() => void exchange()}>明确确认并获取本空间读取凭据</Button></Group>
         ) : null}
       </Stack>
     </section>

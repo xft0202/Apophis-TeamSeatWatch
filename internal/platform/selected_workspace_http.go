@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const selectedWorkspaceOrigin = "https://chatgpt.com"
@@ -16,15 +18,15 @@ const selectedPageLimit = 100
 const selectedMaxEntries = 1000
 
 // OfficialSelectedWorkspaceReader uses only the four sourced GET capabilities
-// on chatgpt.com. Client must hand it an admitted egress-lease client; redirects
-// and cookie jars are disabled on the copy. It never exchanges tokens or logs in.
+// with an explicitly exchanged Workspace bearer. Client must hand it an admitted
+// egress-lease client; redirects and cookie jars are disabled on the copy.
 type OfficialSelectedWorkspaceReader struct{ Client DiscoveryClient }
 
 func (OfficialSelectedWorkspaceReader) Source() string { return "official_readonly" }
 
-func (r OfficialSelectedWorkspaceReader) VerifySelectedWorkspace(ctx context.Context, session PersonalSession, _, workspaceID string) (SelectedWorkspaceFacts, error) {
+func (r OfficialSelectedWorkspaceReader) VerifySelectedWorkspace(ctx context.Context, access WorkspaceAccess, _, workspaceID string) (SelectedWorkspaceFacts, error) {
 	facts := SelectedWorkspaceFacts{Permission: "unknown", Result: Result{ObservedAt: time.Now().UTC(), Completeness: Unknown, Outcome: OutcomeIncomplete}, Sources: []ReadEvidence{}}
-	if r.Client == nil || !ValidatePersonalRefresh(PersonalRefreshResult{Status: "ready", Session: session}, time.Now()) ||
+	if r.Client == nil || !ValidateWorkspaceAccess(access, workspaceID, time.Now()) ||
 		strings.TrimSpace(workspaceID) == "" || len(workspaceID) > 255 || strings.ContainsAny(workspaceID, "\r\n\x00") {
 		return facts, nil
 	}
@@ -38,7 +40,8 @@ func (r OfficialSelectedWorkspaceReader) VerifySelectedWorkspace(ctx context.Con
 	client := *base
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	read := selectedHTTPRead{client: &client, session: session, workspaceID: workspaceID}
+	access.SessionID = uuid.NewString() // trusted, fresh per fact attempt
+	read := selectedHTTPRead{client: &client, access: access, workspaceID: workspaceID}
 	var activeUntil *time.Time
 	var paid *int
 	var memberList, inviteList []Member
@@ -72,7 +75,7 @@ func (r OfficialSelectedWorkspaceReader) VerifySelectedWorkspace(ctx context.Con
 
 type selectedHTTPRead struct {
 	client      *http.Client
-	session     PersonalSession
+	access      WorkspaceAccess
 	workspaceID string
 }
 
@@ -114,16 +117,17 @@ func (r selectedHTTPRead) request(ctx context.Context, raw, endpoint string) ([]
 		return nil, OutcomeIncomplete
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+r.session.AccessToken)
+	req.Header.Set("Authorization", "Bearer "+r.access.AccessToken)
 	req.Header.Set("Origin", selectedWorkspaceOrigin)
 	req.Header.Set("Referer", selectedWorkspaceOrigin+"/admin/members")
 	req.Header.Set("User-Agent", browserAuthUA)
-	req.Header.Set("Oai-Device-Id", r.session.DeviceID)
+	req.Header.Set("Oai-Device-Id", r.access.DeviceID)
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	req.Header.Set("Sec-Fetch-Mode", "cors")
 	req.Header.Set("Sec-Fetch-Dest", "empty")
 	if endpoint == "outbound_invites" {
 		req.Header.Set("chatgpt-account-id", r.workspaceID)
+		req.Header.Set("Oai-Session-Id", r.access.SessionID)
 		req.Header.Set("Oai-Client-Build-Number", "9432397")
 		req.Header.Set("Oai-Client-Version", "prod-1b777b39db92d7476d69bf3cd407f6b9a41f7410")
 		req.Header.Set("Oai-Language", "zh-CN")
@@ -132,7 +136,7 @@ func (r selectedHTTPRead) request(ctx context.Context, raw, endpoint string) ([]
 		req.Header.Set("X-OpenAI-Target-Path", "/backend-api/accounts/"+url.PathEscape(r.workspaceID)+"/invites")
 		req.Header.Set("X-OpenAI-Target-Route", "/backend-api/accounts/{account_id}/invites")
 	}
-	for _, cookie := range r.session.Cookies {
+	for _, cookie := range r.access.Cookies {
 		req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
 	}
 	response, err := r.client.Do(req)

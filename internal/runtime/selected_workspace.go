@@ -18,10 +18,10 @@ import (
 )
 
 type selectedAttempt struct {
-	id, revision    int64
-	run, generation uuid.UUID
-	platformID      string
-	session         platform.PersonalSession
+	id, revision, tokenAttempt       int64
+	run, generation, tokenExchangeID uuid.UUID
+	platformID                       string
+	access                           platform.WorkspaceAccess
 }
 
 // One current mother discovery plus its Personal generation authorizes this
@@ -59,6 +59,10 @@ func (h *OwnerAuthHandler) VerifySelectedWorkspace(w http.ResponseWriter, r *htt
 		return
 	}
 	attempt, err := h.reserveSelectedWorkspace(r.Context(), workspaceID, request.MotherAccountId)
+	if errors.Is(err, errWorkspaceTokenRequired) {
+		writeProblem(w, r, 409, "workspace_token_required", "Workspace Token Required", "Explicitly exchange the selected Workspace token before verifying facts", 0)
+		return
+	}
 	if !h.selectedWorkspaceError(w, r, err) {
 		return
 	}
@@ -67,7 +71,7 @@ func (h *OwnerAuthHandler) VerifySelectedWorkspace(w http.ResponseWriter, r *htt
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
-	facts, readErr := h.selectedWorkspaceReader.VerifySelectedWorkspace(ctx, attempt.session, request.MotherAccountId.String(), attempt.platformID)
+	facts, readErr := h.selectedWorkspaceReader.VerifySelectedWorkspace(ctx, attempt.access, request.MotherAccountId.String(), attempt.platformID)
 	cancel()
 	status, observedAt := "failed", time.Now().UTC()
 	var activeUntil *time.Time
@@ -132,29 +136,29 @@ func (h *OwnerAuthHandler) reserveSelectedWorkspace(ctx context.Context, workspa
 	}
 	defer tx.Rollback(ctx)
 	var access string
-	var keyVersion int16
-	var nonce, sealed []byte
-	err = tx.QueryRow(ctx, `SELECT visibility.access_status,workspace.platform_workspace_id,discovery.run_id,session.generation,credential.secret_revision,session.key_version,session.nonce,session.sealed_session`+selectedWorkspaceFromSQL+` FOR SHARE OF account,credential,discovery,session,visibility`, workspaceID, motherID).Scan(&access, &attempt.platformID, &attempt.run, &attempt.generation, &attempt.revision, &keyVersion, &nonce, &sealed)
+	err = tx.QueryRow(ctx, `SELECT visibility.access_status,workspace.platform_workspace_id,discovery.run_id,session.generation,credential.secret_revision`+selectedWorkspaceFromSQL+` FOR SHARE OF account,credential,discovery,session,visibility`, workspaceID, motherID).Scan(&access, &attempt.platformID, &attempt.run, &attempt.generation, &attempt.revision)
 	if err != nil {
 		return attempt, err
 	}
 	if access != "readable" {
 		return attempt, nil
 	}
+	binding := workspaceAccessBinding{motherID: motherID, workspaceID: workspaceID, run: attempt.run, generation: attempt.generation, revision: attempt.revision}
+	attempt.access, binding, err = h.currentWorkspaceAccessTx(ctx, tx, binding, attempt.platformID, true)
+	if err != nil {
+		return attempt, err
+	}
+	attempt.tokenAttempt, attempt.tokenExchangeID = binding.attempt, binding.exchangeID
 	source := h.selectedWorkspaceReader.Source()
 	if source != "injected_platform_reader" && source != "official_readonly" {
 		return attempt, errors.New("workspace reader source invalid")
 	}
-	err = tx.QueryRow(ctx, `INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,secret_revision,source,outcome,permission,completeness,observed_at,expires_at)
-		VALUES($1,$2,$3,$4,$5,$6,'verifying','unknown','unknown',now(),now()+interval '7 days') RETURNING id`, workspaceID, motherID, attempt.run, attempt.generation, attempt.revision, source).Scan(&attempt.id)
+	err = tx.QueryRow(ctx, `INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,secret_revision,token_attempt,token_exchange_id,source,outcome,permission,completeness,observed_at,expires_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,'verifying','unknown','unknown',now(),now()+interval '7 days') RETURNING id`, workspaceID, motherID, attempt.run, attempt.generation, attempt.revision, attempt.tokenAttempt, attempt.tokenExchangeID, source).Scan(&attempt.id)
 	if err != nil {
 		return attempt, err
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return attempt, err
-	}
-	attempt.session, err = openPersonalSession(h.keyRing, motherID, attempt.revision, uint16(keyVersion), nonce, sealed)
-	if err != nil {
 		return attempt, err
 	}
 	return attempt, nil
@@ -179,6 +183,17 @@ func (h *OwnerAuthHandler) finishSelectedWorkspace(ctx context.Context, workspac
 	if access != "readable" || run != attempt.run || generation != attempt.generation || revision != attempt.revision {
 		return errSelectedAttemptSuperseded
 	}
+	binding := workspaceAccessBinding{motherID: motherID, workspaceID: workspaceID, run: run, generation: generation, revision: revision}
+	_, binding, err = h.currentWorkspaceAccessTx(ctx, tx, binding, attempt.platformID, true)
+	if errors.Is(err, errWorkspaceTokenRequired) {
+		return errSelectedAttemptSuperseded
+	}
+	if err != nil {
+		return err
+	}
+	if binding.attempt != attempt.tokenAttempt || binding.exchangeID != attempt.tokenExchangeID {
+		return errSelectedAttemptSuperseded
+	}
 	if len(facts.Sources) > 8 {
 		return errors.New("workspace sources too large")
 	}
@@ -190,7 +205,7 @@ func (h *OwnerAuthHandler) finishSelectedWorkspace(ctx context.Context, workspac
 		return err
 	}
 	updated, err := tx.Exec(ctx, `UPDATE tsw_workspace_verifications SET outcome=$2,permission=$3,completeness=$4,observed_at=$5,expires_at=$5::timestamptz+interval '7 days',active_until=$6,seat_limit=$7,member_count=$8,pending_invite_count=$9,sources=$10
-		WHERE id=$1 AND outcome='verifying' AND id=(SELECT max(id) FROM tsw_workspace_verifications WHERE workspace_id=$11 AND mother_account_id=$12 AND discovery_run_id=$13 AND session_generation=$14 AND secret_revision=$15)`, attempt.id, status, permission, completeness, observedAt, until, seats, members, invites, encoded, workspaceID, motherID, attempt.run, attempt.generation, attempt.revision)
+		WHERE id=$1 AND outcome='verifying' AND id=(SELECT max(id) FROM tsw_workspace_verifications WHERE workspace_id=$11 AND mother_account_id=$12 AND discovery_run_id=$13 AND session_generation=$14 AND secret_revision=$15 AND token_attempt=$16 AND token_exchange_id=$17)`, attempt.id, status, permission, completeness, observedAt, until, seats, members, invites, encoded, workspaceID, motherID, attempt.run, attempt.generation, attempt.revision, attempt.tokenAttempt, attempt.tokenExchangeID)
 	if err != nil {
 		return err
 	}
@@ -243,11 +258,19 @@ func (h *OwnerAuthHandler) selectedWorkspace(ctx context.Context, workspaceID, m
 	if h.selectedWorkspaceReader == nil {
 		return response, tx.Commit(ctx)
 	}
+	binding := workspaceAccessBinding{motherID: motherID, workspaceID: workspaceID, run: run, generation: generation, revision: revision}
+	_, binding, err = h.currentWorkspaceAccessTx(ctx, tx, binding, platformID, false)
+	if errors.Is(err, errWorkspaceTokenRequired) {
+		return response, tx.Commit(ctx)
+	}
+	if err != nil {
+		return response, err
+	}
 	var id int64
 	var source, status, permission, completeness string
 	var observed, expires time.Time
 	var sources []byte
-	err = tx.QueryRow(ctx, `SELECT id,source,outcome,permission,completeness,observed_at,expires_at,sources FROM tsw_workspace_verifications WHERE workspace_id=$1 AND mother_account_id=$2 AND discovery_run_id=$3 AND session_generation=$4 AND secret_revision=$5 ORDER BY id DESC LIMIT 1`, workspaceID, motherID, run, generation, revision).Scan(&id, &source, &status, &permission, &completeness, &observed, &expires, &sources)
+	err = tx.QueryRow(ctx, `SELECT id,source,outcome,permission,completeness,observed_at,expires_at,sources FROM tsw_workspace_verifications WHERE workspace_id=$1 AND mother_account_id=$2 AND discovery_run_id=$3 AND session_generation=$4 AND secret_revision=$5 AND token_attempt=$6 AND token_exchange_id=$7 ORDER BY id DESC LIMIT 1`, workspaceID, motherID, run, generation, revision, binding.attempt, binding.exchangeID).Scan(&id, &source, &status, &permission, &completeness, &observed, &expires, &sources)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return response, tx.Commit(ctx)
 	}

@@ -263,7 +263,10 @@ func (h *OwnerAuthHandler) updateMotherAccount(w http.ResponseWriter, r *http.Re
 	// The revision fence prevents reads, but old sealed AT/cookies must not
 	// survive a material rotation (or disabling the account) indefinitely.
 	if err == nil && (credentialChanged || string(request.Status) == "disabled") {
-		_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, item.Id)
+		_, err = tx.Exec(r.Context(), `DELETE FROM tsw_selected_workspace_tokens WHERE mother_account_id=$1`, item.Id)
+		if err == nil {
+			_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, item.Id)
+		}
 		if err == nil {
 			_, err = tx.Exec(r.Context(), `DELETE FROM tsw_mother_workspace_visibility WHERE mother_account_id=$1`, item.Id)
 		}

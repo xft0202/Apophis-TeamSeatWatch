@@ -68,6 +68,9 @@ func (h *OwnerAuthHandler) reservePersonalRefresh(ctx context.Context, id uuid.U
 	clear(plainTOTP)
 	err = tx.QueryRow(ctx, `INSERT INTO tsw_mother_personal_access(mother_account_id,secret_revision,status) VALUES ($1,$2,'verifying') ON CONFLICT(mother_account_id) DO UPDATE SET secret_revision=EXCLUDED.secret_revision,attempt=tsw_mother_personal_access.attempt+1,status='verifying',checked_at=now() RETURNING attempt`, id, attempt.revision).Scan(&attempt.attempt)
 	if err == nil {
+		_, err = tx.Exec(ctx, `DELETE FROM tsw_selected_workspace_tokens WHERE mother_account_id=$1`, id)
+	}
+	if err == nil {
 		_, err = tx.Exec(ctx, `DELETE FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, id)
 	}
 	if err == nil {

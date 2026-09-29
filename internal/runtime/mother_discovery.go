@@ -51,6 +51,9 @@ func (h *OwnerAuthHandler) reserveMotherDiscovery(ctx context.Context, id uuid.U
 	}
 	err = tx.QueryRow(ctx, `INSERT INTO tsw_mother_discoveries(mother_account_id,run_id,secret_revision,session_generation,status) VALUES ($1,$2,$3,$4,'discovering') ON CONFLICT(mother_account_id) DO UPDATE SET run_id=EXCLUDED.run_id,attempt=tsw_mother_discoveries.attempt+1,secret_revision=EXCLUDED.secret_revision,session_generation=EXCLUDED.session_generation,status='discovering',observed_at=now() RETURNING attempt`, id, uuid.New(), attempt.revision, attempt.generation).Scan(&attempt.attempt)
 	if err == nil {
+		_, err = tx.Exec(ctx, `DELETE FROM tsw_selected_workspace_tokens WHERE mother_account_id=$1`, id)
+	}
+	if err == nil {
 		_, err = tx.Exec(ctx, `DELETE FROM tsw_mother_workspace_visibility WHERE mother_account_id=$1`, id)
 	}
 	if err != nil {

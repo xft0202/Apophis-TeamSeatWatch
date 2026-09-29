@@ -37,6 +37,7 @@ type OwnerAuthConfig struct {
 	Discovery               platform.DiscoveryAdapter
 	PersonalRefresh         platform.PersonalSessionRefresher
 	SelectedWorkspaceReader platform.SelectedWorkspaceReader
+	WorkspaceTokenExchanger platform.WorkspaceTokenExchanger
 }
 
 // OwnerAuthHandler owns the HTTP boundary for the Ticket 03 Owner security API.
@@ -52,6 +53,7 @@ type OwnerAuthHandler struct {
 	discovery               platform.DiscoveryAdapter
 	personalRefresh         platform.PersonalSessionRefresher
 	selectedWorkspaceReader platform.SelectedWorkspaceReader
+	workspaceTokenExchanger platform.WorkspaceTokenExchanger
 	secureCookies           bool
 }
 
@@ -123,6 +125,7 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 		discovery:               config.Discovery,
 		personalRefresh:         config.PersonalRefresh,
 		selectedWorkspaceReader: config.SelectedWorkspaceReader,
+		workspaceTokenExchanger: config.WorkspaceTokenExchanger,
 		secureCookies:           config.Origins.SecureCookies(),
 	}
 	mux := http.NewServeMux()

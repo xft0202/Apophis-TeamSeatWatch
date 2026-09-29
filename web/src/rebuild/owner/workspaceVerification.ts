@@ -1,6 +1,7 @@
 import type { components } from '../../generated/owner';
 
 type Verification = components['schemas']['SelectedWorkspaceVerification'];
+type WorkspaceAccessStatus = components['schemas']['SelectedWorkspaceAccessStatus'];
 
 export function canShowWorkspaceFacts(fact: Verification | null, now: number): boolean {
   return fact?.status === 'verified'
@@ -10,6 +11,14 @@ export function canShowWorkspaceFacts(fact: Verification | null, now: number): b
     && fact.expiresAt !== undefined
     && Number.isFinite(Date.parse(fact.expiresAt))
     && Date.parse(fact.expiresAt) > now;
+}
+
+export function canShowSelectedWorkspaceFacts(fact: Verification | null, access: WorkspaceAccessStatus | null, now: number): boolean {
+  return access?.status === 'ready'
+    && access.expiresAt !== undefined
+    && Number.isFinite(Date.parse(access.expiresAt))
+    && Date.parse(access.expiresAt) > now
+    && canShowWorkspaceFacts(fact, now);
 }
 
 // Poll and mutation responses have separate fences. A poll begun before a POST

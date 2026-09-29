@@ -183,6 +183,7 @@ func (s *Service) DeleteExpired(ctx context.Context, limit int) (int, error) {
 			SELECT workspace_id FROM tsw_workspace_observations WHERE expires_at<=now()
 			UNION SELECT workspace_id FROM tsw_workspace_member_snapshots WHERE expires_at<=now()
 			UNION SELECT workspace_id FROM tsw_workspace_verifications WHERE expires_at<=now()
+			UNION SELECT workspace_id FROM tsw_selected_workspace_tokens WHERE expires_at<=now() OR (status<>'ready' AND updated_at<=now()-interval '7 days')
 		) expired ORDER BY workspace_id LIMIT $1`, limit)
 	if err != nil {
 		return 0, err
@@ -222,6 +223,9 @@ func (s *Service) DeleteExpiredWorkspaceTx(ctx context.Context, tx pgx.Tx, works
 		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM tsw_workspace_verifications WHERE workspace_id=$1 AND expires_at<=now()`, workspaceID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM tsw_selected_workspace_tokens WHERE workspace_id=$1 AND (expires_at<=now() OR (status<>'ready' AND updated_at<=now()-interval '7 days'))`, workspaceID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM tsw_workspace_member_snapshots WHERE workspace_id=$1 AND expires_at<=now()`, workspaceID); err != nil {

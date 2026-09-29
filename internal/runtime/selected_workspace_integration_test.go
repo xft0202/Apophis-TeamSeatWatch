@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/identity"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/migrations"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/mothersecret"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/workspace"
 )
@@ -39,7 +41,7 @@ type selectedFixture struct {
 }
 
 func (f *selectedFixture) Source() string { return "injected_platform_reader" }
-func (f *selectedFixture) VerifySelectedWorkspace(_ context.Context, _ platform.PersonalSession, _, _ string) (platform.SelectedWorkspaceFacts, error) {
+func (f *selectedFixture) VerifySelectedWorkspace(_ context.Context, _ platform.WorkspaceAccess, _, _ string) (platform.SelectedWorkspaceFacts, error) {
 	return f.facts, f.err
 }
 
@@ -51,7 +53,7 @@ type sequencedSelectedFixture struct {
 }
 
 func (f *sequencedSelectedFixture) Source() string { return "injected_platform_reader" }
-func (f *sequencedSelectedFixture) VerifySelectedWorkspace(ctx context.Context, _ platform.PersonalSession, _, _ string) (platform.SelectedWorkspaceFacts, error) {
+func (f *sequencedSelectedFixture) VerifySelectedWorkspace(ctx context.Context, _ platform.WorkspaceAccess, _, _ string) (platform.SelectedWorkspaceFacts, error) {
 	if f.calls.Add(1) != 1 {
 		return platform.SelectedWorkspaceFacts{Permission: "denied", Result: platform.Result{ObservedAt: time.Now().UTC(), Outcome: platform.OutcomeForbidden}}, nil
 	}
@@ -62,6 +64,33 @@ func (f *sequencedSelectedFixture) VerifySelectedWorkspace(ctx context.Context, 
 	case <-ctx.Done():
 		return platform.SelectedWorkspaceFacts{}, ctx.Err()
 	}
+}
+
+type sequencedWorkspaceExchange struct {
+	entered, release chan struct{}
+	calls            atomic.Int32
+}
+
+func (f *sequencedWorkspaceExchange) ExchangeWorkspace(ctx context.Context, _ platform.PersonalSession, id string) (platform.WorkspaceAccess, error) {
+	if f.calls.Add(1) != 1 {
+		return platform.WorkspaceAccess{}, platform.ErrWorkspaceExchangeUnavailable
+	}
+	close(f.entered)
+	select {
+	case <-f.release:
+		return fixtureWorkspaceAccess(id), nil
+	case <-ctx.Done():
+		return platform.WorkspaceAccess{}, ctx.Err()
+	}
+}
+
+func fixtureWorkspaceJWT(id string) string {
+	claims := fmt.Sprintf(`{"exp":%d,"https://api.openai.com/auth":{"chatgpt_account_id":%q}}`, time.Now().Add(2*time.Hour).Unix(), id)
+	return "header." + base64.RawURLEncoding.EncodeToString([]byte(claims)) + ".signature"
+}
+func fixtureWorkspaceAccess(id string) platform.WorkspaceAccess {
+	return platform.WorkspaceAccess{WorkspaceID: id, AccessToken: fixtureWorkspaceJWT(id), DeviceID: "fixture-device", SessionID: uuid.NewString(), ExpiresAt: time.Now().Add(30 * time.Minute), Cookies: []platform.SessionCookie{
+		{Name: "__Secure-next-auth.session-token", Value: "workspace-cookie"}, {Name: "_account", Value: id}, {Name: "oai-workspace", Value: id}}}
 }
 
 func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) {
@@ -117,6 +146,22 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 	seed(`INSERT INTO tsw_mother_workspace_visibility(mother_account_id,workspace_id,run_id,access_status) SELECT $1,$2,run_id,'readable' FROM tsw_mother_discoveries WHERE mother_account_id=$1`, motherA, spaceA)
 	seed(`INSERT INTO tsw_mother_workspace_visibility(mother_account_id,workspace_id,run_id,access_status) SELECT $1,$2,run_id,'readable' FROM tsw_mother_discoveries WHERE mother_account_id=$1`, motherA, spaceB)
 	seed(`INSERT INTO tsw_mother_workspace_visibility(mother_account_id,workspace_id,run_id,access_status) SELECT $1,$2,run_id,'readable' FROM tsw_mother_discoveries WHERE mother_account_id=$1`, motherB, spaceA)
+	for _, pair := range []struct {
+		mother, space uuid.UUID
+		platformID    string
+	}{{motherA, spaceA, "canonical-a"}, {motherB, spaceA, "canonical-a"}, {motherA, spaceB, "canonical-b"}} {
+		var run, generation uuid.UUID
+		if err := pool.QueryRow(ctx, `SELECT discovery.run_id,session.generation FROM tsw_mother_discoveries discovery JOIN tsw_mother_personal_sessions session ON session.mother_account_id=discovery.mother_account_id WHERE discovery.mother_account_id=$1`, pair.mother).Scan(&run, &generation); err != nil {
+			t.Fatal(err)
+		}
+		b := workspaceAccessBinding{motherID: pair.mother, workspaceID: pair.space, run: run, generation: generation, revision: 1, attempt: 1, exchangeID: uuid.New()}
+		access := fixtureWorkspaceAccess(pair.platformID)
+		keyVersion, nonce, sealed, sealErr := sealWorkspaceAccess(cardIntegrationKeyRing{}, b, access)
+		if sealErr != nil {
+			t.Fatal(sealErr)
+		}
+		seed(`INSERT INTO tsw_selected_workspace_tokens(mother_account_id,workspace_id,discovery_run_id,session_generation,secret_revision,attempt,exchange_id,status,key_version,nonce,sealed_access,expires_at) VALUES($1,$2,$3,$4,1,1,$5,'ready',$6,$7,$8,$9)`, pair.mother, pair.space, run, generation, b.exchangeID, keyVersion, nonce, sealed, access.ExpiresAt)
+	}
 	identifier, version, fingerprint, err := identity.Fingerprint(cardIntegrationKeyRing{}, identity.TargetLogin, "child@example.test")
 	if err != nil {
 		t.Fatal(err)
@@ -151,14 +196,39 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 		}
 		return rec.Code, result
 	}
+	callAccess := func(method string, workspace, mother uuid.UUID, confirmed bool) (int, ownerapi.SelectedWorkspaceAccessStatus, string) {
+		t.Helper()
+		path := "/api/owner/v1/workspaces/" + workspace.String() + "/access"
+		var body []byte
+		if method == http.MethodGet {
+			path += "?motherAccountId=" + mother.String()
+		} else {
+			body, _ = json.Marshal(map[string]any{"motherAccountId": mother, "confirmed": confirmed})
+		}
+		req := httptest.NewRequest(method, path, bytes.NewReader(body))
+		req.Header.Set("Origin", "https://owner.test")
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
+		if method == http.MethodPost {
+			req.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: csrf})
+			req.Header.Set(auth.CSRFHeaderName, csrf)
+		}
+		rec := httptest.NewRecorder()
+		serve.ServeHTTP(rec, req)
+		var result ownerapi.SelectedWorkspaceAccessStatus
+		if rec.Code == 200 && json.Unmarshal(rec.Body.Bytes(), &result) != nil {
+			t.Fatalf("invalid token status: %s", rec.Body.String())
+		}
+		return rec.Code, result, rec.Body.String()
+	}
 	fact := func() platform.SelectedWorkspaceFacts {
 		until := time.Now().Add(30 * 24 * time.Hour)
 		seat, member, invite := 5, 1, 1
 		return platform.SelectedWorkspaceFacts{Permission: "manage", Result: platform.Result{Outcome: platform.OutcomeOperational, ObservedAt: time.Now().Add(-time.Second), Completeness: platform.Complete, ActiveUntil: &until, SeatLimit: &seat, MemberCount: &member, PendingInviteCount: &invite, Members: []platform.Member{{Kind: "member", Identifier: "child@example.test", PlatformMemberID: "member-1", Status: "active"}, {Kind: "pending_invite", Identifier: "guest@example.test", Status: "pending"}}}}
 	}
-	seed(`INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,secret_revision,source,outcome,permission,completeness,observed_at,expires_at)
-		SELECT $1,$2,discovery.run_id,session.generation,1,'injected_platform_reader','failed','unknown','unknown',now()-interval '8 days',now()-interval '1 day'
-		FROM tsw_mother_discoveries discovery JOIN tsw_mother_personal_sessions session ON session.mother_account_id=discovery.mother_account_id WHERE discovery.mother_account_id=$2`, spaceA, motherA)
+	seed(`INSERT INTO tsw_workspace_verifications(workspace_id,mother_account_id,discovery_run_id,session_generation,secret_revision,token_attempt,token_exchange_id,source,outcome,permission,completeness,observed_at,expires_at)
+		SELECT $1,$2,token.discovery_run_id,token.session_generation,1,token.attempt,token.exchange_id,'injected_platform_reader','failed','unknown','unknown',now()-interval '8 days',now()-interval '1 day'
+		FROM tsw_selected_workspace_tokens token WHERE token.mother_account_id=$2 AND token.workspace_id=$1`, spaceA, motherA)
 	if code, stale := call(http.MethodGet, spaceA, motherA, true); code != 200 || stale.Status != "stale" || stale.ActiveUntil != nil {
 		t.Fatalf("stale read became current: %d %+v", code, stale)
 	}
@@ -272,11 +342,68 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 	if _, pending := call(http.MethodGet, spaceB, motherA, true); pending.Status != "pending" || len(pending.Members) != 0 {
 		t.Fatalf("Personal refresh revived facts: %+v", pending)
 	}
-	// The production adapter consumes the saved Personal AT through a mocked
-	// egress client; all four endpoints stay on the official host and GET only.
+	// Fact reads must refuse the Personal bearer until a separate confirmed
+	// exchange has produced a Workspace-scoped credential.
+	if code, _ := call(http.MethodPost, spaceB, motherA, true); code != 409 {
+		t.Fatalf("facts without explicit exchange=%d", code)
+	}
+	if code, status, _ := callAccess(http.MethodGet, spaceB, motherA, false); code != 200 || status.Status != "required" {
+		t.Fatalf("unexchanged status=%d %+v", code, status)
+	}
+	var originalPersonal []byte
+	if err := pool.QueryRow(ctx, `SELECT sealed_session FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, motherA).Scan(&originalPersonal); err != nil {
+		t.Fatal(err)
+	}
+	issuedToken := fixtureWorkspaceJWT("canonical-b")
+	var exchangeCalls atomic.Int32
+	exchangeTransport := selectedRoundTrip(func(req *http.Request) (*http.Response, error) {
+		exchangeCalls.Add(1)
+		if req.Method != http.MethodGet || req.URL.Scheme != "https" || req.URL.Host != "chatgpt.com" || req.URL.Path != "/api/auth/session" || req.URL.RawQuery != "exchange_workspace_token=true&workspace_id=canonical-b&reason=setCurrentAccountWithoutRedirect" || req.Header.Get("Authorization") != "" || !strings.Contains(req.Header.Get("Cookie"), "_account=canonical-b") || !strings.Contains(req.Header.Get("Cookie"), "fixture-cookie") {
+			return nil, errors.New("unexpected exchange route or Personal session")
+		}
+		body, _ := json.Marshal(map[string]any{"accessToken": issuedToken, "account": map[string]any{"id": "canonical-b"}, "expires": time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339)})
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{"Set-Cookie": []string{"__Secure-next-auth.session-token=workspace-cookie; Path=/; Secure"}}, Request: req}, nil
+	})
+	officialExchanger := platform.OfficialWorkspaceTokenExchanger{Client: func(context.Context) (*http.Client, func(), error) {
+		return &http.Client{Transport: exchangeTransport, Timeout: time.Second}, func() {}, nil
+	}}
+	h.workspaceTokenExchanger = officialExchanger
+	for _, invalid := range []struct {
+		origin string
+		csrf   bool
+	}{{"https://foreign.test", true}, {"https://owner.test", false}} {
+		body, _ := json.Marshal(map[string]any{"motherAccountId": motherA, "confirmed": true})
+		req := httptest.NewRequest(http.MethodPost, "/api/owner/v1/workspaces/"+spaceB.String()+"/access", bytes.NewReader(body))
+		req.Header.Set("Origin", invalid.origin)
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
+		if invalid.csrf {
+			req.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: csrf})
+			req.Header.Set(auth.CSRFHeaderName, csrf)
+		}
+		rec := httptest.NewRecorder()
+		serve.ServeHTTP(rec, req)
+		if rec.Code == 200 || exchangeCalls.Load() != 0 {
+			t.Fatalf("unsafe exchange request admitted: %d %+v", rec.Code, invalid)
+		}
+	}
+	if code, status, body := callAccess(http.MethodPost, spaceB, motherA, true); code != 200 || status.Status != "ready" || strings.Contains(body, issuedToken) || strings.Contains(body, "workspace-cookie") {
+		t.Fatalf("explicit exchange failed/leaked: %d %+v %s", code, status, body)
+	}
+	if exchangeCalls.Load() != 1 {
+		t.Fatalf("exchange called %d times", exchangeCalls.Load())
+	}
+	var afterPersonal []byte
+	if err := pool.QueryRow(ctx, `SELECT sealed_session FROM tsw_mother_personal_sessions WHERE mother_account_id=$1`, motherA).Scan(&afterPersonal); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(originalPersonal, afterPersonal) {
+		t.Fatal("exchange overwrote saved Personal session")
+	}
+	// All fact endpoints now use the exchanged Workspace bearer, never Personal.
 	var httpCalls, httpMode atomic.Int32
 	transport := selectedRoundTrip(func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodGet || req.URL.Scheme != "https" || req.URL.Host != "chatgpt.com" || req.Header.Get("Authorization") != "Bearer fixture-personal-token" || !strings.Contains(req.Header.Get("Cookie"), "fixture-cookie") {
+		if req.Method != http.MethodGet || req.URL.Scheme != "https" || req.URL.Host != "chatgpt.com" || req.Header.Get("Authorization") != "Bearer "+issuedToken || !strings.Contains(req.Header.Get("Cookie"), "workspace-cookie") || (strings.HasSuffix(req.URL.Path, "/invites") && req.Header.Get("Oai-Session-Id") == "") {
 			return nil, errors.New("unexpected platform operation")
 		}
 		httpCalls.Add(1)
@@ -342,5 +469,78 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 	}
 	if code, _ := call(http.MethodPost, spaceB, motherA, false); code != 422 {
 		t.Fatalf("unconfirmed selection=%d", code)
+	}
+	// Overlapping explicit exchanges fence slow old success without holding a
+	// database lock through platform I/O. Starting an exchange hides old facts.
+	sequencedExchange := &sequencedWorkspaceExchange{entered: make(chan struct{}), release: make(chan struct{})}
+	h = &OwnerAuthHandler{pool: pool, keyRing: cardIntegrationKeyRing{}, origins: origins, selectedWorkspaceReader: reader, workspaceTokenExchanger: sequencedExchange}
+	serve = ownerapi.Handler(h)
+	firstExchange := make(chan int, 1)
+	go func() { code, _, _ := callAccess(http.MethodPost, spaceB, motherA, true); firstExchange <- code }()
+	select {
+	case <-sequencedExchange.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first exchange never entered")
+	}
+	if _, pending := call(http.MethodGet, spaceB, motherA, true); pending.Status != "pending" || pending.ActiveUntil != nil {
+		t.Fatalf("exchanging exposed previous facts: %+v", pending)
+	}
+	if _, state, _ := callAccess(http.MethodGet, spaceB, motherA, false); state.Status != "exchanging" {
+		t.Fatalf("exchange reservation missing: %+v", state)
+	}
+	if _, state, _ := callAccess(http.MethodPost, spaceB, motherA, true); state.Status != "failed" {
+		t.Fatalf("newer failed exchange not recorded: %+v", state)
+	}
+	close(sequencedExchange.release)
+	select {
+	case code := <-firstExchange:
+		if code != 409 {
+			t.Fatalf("superseded exchange=%d", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("superseded exchange held DB lock")
+	}
+	if _, state, _ := callAccess(http.MethodGet, spaceB, motherA, false); state.Status != "failed" {
+		t.Fatalf("slow success revived token: %+v", state)
+	}
+	h.workspaceTokenExchanger = officialExchanger
+	if _, state, _ := callAccess(http.MethodPost, spaceB, motherA, true); state.Status != "ready" {
+		t.Fatalf("exchange retry failed: %+v", state)
+	}
+	if _, pending := call(http.MethodGet, spaceB, motherA, true); pending.Status != "pending" {
+		t.Fatalf("old read revived after token rotation: %+v", pending)
+	}
+	if _, restored := call(http.MethodPost, spaceB, motherA, true); restored.Status != "verified" {
+		t.Fatalf("facts retry failed: %+v", restored)
+	}
+	// Revision change during network I/O revokes the reserved token publication.
+	lateExchange := &sequencedWorkspaceExchange{entered: make(chan struct{}), release: make(chan struct{})}
+	h.workspaceTokenExchanger = lateExchange
+	late := make(chan int, 1)
+	go func() { code, _, _ := callAccess(http.MethodPost, spaceB, motherA, true); late <- code }()
+	select {
+	case <-lateExchange.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("revision exchange never entered")
+	}
+	sealedPassword, sealErr := mothersecret.Seal(cardIntegrationKeyRing{}, motherA, 2, mothersecret.Password, []byte("rotated-password"))
+	if sealErr != nil {
+		t.Fatal(sealErr)
+	}
+	seed(`UPDATE tsw_mother_account_credentials SET password_secret=$2,secret_revision=secret_revision+1,version=version+1 WHERE mother_account_id=$1`, motherA, sealedPassword)
+	close(lateExchange.release)
+	select {
+	case code := <-late:
+		if code != 409 {
+			t.Fatalf("revision-fenced exchange=%d", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("revision exchange held DB lock")
+	}
+	if code, _ := call(http.MethodGet, spaceB, motherA, true); code != 409 {
+		t.Fatalf("old revision kept facts visible: %d", code)
+	}
+	if _, independent := call(http.MethodGet, spaceA, motherB, true); independent.Status != "permission_denied" {
+		t.Fatalf("other mother's visibility changed: %+v", independent)
 	}
 }

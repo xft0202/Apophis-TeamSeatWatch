@@ -885,6 +885,33 @@ func (e RevokeDeliveryCardResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for SelectedWorkspaceAccessStatusStatus.
+const (
+	SelectedWorkspaceAccessStatusStatusExchanging       SelectedWorkspaceAccessStatusStatus = "exchanging"
+	SelectedWorkspaceAccessStatusStatusFailed           SelectedWorkspaceAccessStatusStatus = "failed"
+	SelectedWorkspaceAccessStatusStatusPermissionDenied SelectedWorkspaceAccessStatusStatus = "permission_denied"
+	SelectedWorkspaceAccessStatusStatusReady            SelectedWorkspaceAccessStatusStatus = "ready"
+	SelectedWorkspaceAccessStatusStatusRequired         SelectedWorkspaceAccessStatusStatus = "required"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceAccessStatusStatus enum.
+func (e SelectedWorkspaceAccessStatusStatus) Valid() bool {
+	switch e {
+	case SelectedWorkspaceAccessStatusStatusExchanging:
+		return true
+	case SelectedWorkspaceAccessStatusStatusFailed:
+		return true
+	case SelectedWorkspaceAccessStatusStatusPermissionDenied:
+		return true
+	case SelectedWorkspaceAccessStatusStatusReady:
+		return true
+	case SelectedWorkspaceAccessStatusStatusRequired:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SelectedWorkspaceMemberCompleteness.
 const (
 	SelectedWorkspaceMemberCompletenessComplete SelectedWorkspaceMemberCompleteness = "complete"
@@ -2482,6 +2509,17 @@ type SaveBatch struct {
 	TargetAccountIds []openapi_types.UUID `json:"targetAccountIds"`
 }
 
+// SelectedWorkspaceAccessStatus defines model for SelectedWorkspaceAccessStatus.
+type SelectedWorkspaceAccessStatus struct {
+	ExpiresAt       *time.Time                          `json:"expiresAt,omitempty"`
+	MotherAccountId openapi_types.UUID                  `json:"motherAccountId"`
+	Status          SelectedWorkspaceAccessStatusStatus `json:"status"`
+	WorkspaceId     openapi_types.UUID                  `json:"workspaceId"`
+}
+
+// SelectedWorkspaceAccessStatusStatus defines model for SelectedWorkspaceAccessStatus.Status.
+type SelectedWorkspaceAccessStatusStatus string
+
 // SelectedWorkspaceMember defines model for SelectedWorkspaceMember.
 type SelectedWorkspaceMember struct {
 	ChildAccountId     *openapi_types.UUID                       `json:"childAccountId,omitempty"`
@@ -3322,6 +3360,16 @@ type UpdateWorkspaceParams struct {
 	IfMatch    IfMatch    `json:"If-Match"`
 }
 
+// GetSelectedWorkspaceAccessParams defines parameters for GetSelectedWorkspaceAccess.
+type GetSelectedWorkspaceAccessParams struct {
+	MotherAccountId openapi_types.UUID `form:"motherAccountId" json:"motherAccountId"`
+}
+
+// ExchangeSelectedWorkspaceTokenParams defines parameters for ExchangeSelectedWorkspaceToken.
+type ExchangeSelectedWorkspaceTokenParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // CreateWorkspaceManualVerificationParams defines parameters for CreateWorkspaceManualVerification.
 type CreateWorkspaceManualVerificationParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
@@ -3437,6 +3485,9 @@ type CreateWorkspaceJSONRequestBody = CreateWorkspace
 
 // UpdateWorkspaceJSONRequestBody defines body for UpdateWorkspace for application/json ContentType.
 type UpdateWorkspaceJSONRequestBody = UpdateWorkspace
+
+// ExchangeSelectedWorkspaceTokenJSONRequestBody defines body for ExchangeSelectedWorkspaceToken for application/json ContentType.
+type ExchangeSelectedWorkspaceTokenJSONRequestBody = VerifySelectedWorkspaceRequest
 
 // CreateWorkspaceManualVerificationJSONRequestBody defines body for CreateWorkspaceManualVerification for application/json ContentType.
 type CreateWorkspaceManualVerificationJSONRequestBody = ManualVerificationRequest
@@ -3659,6 +3710,12 @@ type ServerInterface interface {
 
 	// (PATCH /api/owner/v1/workspaces/{workspaceId})
 	UpdateWorkspace(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params UpdateWorkspaceParams)
+
+	// (GET /api/owner/v1/workspaces/{workspaceId}/access)
+	GetSelectedWorkspaceAccess(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params GetSelectedWorkspaceAccessParams)
+
+	// (POST /api/owner/v1/workspaces/{workspaceId}/access)
+	ExchangeSelectedWorkspaceToken(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params ExchangeSelectedWorkspaceTokenParams)
 
 	// (POST /api/owner/v1/workspaces/{workspaceId}/manual-verification)
 	CreateWorkspaceManualVerification(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params CreateWorkspaceManualVerificationParams)
@@ -7205,6 +7262,102 @@ func (siw *ServerInterfaceWrapper) UpdateWorkspace(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// GetSelectedWorkspaceAccess operation middleware
+func (siw *ServerInterfaceWrapper) GetSelectedWorkspaceAccess(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", r.PathValue("workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSelectedWorkspaceAccessParams
+
+	// ------------- Required query parameter "motherAccountId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "motherAccountId", r.URL.Query(), &params.MotherAccountId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "motherAccountId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "motherAccountId", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSelectedWorkspaceAccess(w, r, workspaceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExchangeSelectedWorkspaceToken operation middleware
+func (siw *ServerInterfaceWrapper) ExchangeSelectedWorkspaceToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", r.PathValue("workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExchangeSelectedWorkspaceTokenParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExchangeSelectedWorkspaceToken(w, r, workspaceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateWorkspaceManualVerification operation middleware
 func (siw *ServerInterfaceWrapper) CreateWorkspaceManualVerification(w http.ResponseWriter, r *http.Request) {
 
@@ -7556,6 +7709,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}", wrapper.GetWorkspace)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}", wrapper.UpdateWorkspace)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/bindings", wrapper.CreateMotherWorkspaceBinding)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/access", wrapper.GetSelectedWorkspaceAccess)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/access", wrapper.ExchangeSelectedWorkspaceToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/verification", wrapper.GetSelectedWorkspaceVerification)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/verification", wrapper.VerifySelectedWorkspace)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/refresh", wrapper.RefreshWorkspaceFacts)

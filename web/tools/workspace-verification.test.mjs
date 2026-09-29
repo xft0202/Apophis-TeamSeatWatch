@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canShowWorkspaceFacts, createWorkspaceRequestGate } from '../src/rebuild/owner/workspaceVerification.ts';
+import { canShowWorkspaceFacts, canShowSelectedWorkspaceFacts, createWorkspaceRequestGate } from '../src/rebuild/owner/workspaceVerification.ts';
 
 const fact = {
   status: 'verified', permission: 'manage', accessStatus: 'readable',
@@ -23,6 +23,17 @@ test('verified facts need current, complete read evidence', () => {
   assert.equal(canShowWorkspaceFacts({ ...fact, expiresAt: undefined }, now), false);
   assert.equal(canShowWorkspaceFacts(null, now), false);
   assert.equal(canShowWorkspaceFacts({ ...fact, status: 'verifying' }, now), false);
+});
+
+test('Workspace bearer status and expiry fence visible facts without implicit exchange', () => {
+  const now = Date.parse('2026-01-07T00:00:00Z');
+  const access = { status: 'ready', expiresAt: '2026-01-08T00:00:00Z' };
+  assert.equal(canShowSelectedWorkspaceFacts(fact, access, now), true);
+  for (const status of ['required','exchanging','failed','permission_denied']) {
+    assert.equal(canShowSelectedWorkspaceFacts(fact, { ...access, status }, now), false, status);
+  }
+  assert.equal(canShowSelectedWorkspaceFacts(fact, access, Date.parse(access.expiresAt)), false);
+  assert.equal(canShowSelectedWorkspaceFacts(fact, null, now), false);
 });
 
 test('old poll cannot restore prior success over pending or failed POST', () => {

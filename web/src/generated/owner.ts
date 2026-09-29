@@ -340,6 +340,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/workspaces/{workspaceId}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSelectedWorkspaceAccess"];
+        put?: never;
+        post: operations["exchangeSelectedWorkspaceToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/workspaces/{workspaceId}/verification": {
         parameters: {
             query?: never;
@@ -1233,6 +1249,16 @@ export interface components {
             motherAccountId: string;
             /** @enum {boolean} */
             confirmed: true;
+        };
+        SelectedWorkspaceAccessStatus: {
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            motherAccountId: string;
+            /** @enum {string} */
+            status: "required" | "exchanging" | "ready" | "failed" | "permission_denied";
+            /** Format: date-time */
+            expiresAt?: string;
         };
         SelectedWorkspaceVerification: {
             /** Format: uuid */
@@ -2714,6 +2740,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Binding"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSelectedWorkspaceAccess: {
+        parameters: {
+            query: {
+                motherAccountId: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace token status without credential material */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelectedWorkspaceAccessStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    exchangeSelectedWorkspaceToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifySelectedWorkspaceRequest"];
+            };
+        };
+        responses: {
+            /** @description Explicit token exchange status; no credential material */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelectedWorkspaceAccessStatus"];
                 };
             };
             default: components["responses"]["Problem"];

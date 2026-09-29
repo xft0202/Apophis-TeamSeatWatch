@@ -2,12 +2,16 @@ package platform
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type selectedTransport struct {
@@ -17,8 +21,9 @@ type selectedTransport struct {
 }
 
 func (t *selectedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.Method != http.MethodGet || req.URL.Scheme != "https" || req.URL.Host != "chatgpt.com" || req.Header.Get("Authorization") != "Bearer saved-personal" ||
-		!strings.Contains(req.Header.Get("Cookie"), "__Secure-next-auth.session-token=saved-cookie") {
+	if req.Method != http.MethodGet || req.URL.Scheme != "https" || req.URL.Host != "chatgpt.com" || !strings.HasPrefix(req.Header.Get("Authorization"), "Bearer ") ||
+		!strings.Contains(req.Header.Get("Cookie"), "__Secure-next-auth.session-token=saved-cookie") ||
+		(strings.HasSuffix(req.URL.Path, "/invites") && req.Header.Get("Oai-Session-Id") == "") {
 		panic("unexpected platform operation or credential")
 	}
 	t.mu.Lock()
@@ -27,8 +32,13 @@ func (t *selectedTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	status, body, headers := t.answer(req)
 	return &http.Response{StatusCode: status, Header: headers, Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
 }
-func selectedSession() PersonalSession {
-	return PersonalSession{AccessToken: "saved-personal", DeviceID: "saved-device", Cookies: []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "saved-cookie"}}, ExpiresAt: time.Now().Add(time.Hour)}
+func workspaceFixtureToken(workspaceID string) string {
+	payload := fmt.Sprintf(`{"exp":%d,"https://api.openai.com/auth":{"chatgpt_account_id":%q}}`, time.Now().Add(2*time.Hour).Unix(), workspaceID)
+	return "header." + base64.RawURLEncoding.EncodeToString([]byte(payload)) + ".signature"
+}
+func selectedSession() WorkspaceAccess {
+	return WorkspaceAccess{AccessToken: workspaceFixtureToken("canonical-space"), WorkspaceID: "canonical-space", DeviceID: "saved-device", SessionID: uuid.NewString(), Cookies: []SessionCookie{
+		{Name: "__Secure-next-auth.session-token", Value: "saved-cookie"}, {Name: "_account", Value: "canonical-space"}, {Name: "oai-workspace", Value: "canonical-space"}}, ExpiresAt: time.Now().Add(time.Hour)}
 }
 func readerFixture(t *selectedTransport) OfficialSelectedWorkspaceReader {
 	return OfficialSelectedWorkspaceReader{Client: func(context.Context) (*http.Client, func(), error) {
@@ -111,7 +121,7 @@ func TestOfficialSelectedWorkspaceReaderRejectsPartialForbiddenAndRedirect(t *te
 }
 func TestOfficialSelectedWorkspaceReaderRejectsInvalidPersonalSessionWithoutIO(t *testing.T) {
 	transport := &selectedTransport{answer: selectedOK}
-	facts, err := readerFixture(transport).VerifySelectedWorkspace(context.Background(), PersonalSession{}, "mother-id", "canonical-space")
+	facts, err := readerFixture(transport).VerifySelectedWorkspace(context.Background(), WorkspaceAccess{}, "mother-id", "canonical-space")
 	if err != nil || facts.Permission != "unknown" || len(transport.calls) != 0 {
 		t.Fatalf("invalid session used transport: %+v %v", facts, err)
 	}
