@@ -159,14 +159,12 @@ func TestPublicRedeemIntegrationLifecycleAndDynamicAuthorization(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE tsw_target_credentials SET material_status='needs_totp',version=version+1 WHERE target_account_id=(SELECT target_account_id FROM tsw_batch_memberships WHERE id=$1)`, ids.membership); err != nil {
 		t.Fatal(err)
 	}
-	if blocked := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/download", nil, accessCookie); blocked.Code != http.StatusNotFound {
-		t.Fatalf("incomplete 2FA permitted download: %d %s", blocked.Code, blocked.Body.String())
+	// Material repairs cannot rewrite or hide an existing customer's frozen delivery.
+	if download := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/download", nil, accessCookie); download.Code != http.StatusOK || !bytes.Equal(download.Body.Bytes(), []byte("{}")) {
+		t.Fatalf("existing order download after 2FA change: %d %s", download.Code, download.Body.String())
 	}
-	if blocked := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/confirm", map[string]any{"cardSecret": secret}, nil); blocked.Code != http.StatusNotFound {
-		t.Fatalf("incomplete 2FA permitted restore: %d %s", blocked.Code, blocked.Body.String())
-	}
-	if _, err := pool.Exec(ctx, `UPDATE tsw_target_credentials SET material_status='complete',version=version+1 WHERE target_account_id=(SELECT target_account_id FROM tsw_batch_memberships WHERE id=$1)`, ids.membership); err != nil {
-		t.Fatal(err)
+	if restore := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/confirm", map[string]any{"cardSecret": secret}, nil); restore.Code != http.StatusOK {
+		t.Fatalf("existing order restore after 2FA change: %d %s", restore.Code, restore.Body.String())
 	}
 	reclaim := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/reclaim", map[string]any{"cardSecret": secret}, nil)
 	if reclaim.Code != http.StatusAccepted {

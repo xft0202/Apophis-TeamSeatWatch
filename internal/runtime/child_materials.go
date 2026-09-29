@@ -8,10 +8,10 @@ import (
 	"io"
 	"net/http"
 	"net/mail"
+	"sort"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/audit"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
@@ -21,22 +21,9 @@ import (
 
 type childMaterial struct{ identifier, password, totp string }
 
-const maxChildMaterialsContent = 10 * 1024 * 1024
-
-func decodeChildMaterialsImport(w http.ResponseWriter, r *http.Request, request *ownerapi.ImportChildMaterialsJSONRequestBody) bool {
-	// A one-byte control character may occupy six bytes as a JSON escape.
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 6*maxChildMaterialsContent+1024))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(request) != nil || len(request.Content) > maxChildMaterialsContent {
-		return false
-	}
-	var trailing any
-	return errors.Is(decoder.Decode(&trailing), io.EOF)
-}
-
 func parseChildMaterials(content string) ([]childMaterial, []ownerapi.ChildMaterialsImportRow) {
 	scanner := bufio.NewScanner(strings.NewReader(content))
-	scanner.Buffer(make([]byte, 4096), maxChildMaterialsContent+1)
+	scanner.Buffer(make([]byte, 4096), 10*1024*1024+1)
 	var materials []childMaterial
 	var rows []ownerapi.ChildMaterialsImportRow
 	for line := 1; scanner.Scan(); line++ {
@@ -66,13 +53,49 @@ func parseChildMaterials(content string) ([]childMaterial, []ownerapi.ChildMater
 	return materials, rows
 }
 
+// The TXT contract permits 10 MiB of request bytes, unlike ordinary Owner JSON.
+func decodeChildImportJSON(w http.ResponseWriter, r *http.Request, request *ownerapi.ImportChildMaterialsJSONRequestBody) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 10<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(request); err != nil {
+		return false
+	}
+	var trailing any
+	return errors.Is(decoder.Decode(&trailing), io.EOF)
+}
+
+// ON CONFLICT makes a concurrent import a per-line duplicate without aborting
+// the transaction containing other valid lines.
+func (h *OwnerAuthHandler) insertChildMaterialTx(r *http.Request, tx pgx.Tx, material childMaterial, keyVersion uint16, fingerprint []byte) (ownerapi.TargetAccount, bool, error) {
+	var id string
+	err := tx.QueryRow(r.Context(), `INSERT INTO tsw_target_accounts (identifier,identifier_hmac,identifier_key_version,display_label)
+		VALUES ($1,$2,$3,$1) ON CONFLICT ON CONSTRAINT tsw_target_accounts_identifier_uq DO NOTHING RETURNING id`, material.identifier, fingerprint, keyVersion).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ownerapi.TargetAccount{}, false, nil
+	}
+	if err != nil {
+		return ownerapi.TargetAccount{}, false, err
+	}
+	password, totp, _, status, err := h.sealTargetFields(material.password, material.totp, "")
+	if err != nil {
+		return ownerapi.TargetAccount{}, false, err
+	}
+	_, err = tx.Exec(r.Context(), `INSERT INTO tsw_target_credentials (target_account_id,password_secret,totp_secret,material_status,materials_sealed)
+		VALUES ($1,$2,$3,$4,true)`, id, password, totp, status)
+	if err != nil {
+		return ownerapi.TargetAccount{}, false, err
+	}
+	item, err := targetByIDTx(r, tx, id)
+	return item, true, err
+}
+
 func (h *OwnerAuthHandler) ImportChildMaterials(w http.ResponseWriter, r *http.Request, _ ownerapi.ImportChildMaterialsParams) {
 	owner, ok := h.authenticated(w, r, true)
 	if !ok {
 		return
 	}
 	var request ownerapi.ImportChildMaterialsJSONRequestBody
-	if !decodeChildMaterialsImport(w, r, &request) {
+	if !decodeChildImportJSON(w, r, &request) || len(request.Content) > 10*1024*1024 {
 		h.rejectOwnerMutation(w, r, owner, "child_material.import", "invalid_request", 422, "invalid_materials", "Invalid Materials", "资料文件无效")
 		return
 	}
@@ -90,7 +113,16 @@ func (h *OwnerAuthHandler) ImportChildMaterials(w http.ResponseWriter, r *http.R
 	defer tx.Rollback(r.Context())
 	seen := make(map[string]bool)
 	changed := false
-	for i := range result.Rows {
+	// Acquire unique-key insert locks in a consistent order across concurrent
+	// imports; feedback still refers to the original physical line numbers.
+	indices := make([]int, len(result.Rows))
+	for i := range indices {
+		indices[i] = i
+	}
+	sort.SliceStable(indices, func(a, b int) bool {
+		return materials[indices[a]].identifier < materials[indices[b]].identifier
+	})
+	for _, i := range indices {
 		row := &result.Rows[i]
 		if row.Status == ownerapi.ChildMaterialsImportRowStatusInvalid {
 			result.Invalid++
@@ -120,33 +152,15 @@ func (h *OwnerAuthHandler) ImportChildMaterials(w http.ResponseWriter, r *http.R
 			h.targetFailure(w, r, err)
 			return
 		}
-		// A competing request can insert after the duplicate read. Isolate this
-		// row so a unique-key race reports duplicate without discarding other rows.
-		if _, err = tx.Exec(r.Context(), `SAVEPOINT child_material_row`); err != nil {
-			h.targetFailure(w, r, err)
-			return
-		}
-		item, insertErr := h.insertTargetAccountTx(r, tx, material.identifier, material.identifier, material.password, material.totp, "", "")
+		item, inserted, insertErr := h.insertChildMaterialTx(r, tx, material, version, fingerprint[:])
 		if insertErr != nil {
-			var pgErr *pgconn.PgError
-			if errors.As(insertErr, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "tsw_target_accounts_identifier_uq" {
-				if _, err = tx.Exec(r.Context(), `ROLLBACK TO SAVEPOINT child_material_row`); err == nil {
-					_, err = tx.Exec(r.Context(), `RELEASE SAVEPOINT child_material_row`)
-				}
-				if err != nil {
-					h.targetFailure(w, r, err)
-					return
-				}
-				row.Status, row.Message = ownerapi.ChildMaterialsImportRowStatusDuplicate, materialString("资料已存在")
-				result.Duplicate++
-				continue
-			}
 			h.targetConflict(w, r, owner, "child_material.import", insertErr)
 			return
 		}
-		if _, err = tx.Exec(r.Context(), `RELEASE SAVEPOINT child_material_row`); err != nil {
-			h.targetFailure(w, r, err)
-			return
+		if !inserted {
+			row.Status, row.Message = ownerapi.ChildMaterialsImportRowStatusDuplicate, materialString("资料已存在")
+			result.Duplicate++
+			continue
 		}
 		_, err = audit.Write(r.Context(), tx, audit.Event{Type: audit.TargetAccountCreated, Actor: audit.ActorOwner, OwnerID: owner.OwnerID, RetentionScopeID: item.Id.String(), EntityType: "target_account", EntityID: item.Id.String(), Outcome: audit.OutcomeSucceeded, CorrelationID: correlation(r), Details: audit.WorkspaceDetails{Result: "created"}, IdempotencyKey: item.Id.String() + ":child-material"})
 		if err != nil {
@@ -209,7 +223,7 @@ func (h *OwnerAuthHandler) ExportChildMaterials(w http.ResponseWriter, r *http.R
 			return
 		}
 		query += `($1='' OR target.identifier ILIKE '%'||$1||'%' OR target.display_label ILIKE '%'||$1||'%') `
-		args = append(args, strings.TrimSpace(stringValue(request.Search)))
+		args = append(args, strings.ToLower(strings.TrimSpace(stringValue(request.Search))))
 	default:
 		h.rejectOwnerMutation(w, r, owner, "child_material.export", "invalid_request", 422, "invalid_export", "Invalid Export", "导出范围无效")
 		return
