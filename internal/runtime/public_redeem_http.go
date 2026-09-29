@@ -48,13 +48,14 @@ type redeemFacts struct {
 	BatchStatus     string
 	MembershipState string
 	AssetStatus     string
+	MaterialStatus  string
 	Liveness        string
 	Deadline        time.Time
 	PlannedAt       time.Time
 }
 
 func NewPublicRedeemHandler(pool *pgxpool.Pool, keyRing auth.KeyRing, health http.Handler) *PublicRedeemHandler {
-	return &PublicRedeemHandler{pool: pool, keyRing: keyRing, tasks: task.NewStore(pool), health: health}
+	return &PublicRedeemHandler{pool: pool, keyRing: keyRing, tasks: task.NewStore(pool, keyRing), health: health}
 }
 
 var _ internalapi.ServerInterface = (*PublicRedeemHandler)(nil)
@@ -417,7 +418,7 @@ func (h *PublicRedeemHandler) authorizedTokenTransaction(w http.ResponseWriter, 
 	}
 	facts, err := loadRedeemFactsByToken(r.Context(), tx, hash[:])
 	if err == nil {
-		err = lockRedeemCardForRead(r.Context(), tx, facts.CardID)
+		err = lockRedeemCardAndMaterialForRead(r.Context(), tx, facts.CardID, facts.MembershipID)
 	}
 	if err == nil {
 		facts, err = loadRedeemFactsByToken(r.Context(), tx, hash[:])
@@ -474,7 +475,7 @@ func (h *PublicRedeemHandler) authorizedReadOnlyTokenTransaction(w http.Response
 	}
 	facts, err := loadRedeemFactsByTokenReadOnly(r.Context(), tx, hash[:])
 	if err == nil {
-		err = lockRedeemCardForRead(r.Context(), tx, facts.CardID)
+		err = lockRedeemCardAndMaterialForRead(r.Context(), tx, facts.CardID, facts.MembershipID)
 	}
 	if err == nil {
 		facts, err = loadRedeemFactsByTokenReadOnly(r.Context(), tx, hash[:])
@@ -557,7 +558,7 @@ func (h *PublicRedeemHandler) authorizedReclaimStatusTokenTransaction(w http.Res
 	}
 	facts, err := loadReclaimStatusFactsByToken(r.Context(), tx, hash[:])
 	if err == nil {
-		err = lockRedeemCardForRead(r.Context(), tx, facts.CardID)
+		err = lockRedeemCardAndMaterialForRead(r.Context(), tx, facts.CardID, facts.MembershipID)
 	}
 	if err == nil {
 		facts, err = loadReclaimStatusFactsByToken(r.Context(), tx, hash[:])
@@ -706,12 +707,25 @@ func loadRedeemFactsForUpdate(ctx context.Context, tx pgx.Tx, keyVersion uint16,
 	if _, err := tx.Exec(ctx, `SELECT id FROM tsw_cards WHERE id=$1::uuid FOR UPDATE`, facts.CardID); err != nil {
 		return redeemFacts{}, err
 	}
+	if err := lockRedeemMaterialForRead(ctx, tx, facts.MembershipID); err != nil {
+		return redeemFacts{}, err
+	}
 	return loadRedeemFacts(ctx, tx, keyVersion, lookup)
 }
 
-func lockRedeemCardForRead(ctx context.Context, tx pgx.Tx, cardID string) error {
+func lockRedeemCardAndMaterialForRead(ctx context.Context, tx pgx.Tx, cardID, membershipID string) error {
 	var lockedID string
-	return tx.QueryRow(ctx, `SELECT id::text FROM tsw_cards WHERE id=$1::uuid FOR SHARE`, cardID).Scan(&lockedID)
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM tsw_cards WHERE id=$1::uuid FOR SHARE`, cardID).Scan(&lockedID); err != nil {
+		return err
+	}
+	return lockRedeemMaterialForRead(ctx, tx, membershipID)
+}
+
+func lockRedeemMaterialForRead(ctx context.Context, tx pgx.Tx, membershipID string) error {
+	var lockedID string
+	return tx.QueryRow(ctx, `SELECT credentials.target_account_id::text FROM tsw_target_credentials credentials
+		JOIN tsw_batch_memberships membership ON membership.target_account_id=credentials.target_account_id
+		WHERE membership.id=$1::uuid FOR SHARE OF credentials`, membershipID).Scan(&lockedID)
 }
 
 func auditRevokedTokenDenied(ctx context.Context, tx pgx.Tx, hash []byte, event audit.EventType, action string, r *http.Request) (bool, error) {
@@ -747,14 +761,15 @@ func loadRedeemFactsByToken(ctx context.Context, tx pgx.Tx, hash []byte) (redeem
 
 func loadRedeemFactsQuery(ctx context.Context, tx pgx.Tx, predicate string, args ...any) (redeemFacts, error) {
 	var facts redeemFacts
-	query := `SELECT card.id::text,membership.id::text,asset.id::text,COALESCE(asset.current_delivery_version_id::text,''),COALESCE(ord.id::text,''),COALESCE(ord.current_delivery_version_id::text,''),card.display_suffix,card.status,batch.status,membership.state,asset.status,COALESCE(asset.liveness_status,''),card.redemption_deadline,batch.planned_at
+	query := `SELECT card.id::text,membership.id::text,asset.id::text,COALESCE(asset.current_delivery_version_id::text,''),COALESCE(ord.id::text,''),COALESCE(ord.current_delivery_version_id::text,''),card.display_suffix,card.status,batch.status,membership.state,asset.status,COALESCE(asset.liveness_status,''),credentials.material_status,card.redemption_deadline,batch.planned_at
 		FROM tsw_cards card
 		JOIN tsw_batch_memberships membership ON membership.id=card.membership_id
+		JOIN tsw_target_credentials credentials ON credentials.target_account_id=membership.target_account_id
 		JOIN tsw_batches batch ON batch.id=membership.batch_id
 		JOIN tsw_oauth_assets asset ON asset.membership_id=membership.id
 		LEFT JOIN tsw_orders ord ON ord.card_id=card.id AND ord.membership_id=membership.id
 		` + predicate + ` LIMIT 1`
-	if err := tx.QueryRow(ctx, query, args...).Scan(&facts.CardID, &facts.MembershipID, &facts.AssetID, &facts.VersionID, &facts.OrderID, &facts.OrderVersionID, &facts.CardSuffix, &facts.CardStatus, &facts.BatchStatus, &facts.MembershipState, &facts.AssetStatus, &facts.Liveness, &facts.Deadline, &facts.PlannedAt); err != nil {
+	if err := tx.QueryRow(ctx, query, args...).Scan(&facts.CardID, &facts.MembershipID, &facts.AssetID, &facts.VersionID, &facts.OrderID, &facts.OrderVersionID, &facts.CardSuffix, &facts.CardStatus, &facts.BatchStatus, &facts.MembershipState, &facts.AssetStatus, &facts.Liveness, &facts.MaterialStatus, &facts.Deadline, &facts.PlannedAt); err != nil {
 		return redeemFacts{}, err
 	}
 	return facts, nil
@@ -762,19 +777,19 @@ func loadRedeemFactsQuery(ctx context.Context, tx pgx.Tx, predicate string, args
 
 func (f redeemFacts) hasOrder() bool { return f.OrderID != "" }
 func (f redeemFacts) canClaim(now time.Time) bool {
-	return !f.hasOrder() && f.CardStatus == "active" && f.MembershipState == "active" && f.BatchStatus == "serving" && now.Before(f.Deadline) && now.Before(f.PlannedAt) && f.AssetStatus == "ready" && f.VersionID != ""
+	return !f.hasOrder() && f.MaterialStatus == "complete" && f.CardStatus == "active" && f.MembershipState == "active" && f.BatchStatus == "serving" && now.Before(f.Deadline) && now.Before(f.PlannedAt) && f.AssetStatus == "ready" && f.VersionID != ""
 }
 func (f redeemFacts) canAccess() bool {
-	return f.CardStatus == "active" && f.MembershipState == "active" && (f.BatchStatus == "serving" || f.BatchStatus == "removing") && f.AssetStatus == "ready" && f.VersionID != "" && f.hasOrder() && f.OrderVersionID == f.VersionID
+	return f.MaterialStatus == "complete" && f.CardStatus == "active" && f.MembershipState == "active" && (f.BatchStatus == "serving" || f.BatchStatus == "removing") && f.AssetStatus == "ready" && f.VersionID != "" && f.hasOrder() && f.OrderVersionID == f.VersionID
 }
 func (f redeemFacts) canCredentialCheck() bool {
-	return f.CardStatus == "active" && f.MembershipState == "active" && (f.BatchStatus == "serving" || f.BatchStatus == "removing") && f.AssetStatus != "" && f.VersionID != ""
+	return f.MaterialStatus == "complete" && f.CardStatus == "active" && f.MembershipState == "active" && (f.BatchStatus == "serving" || f.BatchStatus == "removing") && f.AssetStatus != "" && f.VersionID != ""
 }
 func (f redeemFacts) canReadStatus() bool {
 	return f.CardStatus == "active" && f.MembershipState == "active" && (f.BatchStatus == "serving" || f.BatchStatus == "removing") && f.hasOrder() && f.OrderVersionID == f.VersionID
 }
 func (f redeemFacts) canReclaimRequest() bool {
-	return f.canReadStatus() && f.AssetID != "" && f.VersionID != "" && f.OrderVersionID != "" && f.OrderVersionID == f.VersionID && (f.AssetStatus == "ready" || f.AssetStatus == "unavailable" || f.AssetStatus == "reclaiming")
+	return f.MaterialStatus == "complete" && f.canReadStatus() && f.AssetID != "" && f.VersionID != "" && f.OrderVersionID != "" && f.OrderVersionID == f.VersionID && (f.AssetStatus == "ready" || f.AssetStatus == "unavailable" || f.AssetStatus == "reclaiming")
 }
 func (f redeemFacts) publicLiveness() string {
 	switch f.Liveness {
@@ -804,7 +819,7 @@ func previewPayload(f redeemFacts, canClaim, canAccess bool) internalapi.RedeemP
 	if seconds := time.Until(f.PlannedAt).Seconds(); seconds > 0 {
 		remaining = int64(seconds)
 	}
-	return internalapi.RedeemPreview{CardSuffix: f.CardSuffix, HasOrder: f.hasOrder(), CanClaim: canClaim, CanAccess: canAccess, RemainingSeconds: remaining, DeliveryStatus: map[bool]string{true: "available", false: "unavailable"}[f.AssetStatus == "ready" && f.VersionID != ""], LivenessStatus: f.publicLiveness()}
+	return internalapi.RedeemPreview{CardSuffix: f.CardSuffix, HasOrder: f.hasOrder(), CanClaim: canClaim, CanAccess: canAccess, RemainingSeconds: remaining, DeliveryStatus: map[bool]string{true: "available", false: "unavailable"}[f.MaterialStatus == "complete" && f.AssetStatus == "ready" && f.VersionID != ""], LivenessStatus: f.publicLiveness()}
 }
 
 func createOrderTx(ctx context.Context, tx pgx.Tx, f redeemFacts) error {

@@ -13,7 +13,7 @@
     "build:public": "vite build --config vite.public.config.ts",
     "build:owner-rebuild": "vite build --config vite.owner-rebuild.config.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tools/owner-auth-contract.test.mjs",
+    "test": "node --test tools/owner-auth-contract.test.mjs tools/child-materials-interaction.test.mjs",
     "lint": "eslint src",
     "generate:contracts": "node ../tools/generate.mjs --write",
     "check:contracts": "node ../tools/generate.mjs --check"

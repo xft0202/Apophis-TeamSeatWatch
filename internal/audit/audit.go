@@ -593,7 +593,7 @@ func validSessionReason(eventType EventType, value string) bool {
 
 func validOwnerMutationOperation(value string) bool {
 	switch value {
-	case "mother_account.create", "mother_account.update", "workspace.create", "workspace.update", "binding.create", "workspace_read.create", "manual_verification.create", "target_account.create", "target_account.import", "target_account.update", "target_probe.create", "batch.create", "batch.update", "join.create", "join.reconcile", "remove.create", "remove.reconcile", "card.activate", "delivery.reclaim_authorize", "delivery.card_revoke", "delivery_destination.create", "delivery_destination.update", "delivery_destination.test", "delivery_destination.select":
+	case "child_material.import", "child_material.export", "mother_account.create", "mother_account.update", "workspace.create", "workspace.update", "binding.create", "workspace_read.create", "manual_verification.create", "target_account.create", "target_account.import", "target_account.update", "target_probe.create", "batch.create", "batch.update", "join.create", "join.reconcile", "remove.create", "remove.reconcile", "card.activate", "delivery.reclaim_authorize", "delivery.card_revoke", "delivery_destination.create", "delivery_destination.update", "delivery_destination.test", "delivery_destination.select":
 		return true
 	default:
 		return false

@@ -356,6 +356,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/child-materials/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importChildMaterials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/child-materials/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["exportChildMaterials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/target-accounts": {
         parameters: {
             query?: never;
@@ -1084,6 +1116,30 @@ export interface components {
         };
         /** @enum {string} */
         TargetProbeClassification: "available" | "credential_invalid" | "account_problem" | "definitely_unavailable" | "transient_failure" | "unknown";
+        ChildMaterialsImport: {
+            content: string;
+        };
+        ChildMaterialsImportResult: {
+            rows: components["schemas"]["ChildMaterialsImportRow"][];
+            imported: number;
+            duplicate: number;
+            invalid: number;
+        };
+        ChildMaterialsImportRow: {
+            line: number;
+            /** @enum {string} */
+            status: "imported" | "duplicate" | "invalid" | "needs_totp";
+            identifier?: string;
+            message?: string;
+        };
+        ChildMaterialsExport: {
+            /** @enum {string} */
+            scope: "selected" | "filtered";
+            accountIds?: string[];
+            search?: string;
+            expectedCount: number;
+            confirmed: boolean;
+        };
         TargetAccount: {
             /** Format: uuid */
             id: string;
@@ -1094,6 +1150,8 @@ export interface components {
             hasPassword: boolean;
             hasTotp: boolean;
             hasRecovery: boolean;
+            /** @enum {string} */
+            materialStatus: "complete" | "needs_totp";
             /** Format: int64 */
             secretRevision: number;
             latestProbeStatus?: components["schemas"]["TargetProbeClassification"];
@@ -2385,6 +2443,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    importChildMaterials: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChildMaterialsImport"];
+            };
+        };
+        responses: {
+            /** @description Per-physical-line result; no password or 2FA returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChildMaterialsImportResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    exportChildMaterials: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChildMaterialsExport"];
+            };
+        };
+        responses: {
+            /** @description Three-field TXT; no session material */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
                 };
             };
             default: components["responses"]["Problem"];

@@ -153,6 +153,48 @@ func (e CardActivationStatus) Valid() bool {
 	}
 }
 
+// Defines values for ChildMaterialsExportScope.
+const (
+	Filtered ChildMaterialsExportScope = "filtered"
+	Selected ChildMaterialsExportScope = "selected"
+)
+
+// Valid indicates whether the value is a known member of the ChildMaterialsExportScope enum.
+func (e ChildMaterialsExportScope) Valid() bool {
+	switch e {
+	case Filtered:
+		return true
+	case Selected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChildMaterialsImportRowStatus.
+const (
+	ChildMaterialsImportRowStatusDuplicate ChildMaterialsImportRowStatus = "duplicate"
+	ChildMaterialsImportRowStatusImported  ChildMaterialsImportRowStatus = "imported"
+	ChildMaterialsImportRowStatusInvalid   ChildMaterialsImportRowStatus = "invalid"
+	ChildMaterialsImportRowStatusNeedsTotp ChildMaterialsImportRowStatus = "needs_totp"
+)
+
+// Valid indicates whether the value is a known member of the ChildMaterialsImportRowStatus enum.
+func (e ChildMaterialsImportRowStatus) Valid() bool {
+	switch e {
+	case ChildMaterialsImportRowStatusDuplicate:
+		return true
+	case ChildMaterialsImportRowStatusImported:
+		return true
+	case ChildMaterialsImportRowStatusInvalid:
+		return true
+	case ChildMaterialsImportRowStatusNeedsTotp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateTargetAccountProbesProbeStatus.
 const (
 	CreateTargetAccountProbesProbeStatusAccountProblem        CreateTargetAccountProbesProbeStatus = "account_problem"
@@ -744,6 +786,24 @@ const (
 func (e RevokeDeliveryCardResponseStatus) Valid() bool {
 	switch e {
 	case RevokeDeliveryCardResponseStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TargetAccountMaterialStatus.
+const (
+	TargetAccountMaterialStatusComplete  TargetAccountMaterialStatus = "complete"
+	TargetAccountMaterialStatusNeedsTotp TargetAccountMaterialStatus = "needs_totp"
+)
+
+// Valid indicates whether the value is a known member of the TargetAccountMaterialStatus enum.
+func (e TargetAccountMaterialStatus) Valid() bool {
+	switch e {
+	case TargetAccountMaterialStatusComplete:
+		return true
+	case TargetAccountMaterialStatusNeedsTotp:
 		return true
 	default:
 		return false
@@ -1430,6 +1490,42 @@ type CardActivation struct {
 // CardActivationStatus defines model for CardActivation.Status.
 type CardActivationStatus string
 
+// ChildMaterialsExport defines model for ChildMaterialsExport.
+type ChildMaterialsExport struct {
+	AccountIds    *[]openapi_types.UUID     `json:"accountIds,omitempty"`
+	Confirmed     bool                      `json:"confirmed"`
+	ExpectedCount int                       `json:"expectedCount"`
+	Scope         ChildMaterialsExportScope `json:"scope"`
+	Search        *string                   `json:"search,omitempty"`
+}
+
+// ChildMaterialsExportScope defines model for ChildMaterialsExport.Scope.
+type ChildMaterialsExportScope string
+
+// ChildMaterialsImport defines model for ChildMaterialsImport.
+type ChildMaterialsImport struct {
+	Content string `json:"content"`
+}
+
+// ChildMaterialsImportResult defines model for ChildMaterialsImportResult.
+type ChildMaterialsImportResult struct {
+	Duplicate int                       `json:"duplicate"`
+	Imported  int                       `json:"imported"`
+	Invalid   int                       `json:"invalid"`
+	Rows      []ChildMaterialsImportRow `json:"rows"`
+}
+
+// ChildMaterialsImportRow defines model for ChildMaterialsImportRow.
+type ChildMaterialsImportRow struct {
+	Identifier *string                       `json:"identifier,omitempty"`
+	Line       int                           `json:"line"`
+	Message    *string                       `json:"message,omitempty"`
+	Status     ChildMaterialsImportRowStatus `json:"status"`
+}
+
+// ChildMaterialsImportRowStatus defines model for ChildMaterialsImportRow.Status.
+type ChildMaterialsImportRowStatus string
+
 // CreateBinding defines model for CreateBinding.
 type CreateBinding struct {
 	MotherAccountId openapi_types.UUID `json:"motherAccountId"`
@@ -1980,24 +2076,28 @@ type SessionList struct {
 
 // TargetAccount defines model for TargetAccount.
 type TargetAccount struct {
-	DisplayLabel          string                     `json:"displayLabel"`
-	HasPassword           bool                       `json:"hasPassword"`
-	HasRecovery           bool                       `json:"hasRecovery"`
-	HasTotp               bool                       `json:"hasTotp"`
-	Id                    openapi_types.UUID         `json:"id"`
-	Identifier            string                     `json:"identifier"`
-	LastVerifiedAt        *time.Time                 `json:"lastVerifiedAt,omitempty"`
-	LatestProbeEndpoint   *string                    `json:"latestProbeEndpoint,omitempty"`
-	LatestProbeErrorCode  *string                    `json:"latestProbeErrorCode,omitempty"`
-	LatestProbeHttpStatus *int                       `json:"latestProbeHttpStatus,omitempty"`
-	LatestProbeOrigin     *string                    `json:"latestProbeOrigin,omitempty"`
-	LatestProbeStatus     *TargetProbeClassification `json:"latestProbeStatus,omitempty"`
-	LatestProbedAt        *time.Time                 `json:"latestProbedAt,omitempty"`
-	SecretRevision        int64                      `json:"secretRevision"`
-	Status                TargetAccountStatus        `json:"status"`
-	UpdatedAt             time.Time                  `json:"updatedAt"`
-	Version               int64                      `json:"version"`
+	DisplayLabel          string                      `json:"displayLabel"`
+	HasPassword           bool                        `json:"hasPassword"`
+	HasRecovery           bool                        `json:"hasRecovery"`
+	HasTotp               bool                        `json:"hasTotp"`
+	Id                    openapi_types.UUID          `json:"id"`
+	Identifier            string                      `json:"identifier"`
+	LastVerifiedAt        *time.Time                  `json:"lastVerifiedAt,omitempty"`
+	LatestProbeEndpoint   *string                     `json:"latestProbeEndpoint,omitempty"`
+	LatestProbeErrorCode  *string                     `json:"latestProbeErrorCode,omitempty"`
+	LatestProbeHttpStatus *int                        `json:"latestProbeHttpStatus,omitempty"`
+	LatestProbeOrigin     *string                     `json:"latestProbeOrigin,omitempty"`
+	LatestProbeStatus     *TargetProbeClassification  `json:"latestProbeStatus,omitempty"`
+	LatestProbedAt        *time.Time                  `json:"latestProbedAt,omitempty"`
+	MaterialStatus        TargetAccountMaterialStatus `json:"materialStatus"`
+	SecretRevision        int64                       `json:"secretRevision"`
+	Status                TargetAccountStatus         `json:"status"`
+	UpdatedAt             time.Time                   `json:"updatedAt"`
+	Version               int64                       `json:"version"`
 }
+
+// TargetAccountMaterialStatus defines model for TargetAccount.MaterialStatus.
+type TargetAccountMaterialStatus string
 
 // TargetAccountStatus defines model for TargetAccount.Status.
 type TargetAccountStatus string
@@ -2417,6 +2517,16 @@ type CreateMotherWorkspaceBindingParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// ExportChildMaterialsParams defines parameters for ExportChildMaterials.
+type ExportChildMaterialsParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// ImportChildMaterialsParams defines parameters for ImportChildMaterials.
+type ImportChildMaterialsParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // OpenRecoveryGateParams defines parameters for OpenRecoveryGate.
 type OpenRecoveryGateParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
@@ -2648,6 +2758,12 @@ type CreateRemovalReconciliationJSONRequestBody = RefreshJoinRequest
 // CreateMotherWorkspaceBindingJSONRequestBody defines body for CreateMotherWorkspaceBinding for application/json ContentType.
 type CreateMotherWorkspaceBindingJSONRequestBody = CreateBinding
 
+// ExportChildMaterialsJSONRequestBody defines body for ExportChildMaterials for application/json ContentType.
+type ExportChildMaterialsJSONRequestBody = ChildMaterialsExport
+
+// ImportChildMaterialsJSONRequestBody defines body for ImportChildMaterials for application/json ContentType.
+type ImportChildMaterialsJSONRequestBody = ChildMaterialsImport
+
 // OpenRecoveryGateJSONRequestBody defines body for OpenRecoveryGate for application/json ContentType.
 type OpenRecoveryGateJSONRequestBody = OpenRecoveryGateRequest
 
@@ -2767,6 +2883,12 @@ type ServerInterface interface {
 
 	// (POST /api/owner/v1/bindings)
 	CreateMotherWorkspaceBinding(w http.ResponseWriter, r *http.Request, params CreateMotherWorkspaceBindingParams)
+
+	// (POST /api/owner/v1/child-materials/export)
+	ExportChildMaterials(w http.ResponseWriter, r *http.Request, params ExportChildMaterialsParams)
+
+	// (POST /api/owner/v1/child-materials/import)
+	ImportChildMaterials(w http.ResponseWriter, r *http.Request, params ImportChildMaterialsParams)
 
 	// (GET /api/owner/v1/csrf)
 	GetOwnerCsrf(w http.ResponseWriter, r *http.Request)
@@ -4042,6 +4164,96 @@ func (siw *ServerInterfaceWrapper) CreateMotherWorkspaceBinding(w http.ResponseW
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateMotherWorkspaceBinding(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExportChildMaterials operation middleware
+func (siw *ServerInterfaceWrapper) ExportChildMaterials(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExportChildMaterialsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportChildMaterials(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ImportChildMaterials operation middleware
+func (siw *ServerInterfaceWrapper) ImportChildMaterials(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ImportChildMaterialsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportChildMaterials(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6219,6 +6431,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/refresh", wrapper.RefreshWorkspaceFacts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspace-reads/{readId}", wrapper.GetWorkspaceReadStatus)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/manual-verification", wrapper.CreateWorkspaceManualVerification)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/child-materials/import", wrapper.ImportChildMaterials)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/child-materials/export", wrapper.ExportChildMaterials)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/target-accounts", wrapper.ListTargetAccounts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/target-accounts", wrapper.CreateTargetAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/target-accounts/import-preview", wrapper.PreviewTargetAccountImport)

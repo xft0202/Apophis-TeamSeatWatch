@@ -80,6 +80,44 @@ export async function refreshOwnerSession(): Promise<void> {
   throwIfFailed(response);
 }
 
+export async function listChildMaterials(page: number, search: string): Promise<components['schemas']['TargetAccountList']> {
+  const response = await ownerApi.GET('/api/owner/v1/target-accounts', {
+    params: { query: { page, page_size: 20, sort: 'identifier_asc', ...(search ? { search } : {}) } },
+  });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function importChildMaterials(content: string): Promise<components['schemas']['ChildMaterialsImportResult']> {
+  const response = await ownerApi.POST('/api/owner/v1/child-materials/import', {
+    params: { header: await mutationHeaders() }, body: { content },
+  });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function updateChildMaterial(account: components['schemas']['TargetAccount'], password: string, totpSecret: string): Promise<void> {
+  const response = await ownerApi.PATCH('/api/owner/v1/target-accounts/{targetAccountId}', {
+    params: { path: { targetAccountId: account.id }, header: { ...(await mutationHeaders()), 'If-Match': `"${account.version}"` } },
+    body: { displayLabel: account.displayLabel, status: account.status, password, totpSecret },
+  });
+  throwIfFailed(response);
+}
+
+export async function exportChildMaterials(scope: 'selected' | 'filtered', accountIds: string[], search: string, expectedCount: number): Promise<string> {
+  const body = scope === 'selected'
+    ? { scope, accountIds, expectedCount, confirmed: true }
+    : { scope, search, expectedCount, confirmed: true };
+  const response = await ownerApi.POST('/api/owner/v1/child-materials/export', {
+    params: { header: await mutationHeaders() }, body,
+  });
+  throwIfFailed(response);
+  if (typeof response.data !== 'string') throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
 export async function listMotherAccounts(search = ''): Promise<components['schemas']['MotherAccountList']> {
   const query = search ? { page: 1, page_size: 100, search } : { page: 1, page_size: 100 };
   const response = await ownerApi.GET('/api/owner/v1/mother-accounts', {

@@ -88,7 +88,7 @@ func (h *OwnerAuthHandler) joinPreview(r *http.Request, batchID string) (ownerap
 		err = h.pool.QueryRow(r.Context(), `SELECT count(*) FROM tsw_batch_targets selected
 			JOIN tsw_target_accounts target ON target.id=selected.target_account_id
 			LEFT JOIN tsw_target_credentials credentials ON credentials.target_account_id=target.id
-			WHERE selected.batch_id=$1 AND (target.status<>'active' OR credentials.target_account_id IS NULL)`, batchID).Scan(&unready)
+			WHERE selected.batch_id=$1 AND (target.status<>'active' OR credentials.material_status IS DISTINCT FROM 'complete')`, batchID).Scan(&unready)
 		if err != nil {
 			return ownerapi.JoinPreview{}, err
 		}
@@ -146,7 +146,7 @@ func (h *OwnerAuthHandler) createJoinOperation(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	rows, err := tx.Query(r.Context(), `SELECT selected.target_account_id::text,target.status,(credentials.target_account_id IS NOT NULL)
+	rows, err := tx.Query(r.Context(), `SELECT selected.target_account_id::text,target.status,(credentials.material_status='complete')
 		FROM tsw_batch_targets selected
 		JOIN tsw_target_accounts target ON target.id=selected.target_account_id
 		LEFT JOIN tsw_target_credentials credentials ON credentials.target_account_id=target.id

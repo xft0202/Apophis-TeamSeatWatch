@@ -12,6 +12,7 @@ import {
   PasswordInput,
   Stack,
   Switch,
+  Tabs,
   Text,
   TextInput,
   Title,
@@ -28,6 +29,7 @@ import {
 } from './auth';
 import { appTheme } from '../shared/theme';
 import MotherMaterialsView from './MotherMaterialsView';
+import ChildMaterialsView from './ChildMaterialsView';
 import {
   destinationApi,
   type Destination,
@@ -311,7 +313,13 @@ function SignedInView({
               </Stack>
             </Paper>
 
-            <MotherMaterialsView />
+            <Paper withBorder radius={12} p={{ base: 'lg', sm: 'xl' }}>
+              <Tabs defaultValue="mother">
+                <Tabs.List><Tabs.Tab value="mother">母号</Tabs.Tab><Tabs.Tab value="child">子号</Tabs.Tab></Tabs.List>
+                <Tabs.Panel value="mother" pt="xl"><MotherMaterialsView /></Tabs.Panel>
+                <Tabs.Panel value="child" pt="xl"><ChildMaterialsView /></Tabs.Panel>
+              </Tabs>
+            </Paper>
             <DeliveryDestinationPanel />
           </Stack>
         </Container>

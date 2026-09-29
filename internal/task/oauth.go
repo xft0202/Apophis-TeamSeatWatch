@@ -13,6 +13,7 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/audit"
 	oauthdomain "github.com/xft0202/Apophis-TeamSeatWatch/internal/oauth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
+	targetdomain "github.com/xft0202/Apophis-TeamSeatWatch/internal/target"
 )
 
 var ErrDeliveryAttemptSuperseded = errors.New("oauth generation superseded")
@@ -81,7 +82,7 @@ func (s *Store) DeliveryTarget(ctx context.Context, item Task) (DeliveryTarget, 
 		JOIN tsw_mother_workspace_bindings binding ON binding.id=batch.binding_id
 		JOIN tsw_workspaces workspace ON workspace.id=binding.workspace_id
 		JOIN tsw_target_accounts target ON target.id=membership.target_account_id AND target.status='active'
-		JOIN tsw_target_credentials credentials ON credentials.target_account_id=target.id
+		JOIN tsw_target_credentials credentials ON credentials.target_account_id=target.id AND credentials.material_status='complete'
 		WHERE task.id=$1 AND task.task_type IN ('oauth_generate','oauth_probe')
 		AND membership.state='active' AND batch.status<>'ended'`, item.ID).Scan(
 		&target.AssetID, &target.MembershipID, &batchID, &target.WorkspaceID,
@@ -90,11 +91,8 @@ func (s *Store) DeliveryTarget(ctx context.Context, item Task) (DeliveryTarget, 
 	if err != nil {
 		return DeliveryTarget{}, err
 	}
-	target.Password, target.TOTPSecret, target.RecoverySecret = string(password), string(totp), string(recovery)
-	clear(password)
-	clear(totp)
-	clear(recovery)
-	return target, nil
+	target.Password, target.TOTPSecret, target.RecoverySecret, err = s.openTargetSecrets(password, totp, recovery)
+	return target, err
 }
 
 func (s *Store) DeliveryReclaimTarget(ctx context.Context, item Task) (DeliveryReclaimTarget, error) {
@@ -111,7 +109,7 @@ func (s *Store) DeliveryReclaimTarget(ctx context.Context, item Task) (DeliveryR
 		JOIN tsw_mother_workspace_bindings binding ON binding.id=batch.binding_id
 		JOIN tsw_workspaces workspace ON workspace.id=binding.workspace_id
 		JOIN tsw_target_accounts target ON target.id=membership.target_account_id AND target.status='active'
-		JOIN tsw_target_credentials credentials ON credentials.target_account_id=target.id
+		JOIN tsw_target_credentials credentials ON credentials.target_account_id=target.id AND credentials.material_status='complete'
 		JOIN tsw_orders ord ON ord.membership_id=membership.id AND ord.oauth_asset_id=asset.id
 		JOIN tsw_delivery_versions version ON version.id=ord.current_delivery_version_id AND version.oauth_asset_id=asset.id
 		JOIN tsw_cards card ON card.id=ord.card_id AND card.membership_id=membership.id
@@ -124,11 +122,27 @@ func (s *Store) DeliveryReclaimTarget(ctx context.Context, item Task) (DeliveryR
 	if err != nil {
 		return DeliveryReclaimTarget{}, err
 	}
-	target.Password, target.TOTPSecret, target.RecoverySecret = string(password), string(totp), string(recovery)
-	clear(password)
-	clear(totp)
-	clear(recovery)
-	return target, nil
+	target.Password, target.TOTPSecret, target.RecoverySecret, err = s.openTargetSecrets(password, totp, recovery)
+	return target, err
+}
+
+func (s *Store) openTargetSecrets(password, totp, recovery []byte) (string, string, string, error) {
+	defer clear(password)
+	defer clear(totp)
+	defer clear(recovery)
+	pass, err := targetdomain.OpenMaterial(password, s.keyRing)
+	if err != nil {
+		return "", "", "", err
+	}
+	secret, err := targetdomain.OpenMaterial(totp, s.keyRing)
+	if err != nil {
+		return "", "", "", err
+	}
+	if !targetdomain.CompleteTOTP(secret) {
+		return "", "", "", errors.New("2FA material needs repair")
+	}
+	recover, err := targetdomain.OpenMaterial(recovery, s.keyRing)
+	return pass, secret, recover, err
 }
 
 // EnqueueCustomerDeliveryReclaimTx creates one idempotent customer reclaim task.

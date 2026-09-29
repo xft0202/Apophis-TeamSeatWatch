@@ -8,24 +8,46 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/audit"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/identity"
 	targetdomain "github.com/xft0202/Apophis-TeamSeatWatch/internal/target"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/task"
 )
 
+func targetMaterialStatus(totp string) string {
+	if targetdomain.CompleteTOTP(totp) {
+		return "complete"
+	}
+	return "needs_totp"
+}
+
+func (h *OwnerAuthHandler) sealTargetFields(password, totp, recovery string) ([]byte, []byte, []byte, string, error) {
+	sealedPassword, err := targetdomain.SealMaterial(password, h.keyRing)
+	if err != nil {
+		return nil, nil, nil, "", err
+	}
+	sealedTotp, err := targetdomain.SealMaterial(totp, h.keyRing)
+	if err != nil {
+		return nil, nil, nil, "", err
+	}
+	sealedRecovery, err := targetdomain.SealMaterial(recovery, h.keyRing)
+	return sealedPassword, sealedTotp, sealedRecovery, targetMaterialStatus(totp), err
+}
+
 func scanTargetAccount(scanner interface{ Scan(...any) error }) (ownerapi.TargetAccount, error) {
 	var item ownerapi.TargetAccount
 	var probeStatus *string
 	err := scanner.Scan(
 		&item.Id, &item.Identifier, &item.DisplayLabel, &item.Status,
-		&item.HasPassword, &item.HasTotp, &item.HasRecovery, &item.SecretRevision,
+		&item.HasPassword, &item.HasTotp, &item.HasRecovery, &item.MaterialStatus, &item.SecretRevision,
 		&probeStatus, &item.LatestProbeHttpStatus, &item.LatestProbeErrorCode,
 		&item.LatestProbeEndpoint, &item.LatestProbeOrigin, &item.LatestProbedAt,
 		&item.LastVerifiedAt, &item.Version, &item.UpdatedAt,
@@ -38,8 +60,8 @@ func scanTargetAccount(scanner interface{ Scan(...any) error }) (ownerapi.Target
 }
 
 const targetProjectionSQL = `target.id,target.identifier,target.display_label,target.status,
-	octet_length(credentials.password_secret)>0,credentials.totp_secret IS NOT NULL,
-	credentials.recovery_secret IS NOT NULL,credentials.secret_revision,
+	octet_length(credentials.password_secret)>0,credentials.material_status='complete',
+	credentials.recovery_secret IS NOT NULL,credentials.material_status,credentials.secret_revision,
 	credentials.latest_probe_status,credentials.latest_probe_http_status,
 	credentials.latest_probe_error_code,credentials.latest_probe_endpoint_key,
 	credentials.latest_probe_origin,credentials.latest_probed_at,
@@ -167,10 +189,16 @@ func (h *OwnerAuthHandler) createTargetAccount(w http.ResponseWriter, r *http.Re
 		h.targetConflict(w, r, owner, "target_account.create", err)
 		return
 	}
-	if tx.Commit(r.Context()) != nil {
+	token, idle, err := h.rotateSessionTx(r.Context(), tx, owner, "session_revocation", r)
+	if err != nil {
 		h.targetFailure(w, r, err)
 		return
 	}
+	if err = tx.Commit(r.Context()); err != nil {
+		h.targetFailure(w, r, err)
+		return
+	}
+	auth.SetSessionCookie(w, token, idle, h.secureCookies)
 	setETag(w, item.Version)
 	writeJSON(w, http.StatusCreated, item)
 }
@@ -191,7 +219,11 @@ func (h *OwnerAuthHandler) insertTargetAccountTx(r *http.Request, tx pgx.Tx, ide
 	if err != nil {
 		return ownerapi.TargetAccount{}, err
 	}
-	_, err = tx.Exec(r.Context(), `INSERT INTO tsw_target_credentials (target_account_id,password_secret,totp_secret,recovery_secret,platform_subject_id) VALUES ($1,$2,NULLIF($3,'')::bytea,NULLIF($4,'')::bytea,NULLIF($5,''))`, id, []byte(password), []byte(totp), []byte(recovery), strings.TrimSpace(subject))
+	sealedPassword, sealedTotp, sealedRecovery, status, sealErr := h.sealTargetFields(password, totp, recovery)
+	if sealErr != nil {
+		return ownerapi.TargetAccount{}, sealErr
+	}
+	_, err = tx.Exec(r.Context(), `INSERT INTO tsw_target_credentials (target_account_id,password_secret,totp_secret,recovery_secret,platform_subject_id,material_status,materials_sealed) VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,true)`, id, sealedPassword, sealedTotp, sealedRecovery, strings.TrimSpace(subject), status)
 	if err != nil {
 		return ownerapi.TargetAccount{}, err
 	}
@@ -271,24 +303,43 @@ func (h *OwnerAuthHandler) updateTargetAccount(w http.ResponseWriter, r *http.Re
 	}
 	secretRotation := request.Password != nil || request.TotpSecret != nil || request.RecoverySecret != nil
 	if (request.Password != nil && stringValue(request.Password) == "") ||
-		(request.TotpSecret != nil && stringValue(request.TotpSecret) == "") ||
 		(request.RecoverySecret != nil && stringValue(request.RecoverySecret) == "") {
 		h.rejectOwnerMutation(w, r, owner, "target_account.update", "invalid_request", 422, "invalid_target_account", "Invalid Target Account", "Secret material cannot be empty")
 		return
 	}
 	credentialChanged := secretRotation || request.PlatformSubjectId != nil
 	if err == nil && credentialChanged {
+		var sealedPassword, sealedTotp, sealedRecovery []byte
+		status := ""
+		if request.Password != nil {
+			sealedPassword, err = targetdomain.SealMaterial(*request.Password, h.keyRing)
+		}
+		if err == nil && request.TotpSecret != nil {
+			sealedTotp, err = targetdomain.SealMaterial(*request.TotpSecret, h.keyRing)
+			status = targetMaterialStatus(*request.TotpSecret)
+		}
+		if err == nil && request.RecoverySecret != nil {
+			sealedRecovery, err = targetdomain.SealMaterial(*request.RecoverySecret, h.keyRing)
+		}
+		if err != nil {
+			h.targetFailure(w, r, err)
+			return
+		}
 		secretRevision := "secret_revision"
+		probeReset := ""
 		if secretRotation {
 			secretRevision = "secret_revision+1"
+			probeReset = `,latest_probe_status=NULL,latest_probe_http_status=NULL,latest_probe_error_code=NULL,latest_probe_endpoint_key=NULL,latest_probe_origin=NULL,latest_probed_at=NULL,last_verified_at=NULL`
 		}
 		_, err = tx.Exec(r.Context(), `UPDATE tsw_target_credentials SET
-			password_secret=CASE WHEN $2 <> '' THEN $2 ELSE password_secret END,
-			totp_secret=CASE WHEN $3 <> '' THEN $3 ELSE totp_secret END,
-			recovery_secret=CASE WHEN $4 <> '' THEN $4 ELSE recovery_secret END,
+			password_secret=CASE WHEN $6 THEN $2 ELSE password_secret END,
+			totp_secret=CASE WHEN $7 THEN $3 ELSE totp_secret END,
+			recovery_secret=CASE WHEN $8 THEN $4 ELSE recovery_secret END,
+			material_status=CASE WHEN $7 THEN $9 ELSE material_status END,
+			materials_sealed=true,
 			platform_subject_id=CASE WHEN $5 <> '' THEN $5 ELSE platform_subject_id END,
-			secret_revision=`+secretRevision+`,version=version+1 WHERE target_account_id=$1`, targetID,
-			[]byte(stringValue(request.Password)), []byte(stringValue(request.TotpSecret)), []byte(stringValue(request.RecoverySecret)), strings.TrimSpace(stringValue(request.PlatformSubjectId)))
+			secret_revision=`+secretRevision+probeReset+`,version=version+1 WHERE target_account_id=$1`, targetID,
+			sealedPassword, sealedTotp, sealedRecovery, strings.TrimSpace(stringValue(request.PlatformSubjectId)), request.Password != nil, request.TotpSecret != nil, request.RecoverySecret != nil, status)
 	}
 	item, itemErr := targetByIDTx(r, tx, targetID)
 	if err == nil {
@@ -301,9 +352,21 @@ func (h *OwnerAuthHandler) updateTargetAccount(w http.ResponseWriter, r *http.Re
 		}
 		_, err = audit.Write(r.Context(), tx, audit.Event{Type: event, Actor: audit.ActorOwner, OwnerID: owner.OwnerID, RetentionScopeID: targetID, EntityType: "target_account", EntityID: targetID, Outcome: audit.OutcomeSucceeded, CorrelationID: correlation(r), Details: audit.WorkspaceDetails{Result: outcome}, IdempotencyKey: targetID + ":updated:" + strconv.FormatInt(item.Version, 10)})
 	}
-	if err != nil || tx.Commit(r.Context()) != nil {
+	var token string
+	var idle time.Time
+	if err == nil && secretRotation {
+		token, idle, err = h.rotateSessionTx(r.Context(), tx, owner, "session_revocation", r)
+	}
+	if err != nil {
 		h.targetFailure(w, r, err)
 		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		h.targetFailure(w, r, err)
+		return
+	}
+	if secretRotation {
+		auth.SetSessionCookie(w, token, idle, h.secureCookies)
 	}
 	setETag(w, item.Version)
 	writeJSON(w, http.StatusOK, item)
@@ -369,14 +432,22 @@ func (h *OwnerAuthHandler) previewTargetImport(w http.ResponseWriter, r *http.Re
 				return
 			}
 			_, err = tx.Exec(r.Context(), `UPDATE tsw_target_accounts SET display_label=$2,updated_at=now(),version=version+1 WHERE id=$1`, targetID, row.DisplayLabel)
+			sealedPassword, sealedTotp, sealedRecovery, status, sealErr := h.sealTargetFields(row.Password, row.TOTPSecret, row.RecoverySecret)
+			if sealErr != nil {
+				h.targetFailure(w, r, sealErr)
+				return
+			}
 			if err == nil {
 				_, err = tx.Exec(r.Context(), `UPDATE tsw_target_credentials SET
 					password_secret=$2,
-					totp_secret=CASE WHEN octet_length($3::bytea) > 0 THEN $3::bytea ELSE totp_secret END,
-					recovery_secret=CASE WHEN octet_length($4::bytea) > 0 THEN $4::bytea ELSE recovery_secret END,
+					totp_secret=CASE WHEN $3::bytea IS NOT NULL THEN $3 ELSE totp_secret END,
+					recovery_secret=CASE WHEN $4::bytea IS NOT NULL THEN $4 ELSE recovery_secret END,
+					material_status=CASE WHEN $3::bytea IS NOT NULL THEN $6 ELSE material_status END,
+					materials_sealed=true,
 					platform_subject_id=CASE WHEN $5 <> '' THEN $5 ELSE platform_subject_id END,
-					secret_revision=CASE WHEN password_secret IS DISTINCT FROM $2 OR totp_secret IS DISTINCT FROM CASE WHEN octet_length($3::bytea) > 0 THEN $3::bytea ELSE totp_secret END OR recovery_secret IS DISTINCT FROM CASE WHEN octet_length($4::bytea) > 0 THEN $4::bytea ELSE recovery_secret END THEN secret_revision+1 ELSE secret_revision END,
-					version=version+1 WHERE target_account_id=$1`, targetID, []byte(row.Password), []byte(row.TOTPSecret), []byte(row.RecoverySecret), row.PlatformSubjectID)
+					secret_revision=secret_revision+1,
+					latest_probe_status=NULL,latest_probe_http_status=NULL,latest_probe_error_code=NULL,latest_probe_endpoint_key=NULL,latest_probe_origin=NULL,latest_probed_at=NULL,last_verified_at=NULL,
+					version=version+1 WHERE target_account_id=$1`, targetID, sealedPassword, sealedTotp, sealedRecovery, row.PlatformSubjectID, status)
 			}
 			if err == nil {
 				_, err = audit.Write(r.Context(), tx, audit.Event{Type: audit.TargetCredentialsUpdated, Actor: audit.ActorOwner, OwnerID: owner.OwnerID, RetentionScopeID: targetID, EntityType: "target_account", EntityID: targetID, Outcome: audit.OutcomeSucceeded, CorrelationID: correlation(r), Details: audit.WorkspaceDetails{Result: "credentials_updated"}, IdempotencyKey: targetImportAuditKey(targetID, correlation(r), row.Line)})
@@ -400,10 +471,16 @@ func (h *OwnerAuthHandler) previewTargetImport(w http.ResponseWriter, r *http.Re
 		}
 		result.Created++
 	}
-	if tx.Commit(r.Context()) != nil {
+	token, idle, err := h.rotateSessionTx(r.Context(), tx, owner, "session_revocation", r)
+	if err != nil {
 		h.targetFailure(w, r, err)
 		return
 	}
+	if err = tx.Commit(r.Context()); err != nil {
+		h.targetFailure(w, r, err)
+		return
+	}
+	auth.SetSessionCookie(w, token, idle, h.secureCookies)
 	writeJSON(w, http.StatusOK, result)
 }
 

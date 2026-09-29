@@ -21,6 +21,7 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/migrations"
+	targetdomain "github.com/xft0202/Apophis-TeamSeatWatch/internal/target"
 )
 
 type cardIntegrationKeyRing struct{ key [32]byte }
@@ -315,6 +316,14 @@ func seedCardActivationGraph(t *testing.T, ctx context.Context, pool *pgxpool.Po
 	}
 	csrfTokenBytes := bytes.Repeat([]byte{0x55}, 32)
 	csrfToken := base64.RawURLEncoding.EncodeToString(csrfTokenBytes)
+	sealedPassword, err := targetdomain.SealMaterial("password", cardIntegrationKeyRing{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedTotp, err := targetdomain.SealMaterial("JBSWY3DPEHPK3PXP", cardIntegrationKeyRing{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	queries := []struct {
 		query string
 		args  []any
@@ -326,7 +335,7 @@ func seedCardActivationGraph(t *testing.T, ctx context.Context, pool *pgxpool.Po
 		{`INSERT INTO tsw_mother_workspace_bindings(id,mother_account_id,workspace_id) VALUES ($1,$2,$3)`, []any{bindingID, motherID, ids.workspace}},
 		{`INSERT INTO tsw_batches(id,binding_id,sequence_no,status,planned_at) VALUES ($1,$2,1,'serving',now()+interval '1 day')`, []any{batchID, bindingID}},
 		{`INSERT INTO tsw_target_accounts(id,identifier,identifier_hmac,identifier_key_version,display_label) VALUES ($1,'target@example.com',decode(repeat('33',32),'hex'),1,'target')`, []any{targetID}},
-		{`INSERT INTO tsw_target_credentials(target_account_id,password_secret) VALUES ($1,'password')`, []any{targetID}},
+		{`INSERT INTO tsw_target_credentials(target_account_id,password_secret,totp_secret,material_status) VALUES ($1,$2,$3,'complete')`, []any{targetID, sealedPassword, sealedTotp}},
 		{`INSERT INTO tsw_operations(id,owner_id,workspace_id,batch_id,operation_type,idempotency_key,request_hash,input_snapshot,correlation_id) VALUES ($1,$2,$3,$4,'join','card-op1',decode(repeat('44',32),'hex'),'{}','card-integration')`, []any{operationID, ids.owner, ids.workspace, batchID}},
 		{`INSERT INTO tsw_operation_targets(id,operation_id,target_account_id,ordinal) VALUES ($1,$2,$3,1)`, []any{operationTargetID, operationID, targetID}},
 		{`INSERT INTO tsw_batch_memberships(id,batch_id,target_account_id,join_operation_target_id,joined_at) VALUES ($1,$2,$3,$4,now())`, []any{ids.membership, batchID, targetID, operationTargetID}},

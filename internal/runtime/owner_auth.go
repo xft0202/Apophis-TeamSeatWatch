@@ -94,13 +94,17 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 	if err != nil {
 		return nil, func() {}, err
 	}
+	if err := sealExistingTargetMaterials(context.Background(), pool, config.KeyRing); err != nil {
+		pool.Close()
+		return nil, func() {}, err
+	}
 	handler := &OwnerAuthHandler{
 		pool:              pool,
 		keyRing:           config.KeyRing,
 		origins:           config.Origins,
 		dummyPasswordHash: dummy,
 		workspaceFacts:    workspace.NewService(pool, config.KeyRing),
-		workspaceTasks:    task.NewStore(pool),
+		workspaceTasks:    task.NewStore(pool, config.KeyRing),
 		egress:            config.Egress,
 		destinationProbe:  config.DestinationProbe,
 		secureCookies:     config.Origins.SecureCookies(),

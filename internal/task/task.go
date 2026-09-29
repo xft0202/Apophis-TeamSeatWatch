@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/audit"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/auth"
+	targetdomain "github.com/xft0202/Apophis-TeamSeatWatch/internal/target"
 )
 
 var (
@@ -54,9 +56,14 @@ type AttemptRoute struct {
 	Stage       *string
 }
 
-type Store struct{ pool *pgxpool.Pool }
+type Store struct {
+	pool    *pgxpool.Pool
+	keyRing auth.KeyRing
+}
 
-func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
+func NewStore(pool *pgxpool.Pool, ring auth.KeyRing) *Store {
+	return &Store{pool: pool, keyRing: ring}
+}
 
 func (s *Store) RecoveryOpen(ctx context.Context) (bool, error) {
 	var state string
@@ -144,7 +151,10 @@ func (s *Store) TargetProbeTarget(ctx context.Context, targetID string) (TargetP
 		FROM tsw_target_accounts target
 		JOIN tsw_target_credentials credentials ON credentials.target_account_id=target.id
 		WHERE target.id=$1 AND target.status='active'`, targetID).Scan(&target.LoginIdentifier, &password)
-	target.Password = string(password)
+	if err != nil {
+		return TargetProbeTarget{}, err
+	}
+	target.Password, err = targetdomain.OpenMaterial(password, s.keyRing)
 	clear(password)
 	return target, err
 }

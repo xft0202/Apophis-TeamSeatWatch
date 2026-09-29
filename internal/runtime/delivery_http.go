@@ -265,14 +265,15 @@ func (h *OwnerAuthHandler) activateMembershipCard(w http.ResponseWriter, r *http
 		return
 	}
 	defer tx.Rollback(r.Context())
-	var workspaceID, batchStatus, assetStatus string
+	var workspaceID, batchStatus, assetStatus, materialStatus string
 	var deadline time.Time
-	err = tx.QueryRow(r.Context(), `SELECT binding.workspace_id,batch.status,asset.status,batch.planned_at
+	err = tx.QueryRow(r.Context(), `SELECT binding.workspace_id,batch.status,asset.status,batch.planned_at,credential.material_status
 		FROM tsw_batch_memberships membership
 		JOIN tsw_batches batch ON batch.id=membership.batch_id
 		JOIN tsw_mother_workspace_bindings binding ON binding.id=batch.binding_id
 		JOIN tsw_oauth_assets asset ON asset.membership_id=membership.id
-		WHERE membership.id=$1 AND membership.state='active' FOR UPDATE OF membership,batch,asset`, membershipUUID).Scan(&workspaceID, &batchStatus, &assetStatus, &deadline)
+		JOIN tsw_target_credentials credential ON credential.target_account_id=membership.target_account_id
+		WHERE membership.id=$1 AND membership.state='active' FOR UPDATE OF membership,batch,asset,credential`, membershipUUID).Scan(&workspaceID, &batchStatus, &assetStatus, &deadline, &materialStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		h.rejectOwnerMutation(w, r, owner, "card.activate", "target_not_found", http.StatusNotFound, "membership_not_found", "Not Found", "The membership was not found")
 		return
@@ -281,7 +282,7 @@ func (h *OwnerAuthHandler) activateMembershipCard(w http.ResponseWriter, r *http
 		h.deliveryFailure(w, r, err)
 		return
 	}
-	if batchStatus != "serving" || assetStatus != "ready" || !deadline.After(time.Now()) {
+	if batchStatus != "serving" || assetStatus != "ready" || materialStatus != "complete" || !deadline.After(time.Now()) {
 		h.rejectOwnerMutation(w, r, owner, "card.activate", "conflict", http.StatusConflict, "delivery_not_ready", "Conflict", "The OAuth delivery is not ready for card activation")
 		return
 	}

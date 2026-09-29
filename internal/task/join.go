@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/audit"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
+	targetdomain "github.com/xft0202/Apophis-TeamSeatWatch/internal/target"
 )
 
 type JoinTarget struct {
@@ -130,19 +131,22 @@ func (s *Store) JoinTarget(ctx context.Context, item Task) (JoinTarget, error) {
 	err := s.pool.QueryRow(ctx, `
 		SELECT operation.id,batch.id,operation.workspace_id,task.target_account_id,
 			target.identifier,credentials.password_secret,workspace.platform_workspace_id,
-			operation_target.platform_request_may_have_reached,operation_target.platform_request_stage,operation_target.platform_request_started_at
+			operation_target.platform_request_may_have_reached,COALESCE(operation_target.platform_request_stage,''),operation_target.platform_request_started_at
 		FROM tsw_tasks task
 		JOIN tsw_operation_targets operation_target ON operation_target.id=task.operation_target_id
 		JOIN tsw_operations operation ON operation.id=operation_target.operation_id
 		JOIN tsw_batches batch ON batch.id=operation.batch_id
 		JOIN tsw_target_accounts target ON target.id=task.target_account_id AND target.status='active'
-		JOIN tsw_target_credentials credentials ON credentials.target_account_id=target.id
+		JOIN tsw_target_credentials credentials ON credentials.target_account_id=target.id AND credentials.material_status='complete'
 		JOIN tsw_workspaces workspace ON workspace.id=operation.workspace_id
 		WHERE task.id=$1 AND task.task_type IN ('join','join_reconcile')`, item.ID).Scan(
 		&target.OperationID, &target.BatchID, &target.WorkspaceID, &target.TargetID,
 		&target.TargetIdentifier, &password, &target.PlatformWorkspace,
 		&target.PlatformRequestMayHaveReached, &target.PlatformRequestStage, &target.PlatformRequestStartedAt)
-	target.TargetPassword = string(password)
+	if err != nil {
+		return JoinTarget{}, err
+	}
+	target.TargetPassword, err = targetdomain.OpenMaterial(password, s.keyRing)
 	clear(password)
 	return target, err
 }

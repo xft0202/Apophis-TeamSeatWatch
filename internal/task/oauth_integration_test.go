@@ -19,7 +19,13 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/migrations"
 	oauthdomain "github.com/xft0202/Apophis-TeamSeatWatch/internal/oauth"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
+	targetdomain "github.com/xft0202/Apophis-TeamSeatWatch/internal/target"
 )
+
+type oauthIntegrationRing struct{}
+
+func (oauthIntegrationRing) Current() (uint16, [32]byte)            { return 1, [32]byte{1} }
+func (oauthIntegrationRing) Lookup(version uint16) ([32]byte, bool) { return [32]byte{1}, version == 1 }
 
 func TestOAuthStoreFenceIntegration(t *testing.T) {
 	dsn := os.Getenv("TSW_TEST_DATABASE_URL")
@@ -48,7 +54,7 @@ func TestOAuthStoreFenceIntegration(t *testing.T) {
 	defer pool.Close()
 
 	ids := seedOAuthFenceGraph(t, ctx, pool)
-	store := NewStore(pool)
+	store := NewStore(pool, oauthIntegrationRing{})
 	oldLease := uuid.New()
 	if _, err := pool.Exec(ctx, `UPDATE tsw_tasks SET lease_token=$2 WHERE id=$1`, ids.oldTask, oldLease); err != nil {
 		t.Fatal(err)
@@ -145,7 +151,7 @@ func TestClaimDeliveryPreservesOAuthTaskTypeAndLease(t *testing.T) {
 		VALUES ($1,$2,$3,$4,'oauth_generate','integration-claim-delivery','{}','integration-claim','queued',0,3)`, queuedTaskID, ids.membership, ids.asset, ids.workspace); err != nil {
 		t.Fatal(err)
 	}
-	store := NewStore(pool)
+	store := NewStore(pool, oauthIntegrationRing{})
 	claimed, err := store.ClaimDelivery(ctx, "integration-worker", time.Minute, "oauth_generate", AttemptRoute{Mode: "direct"})
 	if err != nil {
 		t.Fatal(err)
@@ -245,7 +251,7 @@ func TestOAuthReclaimWorkerResultMatrixIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := NewStore(pool)
+	store := NewStore(pool, oauthIntegrationRing{})
 	worker := &Worker{Store: store, Egress: leaseManager, ID: "reclaim-integration", LeaseTime: time.Minute}
 	worker.DeliveryRefresh = func(context.Context, *http.Client, string) (platform.DeliveryCredentialSet, error) {
 		t.Fatalf("refresh was called before a confirmed 401")
@@ -463,7 +469,7 @@ func TestOAuthReclaimPublishesCurrentVersionAndRevokesOldAccess(t *testing.T) {
 	}
 
 	item := Task{ID: ids.oldTask, TaskType: "oauth_reclaim", WorkspaceID: ids.workspace, MembershipID: ids.membership, OAuthAssetID: ids.asset, LeaseToken: leaseToken, AttemptNo: 1, CorrelationID: "integration-reclaim"}
-	store := NewStore(pool)
+	store := NewStore(pool, oauthIntegrationRing{})
 	attempt, err := store.BeginDeliveryAttempt(ctx, item)
 	if err != nil {
 		t.Fatal(err)
@@ -544,7 +550,7 @@ func TestOAuthCrashBeforePublishLeavesNoDeliveryVersion(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE tsw_tasks SET lease_token=$2 WHERE id=$1`, ids.oldTask, leaseToken); err != nil {
 		t.Fatal(err)
 	}
-	store := NewStore(pool)
+	store := NewStore(pool, oauthIntegrationRing{})
 	item := Task{ID: ids.oldTask, TaskType: "oauth_generate", WorkspaceID: ids.workspace, MembershipID: ids.membership, OAuthAssetID: ids.asset, LeaseToken: leaseToken, AttemptNo: 1, CorrelationID: "integration-crash-before-publish"}
 	attempt, err := store.BeginDeliveryAttempt(ctx, item)
 	if err != nil {
@@ -594,7 +600,7 @@ func TestOAuthPublishRetryAfterCommitIsFenced(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE tsw_tasks SET lease_token=$2 WHERE id=$1`, ids.oldTask, leaseToken); err != nil {
 		t.Fatal(err)
 	}
-	store := NewStore(pool)
+	store := NewStore(pool, oauthIntegrationRing{})
 	item := Task{ID: ids.oldTask, TaskType: "oauth_generate", WorkspaceID: ids.workspace, MembershipID: ids.membership, OAuthAssetID: ids.asset, LeaseToken: leaseToken, AttemptNo: 1, CorrelationID: "integration-publish-retry"}
 	attempt, err := store.BeginDeliveryAttempt(ctx, item)
 	if err != nil {
@@ -626,6 +632,14 @@ func seedOAuthFenceGraph(t *testing.T, ctx context.Context, pool *pgxpool.Pool) 
 	t.Helper()
 	id := func() string { return uuid.New().String() }
 	ids := fenceGraphIDs{owner: id(), mother: id(), workspace: id(), binding: id(), batch: id(), target: id(), operation: id(), operationTarget: id(), membership: id(), asset: id(), oldTask: id()}
+	sealedPassword, err := targetdomain.SealMaterial("password", oauthIntegrationRing{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedTotp, err := targetdomain.SealMaterial("JBSWY3DPEHPK3PXP", oauthIntegrationRing{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	queries := []struct {
 		query string
 		args  []any
@@ -636,7 +650,7 @@ func seedOAuthFenceGraph(t *testing.T, ctx context.Context, pool *pgxpool.Pool) 
 		{`INSERT INTO tsw_mother_workspace_bindings(id,mother_account_id,workspace_id) VALUES ($1,$2,$3)`, []any{ids.binding, ids.mother, ids.workspace}},
 		{`INSERT INTO tsw_batches(id,binding_id,sequence_no,planned_at) VALUES ($1,$2,1,now()+interval '1 day')`, []any{ids.batch, ids.binding}},
 		{`INSERT INTO tsw_target_accounts(id,identifier,identifier_hmac,identifier_key_version,display_label) VALUES ($1,'target@example.com',decode(repeat('33',32),'hex'),1,'target')`, []any{ids.target}},
-		{`INSERT INTO tsw_target_credentials(target_account_id,password_secret,platform_subject_id) VALUES ($1,'password','subject')`, []any{ids.target}},
+		{`INSERT INTO tsw_target_credentials(target_account_id,password_secret,totp_secret,material_status,materials_sealed,platform_subject_id) VALUES ($1,$2,$3,'complete',true,'subject')`, []any{ids.target, sealedPassword, sealedTotp}},
 		{`INSERT INTO tsw_operations(id,owner_id,workspace_id,batch_id,operation_type,idempotency_key,request_hash,input_snapshot,correlation_id) VALUES ($1,$2,$3,$4,'join','integration-op',decode(repeat('44',32),'hex'),'{}','integration')`, []any{ids.operation, ids.owner, ids.workspace, ids.batch}},
 		{`INSERT INTO tsw_operation_targets(id,operation_id,target_account_id,ordinal) VALUES ($1,$2,$3,1)`, []any{ids.operationTarget, ids.operation, ids.target}},
 		{`INSERT INTO tsw_batch_memberships(id,batch_id,target_account_id,join_operation_target_id,joined_at) VALUES ($1,$2,$3,$4,now())`, []any{ids.membership, ids.batch, ids.target, ids.operationTarget}},

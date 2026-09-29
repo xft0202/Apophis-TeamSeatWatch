@@ -536,6 +536,50 @@ paths:
                 $ref: '#/components/schemas/Workspace'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/child-materials/import:
+    post:
+      operationId: importChildMaterials
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChildMaterialsImport'
+      responses:
+        '200':
+          description: Per-physical-line result; no password or 2FA returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildMaterialsImportResult'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/child-materials/export:
+    post:
+      operationId: exportChildMaterials
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChildMaterialsExport'
+      responses:
+        '200':
+          description: Three-field TXT; no session material
+          content:
+            text/plain:
+              schema:
+                type: string
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/target-accounts:
     get:
       operationId: listTargetAccounts
@@ -2196,6 +2240,65 @@ components:
         - definitely_unavailable
         - transient_failure
         - unknown
+    ChildMaterialsImport:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 10485760
+    ChildMaterialsImportResult:
+      type: object
+      additionalProperties: false
+      required: [rows, imported, duplicate, invalid]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChildMaterialsImportRow'
+        imported:
+          type: integer
+        duplicate:
+          type: integer
+        invalid:
+          type: integer
+    ChildMaterialsImportRow:
+      type: object
+      additionalProperties: false
+      required: [line, status]
+      properties:
+        line:
+          type: integer
+        status:
+          type: string
+          enum: [imported, duplicate, invalid, needs_totp]
+        identifier:
+          type: string
+        message:
+          type: string
+    ChildMaterialsExport:
+      type: object
+      additionalProperties: false
+      required: [scope, expectedCount, confirmed]
+      properties:
+        scope:
+          type: string
+          enum: [selected, filtered]
+        accountIds:
+          type: array
+          maxItems: 10000
+          items:
+            type: string
+            format: uuid
+        search:
+          type: string
+          maxLength: 254
+        expectedCount:
+          type: integer
+          minimum: 1
+        confirmed:
+          type: boolean
     TargetAccount:
       type: object
       additionalProperties: false
@@ -2207,6 +2310,7 @@ components:
         - hasPassword
         - hasTotp
         - hasRecovery
+        - materialStatus
         - secretRevision
         - version
         - updatedAt
@@ -2229,6 +2333,9 @@ components:
           type: boolean
         hasRecovery:
           type: boolean
+        materialStatus:
+          type: string
+          enum: [complete, needs_totp]
         secretRevision:
           type: integer
           format: int64
@@ -2326,7 +2433,6 @@ components:
           maxLength: 1024
         totpSecret:
           type: string
-          minLength: 1
           maxLength: 1024
         recoverySecret:
           type: string

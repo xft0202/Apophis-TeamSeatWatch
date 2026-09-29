@@ -149,7 +149,7 @@ func newRemovalWorker(t *testing.T, pool *pgxpool.Pool, adapter *removalScenario
 		t.Fatal(err)
 	}
 	return &Worker{
-		Store: NewStore(pool), Facts: workspace.NewService(pool, removalIntegrationKeyRing{}), Egress: leases,
+		Store: NewStore(pool, removalIntegrationKeyRing{}), Facts: workspace.NewService(pool, removalIntegrationKeyRing{}), Egress: leases,
 		ID: "remove-integration", LeaseTime: time.Minute,
 		Remover: func(*http.Client, platform.Credentials) (platform.Remover, error) { return adapter, nil },
 	}
@@ -182,7 +182,7 @@ func TestRemovalIntegrationRequiredEgressAdmissionBlocksMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	worker := &Worker{
-		Store: NewStore(pool), Facts: workspace.NewService(pool, removalIntegrationKeyRing{}), Egress: leases,
+		Store: NewStore(pool, removalIntegrationKeyRing{}), Facts: workspace.NewService(pool, removalIntegrationKeyRing{}), Egress: leases,
 		ID: "remove-required-egress", LeaseTime: time.Minute,
 		Remover: func(*http.Client, platform.Credentials) (platform.Remover, error) { return adapter, nil },
 	}
@@ -450,7 +450,7 @@ func TestRemovalIntegrationEndsOnlyAfterEveryExactTargetIsAbsent(t *testing.T) {
 	if batchStatus != "ended" || endedAt == nil || firstState != "removed" || secondState != "removed" {
 		t.Fatalf("batch=%s ended=%v memberships=%s/%s", batchStatus, endedAt, firstState, secondState)
 	}
-	store := NewStore(pool)
+	store := NewStore(pool, removalIntegrationKeyRing{})
 	lateItem := Task{ID: reclaimTaskID, TaskType: "oauth_reclaim", WorkspaceID: graph.workspace, MembershipID: graph.membershipTwo, OAuthAssetID: assetID, LeaseToken: reclaimLease, AttemptNo: 1, CorrelationID: "late-reclaim"}
 	lateAttempt := DeliveryAttempt{ID: reclaimAttemptID, Generation: 2, AttemptNo: 1}
 	lateTarget := DeliveryReclaimTarget{DeliveryTarget: DeliveryTarget{WorkspaceID: graph.workspace, PlatformWorkspace: "workspace-platform", PlatformSubjectID: "subject-two"}, OrderID: orderID, CurrentVersionID: versionID, CardID: cardID}

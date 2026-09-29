@@ -79,6 +79,15 @@ func TestPublicRedeemIntegrationLifecycleAndDynamicAuthorization(t *testing.T) {
 		t.Fatalf("credential status created reclaim tasks=%d", reclaimCheckCount)
 	}
 
+	if _, err := pool.Exec(ctx, `UPDATE tsw_target_credentials SET material_status='needs_totp',version=version+1 WHERE target_account_id=(SELECT target_account_id FROM tsw_batch_memberships WHERE id=$1)`, ids.membership); err != nil {
+		t.Fatal(err)
+	}
+	if blocked := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/confirm", map[string]any{"cardSecret": secret}, nil); blocked.Code != http.StatusNotFound {
+		t.Fatalf("incomplete 2FA permitted claim: %d %s", blocked.Code, blocked.Body.String())
+	}
+	if _, err := pool.Exec(ctx, `UPDATE tsw_target_credentials SET material_status='complete',version=version+1 WHERE target_account_id=(SELECT target_account_id FROM tsw_batch_memberships WHERE id=$1)`, ids.membership); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `UPDATE tsw_batches SET planned_at=now()-interval '1 second' WHERE id=(SELECT batch_id FROM tsw_batch_memberships WHERE id=$1)`, ids.membership); err != nil {
 		t.Fatal(err)
 	}
@@ -146,6 +155,18 @@ func TestPublicRedeemIntegrationLifecycleAndDynamicAuthorization(t *testing.T) {
 		if download.Code != http.StatusOK || download.Header().Get("Content-Type") != "application/json" || !bytes.Equal(download.Body.Bytes(), []byte("{}")) {
 			t.Fatalf("download status=%d body=%s", download.Code, download.Body.String())
 		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE tsw_target_credentials SET material_status='needs_totp',version=version+1 WHERE target_account_id=(SELECT target_account_id FROM tsw_batch_memberships WHERE id=$1)`, ids.membership); err != nil {
+		t.Fatal(err)
+	}
+	if blocked := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/download", nil, accessCookie); blocked.Code != http.StatusNotFound {
+		t.Fatalf("incomplete 2FA permitted download: %d %s", blocked.Code, blocked.Body.String())
+	}
+	if blocked := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/confirm", map[string]any{"cardSecret": secret}, nil); blocked.Code != http.StatusNotFound {
+		t.Fatalf("incomplete 2FA permitted restore: %d %s", blocked.Code, blocked.Body.String())
+	}
+	if _, err := pool.Exec(ctx, `UPDATE tsw_target_credentials SET material_status='complete',version=version+1 WHERE target_account_id=(SELECT target_account_id FROM tsw_batch_memberships WHERE id=$1)`, ids.membership); err != nil {
+		t.Fatal(err)
 	}
 	reclaim := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/reclaim", map[string]any{"cardSecret": secret}, nil)
 	if reclaim.Code != http.StatusAccepted {
