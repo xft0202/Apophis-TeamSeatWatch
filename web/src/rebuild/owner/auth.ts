@@ -118,6 +118,20 @@ export async function exportChildMaterials(scope: 'selected' | 'filtered', accou
   return response.data;
 }
 
+export async function getTargetPersonalAccess(targetAccountId: string): Promise<components['schemas']['TargetPersonalAccess']> {
+  const response = await ownerApi.GET('/api/owner/v1/target-accounts/{targetAccountId}/personal-session', { params: { path: { targetAccountId } } });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function refreshTargetPersonalAccess(targetAccountId: string): Promise<components['schemas']['TargetPersonalAccess']> {
+  const response = await ownerApi.POST('/api/owner/v1/target-accounts/{targetAccountId}/personal-session', { params: { path: { targetAccountId }, header: await mutationHeaders() } });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
 type PersonalScope = components['schemas']['PersonalProbeScope'];
 
 export async function previewPersonalProbes(scope: PersonalScope): Promise<components['schemas']['PersonalProbePreview']> {

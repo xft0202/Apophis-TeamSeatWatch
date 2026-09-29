@@ -13,11 +13,15 @@ import (
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 )
 
-func personalSessionAAD(id uuid.UUID, revision int64) []byte {
-	return []byte(fmt.Sprintf("teamseatwatch:mother-personal-session:v1:%s:%d", id, revision))
+func personalSessionAAD(kind string, id uuid.UUID, revision int64) []byte {
+	return []byte(fmt.Sprintf("teamseatwatch:%s-personal-session:v1:%s:%d", kind, id, revision))
 }
 
 func sealPersonalSession(ring auth.KeyRing, id uuid.UUID, revision int64, session platform.PersonalSession) (uint16, []byte, []byte, error) {
+	return sealSessionFor("mother", ring, id, revision, session)
+}
+
+func sealSessionFor(kind string, ring auth.KeyRing, id uuid.UUID, revision int64, session platform.PersonalSession) (uint16, []byte, []byte, error) {
 	if ring == nil {
 		return 0, nil, nil, errors.New("personal session key ring missing")
 	}
@@ -38,10 +42,14 @@ func sealPersonalSession(ring auth.KeyRing, id uuid.UUID, revision int64, sessio
 	if _, err = rand.Read(nonce); err != nil {
 		return 0, nil, nil, err
 	}
-	return version, nonce, gcm.Seal(nil, nonce, payload, personalSessionAAD(id, revision)), nil
+	return version, nonce, gcm.Seal(nil, nonce, payload, personalSessionAAD(kind, id, revision)), nil
 }
 
 func openPersonalSession(ring auth.KeyRing, id uuid.UUID, revision int64, version uint16, nonce, ciphertext []byte) (platform.PersonalSession, error) {
+	return openSessionFor("mother", ring, id, revision, version, nonce, ciphertext)
+}
+
+func openSessionFor(kind string, ring auth.KeyRing, id uuid.UUID, revision int64, version uint16, nonce, ciphertext []byte) (platform.PersonalSession, error) {
 	if ring == nil {
 		return platform.PersonalSession{}, errors.New("personal session key ring missing")
 	}
@@ -60,7 +68,7 @@ func openPersonalSession(ring auth.KeyRing, id uuid.UUID, revision int64, versio
 	if len(nonce) != gcm.NonceSize() {
 		return platform.PersonalSession{}, errors.New("personal session nonce invalid")
 	}
-	payload, err := gcm.Open(nil, nonce, ciphertext, personalSessionAAD(id, revision))
+	payload, err := gcm.Open(nil, nonce, ciphertext, personalSessionAAD(kind, id, revision))
 	if err != nil {
 		return platform.PersonalSession{}, err
 	}

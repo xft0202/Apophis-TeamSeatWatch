@@ -1326,6 +1326,42 @@ func (e TargetAccountStatus) Valid() bool {
 	}
 }
 
+// Defines values for TargetPersonalAccessStatus.
+const (
+	TargetPersonalAccessStatusInvalidLogin       TargetPersonalAccessStatus = "invalid_login"
+	TargetPersonalAccessStatusMissingCredentials TargetPersonalAccessStatus = "missing_credentials"
+	TargetPersonalAccessStatusNotVerified        TargetPersonalAccessStatus = "not_verified"
+	TargetPersonalAccessStatusReady              TargetPersonalAccessStatus = "ready"
+	TargetPersonalAccessStatusRefreshFailed      TargetPersonalAccessStatus = "refresh_failed"
+	TargetPersonalAccessStatusSessionExpired     TargetPersonalAccessStatus = "session_expired"
+	TargetPersonalAccessStatusUnavailable        TargetPersonalAccessStatus = "unavailable"
+	TargetPersonalAccessStatusVerifying          TargetPersonalAccessStatus = "verifying"
+)
+
+// Valid indicates whether the value is a known member of the TargetPersonalAccessStatus enum.
+func (e TargetPersonalAccessStatus) Valid() bool {
+	switch e {
+	case TargetPersonalAccessStatusInvalidLogin:
+		return true
+	case TargetPersonalAccessStatusMissingCredentials:
+		return true
+	case TargetPersonalAccessStatusNotVerified:
+		return true
+	case TargetPersonalAccessStatusReady:
+		return true
+	case TargetPersonalAccessStatusRefreshFailed:
+		return true
+	case TargetPersonalAccessStatusSessionExpired:
+		return true
+	case TargetPersonalAccessStatusUnavailable:
+		return true
+	case TargetPersonalAccessStatusVerifying:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TargetProbeClassification.
 const (
 	TargetProbeClassificationAccountProblem        TargetProbeClassification = "account_problem"
@@ -2908,6 +2944,17 @@ type TargetAccountList struct {
 	Total    int64           `json:"total"`
 }
 
+// TargetPersonalAccess defines model for TargetPersonalAccess.
+type TargetPersonalAccess struct {
+	CheckedAt       *time.Time                 `json:"checkedAt,omitempty"`
+	ExpiresAt       *time.Time                 `json:"expiresAt,omitempty"`
+	Status          TargetPersonalAccessStatus `json:"status"`
+	TargetAccountId openapi_types.UUID         `json:"targetAccountId"`
+}
+
+// TargetPersonalAccessStatus defines model for TargetPersonalAccess.Status.
+type TargetPersonalAccessStatus string
+
 // TargetProbeBatch defines model for TargetProbeBatch.
 type TargetProbeBatch struct {
 	Items []TargetProbeStatus `json:"items"`
@@ -3504,6 +3551,11 @@ type UpdateTargetAccountParams struct {
 	IfMatch    IfMatch    `json:"If-Match"`
 }
 
+// RefreshTargetPersonalAccessParams defines parameters for RefreshTargetPersonalAccess.
+type RefreshTargetPersonalAccessParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // ListWorkspacesParams defines parameters for ListWorkspaces.
 type ListWorkspacesParams struct {
 	Page             *Page                                 `form:"page,omitempty" json:"page,omitempty"`
@@ -3896,6 +3948,12 @@ type ServerInterface interface {
 
 	// (PATCH /api/owner/v1/target-accounts/{targetAccountId})
 	UpdateTargetAccount(w http.ResponseWriter, r *http.Request, targetAccountId TargetAccountId, params UpdateTargetAccountParams)
+
+	// (GET /api/owner/v1/target-accounts/{targetAccountId}/personal-session)
+	GetTargetPersonalAccess(w http.ResponseWriter, r *http.Request, targetAccountId TargetAccountId)
+
+	// (POST /api/owner/v1/target-accounts/{targetAccountId}/personal-session)
+	RefreshTargetPersonalAccess(w http.ResponseWriter, r *http.Request, targetAccountId TargetAccountId, params RefreshTargetPersonalAccessParams)
 
 	// (GET /api/owner/v1/workspace-reads/{readId})
 	GetWorkspaceReadStatus(w http.ResponseWriter, r *http.Request, readId ReadId)
@@ -7315,6 +7373,86 @@ func (siw *ServerInterfaceWrapper) UpdateTargetAccount(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// GetTargetPersonalAccess operation middleware
+func (siw *ServerInterfaceWrapper) GetTargetPersonalAccess(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "targetAccountId" -------------
+	var targetAccountId TargetAccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "targetAccountId", r.PathValue("targetAccountId"), &targetAccountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "targetAccountId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTargetPersonalAccess(w, r, targetAccountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefreshTargetPersonalAccess operation middleware
+func (siw *ServerInterfaceWrapper) RefreshTargetPersonalAccess(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "targetAccountId" -------------
+	var targetAccountId TargetAccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "targetAccountId", r.PathValue("targetAccountId"), &targetAccountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "targetAccountId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RefreshTargetPersonalAccessParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshTargetPersonalAccess(w, r, targetAccountId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetWorkspaceReadStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetWorkspaceReadStatus(w http.ResponseWriter, r *http.Request) {
 
@@ -8129,6 +8267,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/target-accounts/import", wrapper.ImportTargetAccounts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/target-accounts/{targetAccountId}", wrapper.GetTargetAccount)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/target-accounts/{targetAccountId}", wrapper.UpdateTargetAccount)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/target-accounts/{targetAccountId}/personal-session", wrapper.GetTargetPersonalAccess)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/target-accounts/{targetAccountId}/personal-session", wrapper.RefreshTargetPersonalAccess)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/target-account-probes", wrapper.CreateTargetAccountProbes)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/target-account-probes/{probeId}", wrapper.GetTargetAccountProbe)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/personal-probes/preview", wrapper.PreviewPersonalProbes)

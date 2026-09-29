@@ -3,9 +3,9 @@ import {
   PasswordInput, Radio, ScrollArea, Stack, Table, Text, TextInput, Textarea,
 } from '@mantine/core';
 import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-table';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { components } from '../../generated/owner';
-import { exportChildMaterials, importChildMaterials, listChildMaterials, ownerProblem, updateChildMaterial } from './auth';
+import { exportChildMaterials, getTargetPersonalAccess, importChildMaterials, listChildMaterials, ownerProblem, refreshTargetPersonalAccess, updateChildMaterial } from './auth';
 import { exportRange, togglePage, type ChildScope } from './childSelection';
 import PersonalProbesView from './PersonalProbesView';
 
@@ -31,6 +31,10 @@ export default function ChildMaterialsView() {
   const [confirmed, setConfirmed] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [editing, setEditing] = useState<Child | null>(null);
+  const [personalTarget, setPersonalTarget] = useState<Child | null>(null);
+  const [personalStatus, setPersonalStatus] = useState<components['schemas']['TargetPersonalAccess'] | null>(null);
+  const [personalPending, setPersonalPending] = useState(false);
+  const personalRequestId = useRef(0);
   const [password, setPassword] = useState('');
   const [totp, setTotp] = useState('');
   const [notice, setNotice] = useState('');
@@ -79,10 +83,27 @@ export default function ChildMaterialsView() {
     try {
       await updateChildMaterial(editing, password, totp);
       setEditing(null); setPassword(''); setTotp(''); setConfirmed(false);
+      if (personalTarget?.id === editing.id) { personalRequestId.current++; setPersonalStatus(null); setPersonalTarget(null); }
       setRevision((value) => value + 1);
     } catch (error: unknown) {
       setNotice(ownerProblem(error).status === 412 ? '资料已变化，请刷新后修正。' : '资料修正失败。');
     } finally { setPending(false); }
+  }
+
+  async function showPersonal(target: Child) {
+    const requestId = ++personalRequestId.current;
+    setPersonalTarget(target); setPersonalStatus(null);
+    try { const status = await getTargetPersonalAccess(target.id); if (requestId === personalRequestId.current) setPersonalStatus(status); }
+    catch { if (requestId === personalRequestId.current) setNotice('Personal 会话状态无法加载。'); }
+  }
+
+  async function refreshPersonal() {
+    if (!personalTarget || personalPending) return;
+    const requestId = ++personalRequestId.current;
+    setPersonalPending(true); setNotice('');
+    try { const status = await refreshTargetPersonalAccess(personalTarget.id); if (requestId === personalRequestId.current) setPersonalStatus(status); }
+    catch (error: unknown) { if (requestId === personalRequestId.current) { setNotice(ownerProblem(error).status === 409 ? '账号资料已变化，请重新打开会话状态。' : 'Personal 会话刷新失败。'); setPersonalStatus(null); } }
+    finally { setPersonalPending(false); }
   }
 
   async function download() {
@@ -122,9 +143,13 @@ export default function ChildMaterialsView() {
         <Table.Td><Text ff="monospace" size="sm">{row.original.identifier}</Text></Table.Td>
         <Table.Td>{row.original.identifier.split('@')[1] ?? '—'}</Table.Td>
         <Table.Td><Badge color={row.original.materialStatus === 'complete' ? 'success' : 'warning'} variant="light">{row.original.materialStatus === 'complete' ? '资料已保存' : '资料待补'}</Badge></Table.Td>
-        <Table.Td><Button variant="subtle" size="xs" onClick={() => { setEditing(row.original); setPassword(''); setTotp(''); }}>修正资料</Button></Table.Td>
+        <Table.Td><Group gap="xs"><Button variant="subtle" size="xs" onClick={() => { setEditing(row.original); setPassword(''); setTotp(''); }}>修正资料</Button><Button variant="subtle" size="xs" disabled={personalPending} onClick={() => void showPersonal(row.original)}>Personal 会话</Button></Group></Table.Td>
       </Table.Tr>)}</Table.Tbody></Table></ScrollArea>
       <Group justify="space-between"><Text size="sm">共 {total} 条 · 已选 {selected.size} 条 · 第 {page} 页</Text><Pagination total={Math.max(1, Math.ceil(total / 20))} value={page} onChange={(value) => { setPage(value); setConfirmed(false); }} /></Group>
+      {personalTarget ? <Stack gap="xs"><Group justify="space-between"><Text fw={600}>{personalTarget.identifier} · Personal 会话</Text><Button variant="subtle" size="xs" onClick={() => { personalRequestId.current++; setPersonalTarget(null); setPersonalStatus(null); }}>关闭</Button></Group>
+        <Group><Badge variant="light" color={personalStatus?.status === 'ready' ? 'success' : 'warning'}>{personalStatus?.status ?? '读取中'}</Badge><Button disabled={personalTarget.status !== 'active'} loading={personalPending} onClick={() => void refreshPersonal()}>刷新 Personal 会话</Button></Group>
+        {personalStatus?.expiresAt ? <Text size="xs">有效期至 {new Date(personalStatus.expiresAt).toLocaleString()}</Text> : null}
+      </Stack> : null}
       {editing ? <Paper withBorder p="md"><Stack gap="sm"><Text fw={600}>修正 {editing.identifier}</Text><PasswordInput label="新密码" value={password} onChange={(event) => setPassword(event.currentTarget.value)} /><TextInput label="2FA" value={totp} onChange={(event) => setTotp(event.currentTarget.value)} /><Group justify="flex-end"><Button variant="default" onClick={() => setEditing(null)}>取消</Button><Button disabled={!password} loading={pending} onClick={() => void correct()}>保存修正</Button></Group></Stack></Paper> : null}
       <Radio.Group label="导出范围" value={scope} onChange={(value) => { setScope(value as ChildScope); setConfirmed(false); }}><Group mt="xs"><Radio value="selected" label={`已选跨页 ${selected.size} 条`} /><Radio value="filtered" label={`全部筛选结果 ${total} 条`} /></Group></Radio.Group>
       <Group justify="space-between"><Checkbox checked={confirmed} onChange={(event) => setConfirmed(event.currentTarget.checked)} disabled={loading || range.count < 1} label={`确认导出${scope === 'selected' ? '已选跨页' : '全部筛选结果'} ${range.count} 条`} /><Button onClick={() => void download()} loading={pending} disabled={loading || !confirmed || range.count < 1}>导出 TXT</Button></Group>

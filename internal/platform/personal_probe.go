@@ -11,6 +11,9 @@ import (
 // account-deactivation fact; a raw 403 body or arbitrary error string is not proof.
 // This classifier is independent of the legacy password-backed target probe.
 type PersonalProbeEvidence struct {
+	// A saved generation fences publication if credentials or session rotate mid-probe.
+	SessionGeneration    string
+	SessionRevision      int64
 	HTTPStatus           int
 	ErrorCode            string
 	VerifiedDeactivation bool

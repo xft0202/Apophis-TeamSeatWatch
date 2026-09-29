@@ -12,8 +12,8 @@ import (
 var ErrPersonalCredentialMissing = errors.New("saved Personal credential missing")
 
 // PersonalProbeProvider must use a saved account-level Personal credential only.
-// No identifier, password or TOTP is passed across this boundary. Production
-// fails closed until an independently reviewed Personal credential path exists.
+// No identifier, password or TOTP is passed across this boundary. Missing
+// saved sessions fail closed without falling back to the legacy target probe.
 type PersonalProbeProvider interface {
 	ProbePersonal(context.Context, string) (platform.PersonalProbeEvidence, error)
 }
@@ -75,7 +75,7 @@ func (s *Store) ProcessPersonalProbes(ctx context.Context, provider PersonalProb
 		evidence = platform.PersonalProbeEvidence{}
 	}
 	if probeErr != nil && !errors.Is(probeErr, ErrPersonalCredentialMissing) {
-		evidence = platform.PersonalProbeEvidence{TransportError: probeErr}
+		evidence = platform.PersonalProbeEvidence{TransportError: probeErr, SessionGeneration: evidence.SessionGeneration, SessionRevision: evidence.SessionRevision}
 		outcome = platform.ClassifyPersonalProbe(evidence)
 	}
 	status := "failed"
@@ -102,7 +102,8 @@ func (s *Store) ProcessPersonalProbes(ctx context.Context, provider PersonalProb
 	defer cancel()
 	result, err := s.pool.Exec(saveCtx, `UPDATE tsw_personal_probe_items item SET status=$4,outcome=$5,endpoint=$6,http_status=$7,evidence_code=$8,verified_evidence=$9,finished_at=now()
   FROM tsw_personal_probe_batches batch WHERE item.batch_id=$1 AND item.target_account_id=$2 AND item.attempt_count=$3
-  AND item.status='running' AND batch.id=item.batch_id AND batch.canceled_at IS NULL`, batchID, targetID, attempt, status, string(outcome), endpoint, httpStatus, code, verified)
+  AND item.status='running' AND batch.id=item.batch_id AND batch.canceled_at IS NULL
+  AND ($10::text='' OR EXISTS (SELECT 1 FROM tsw_target_accounts target JOIN tsw_target_credentials credential ON credential.target_account_id=target.id JOIN tsw_target_personal_access access ON access.target_account_id=target.id AND access.secret_revision=credential.secret_revision AND access.status='ready' JOIN tsw_target_personal_sessions session ON session.target_account_id=target.id AND session.secret_revision=credential.secret_revision AND session.attempt=access.attempt AND session.expires_at>now() WHERE target.id=item.target_account_id AND target.status='active' AND credential.secret_revision=$11 AND session.generation::text=$10))`, batchID, targetID, attempt, status, string(outcome), endpoint, httpStatus, code, verified, evidence.SessionGeneration, evidence.SessionRevision)
 	if err != nil {
 		// Best effort diagnostic only: never convert an unpersisted result to
 		// success or claim its classification survived a failed write.

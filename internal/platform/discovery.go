@@ -27,7 +27,7 @@ type PersonalRefreshResult struct {
 }
 
 // PersonalSessionRefresher is a separate explicit password+TOTP operation.
-// The target has no proven Personal login/refresh adapter yet.
+// The caller supplies canonical materials; refresh never runs during save or probe.
 type PersonalSessionRefresher interface {
 	RefreshPersonal(context.Context, MotherMaterial) (PersonalRefreshResult, error)
 }

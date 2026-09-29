@@ -584,6 +584,22 @@ export interface paths {
         patch: operations["updateTargetAccount"];
         trace?: never;
     };
+    "/api/owner/v1/target-accounts/{targetAccountId}/personal-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getTargetPersonalAccess"];
+        put?: never;
+        post: operations["refreshTargetPersonalAccess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/target-account-probes": {
         parameters: {
             query?: never;
@@ -1574,6 +1590,16 @@ export interface components {
         TargetAccountImportResult: {
             created: number;
             existing: number;
+        };
+        TargetPersonalAccess: {
+            /** Format: uuid */
+            targetAccountId: string;
+            /** @enum {string} */
+            status: "not_verified" | "verifying" | "ready" | "invalid_login" | "missing_credentials" | "refresh_failed" | "unavailable" | "session_expired";
+            /** Format: date-time */
+            checkedAt?: string;
+            /** Format: date-time */
+            expiresAt?: string;
         };
         PersonalProbeScope: {
             targetAccountIds?: string[];
@@ -3408,6 +3434,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TargetAccount"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getTargetPersonalAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                targetAccountId: components["parameters"]["TargetAccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Child Personal session status without credentials */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetPersonalAccess"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    refreshTargetPersonalAccess: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                targetAccountId: components["parameters"]["TargetAccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Explicit child Personal session refresh result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetPersonalAccess"];
                 };
             };
             default: components["responses"]["Problem"];

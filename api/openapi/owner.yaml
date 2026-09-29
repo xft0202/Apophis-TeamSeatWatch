@@ -990,6 +990,38 @@ paths:
                 $ref: '#/components/schemas/TargetAccount'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/target-accounts/{targetAccountId}/personal-session:
+    get:
+      operationId: getTargetPersonalAccess
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/TargetAccountId'
+      responses:
+        '200':
+          description: Child Personal session status without credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetPersonalAccess'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: refreshTargetPersonalAccess
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - $ref: '#/components/parameters/TargetAccountId'
+      responses:
+        '200':
+          description: Explicit child Personal session refresh result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetPersonalAccess'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/target-account-probes:
     post:
       operationId: createTargetAccountProbes
@@ -3261,6 +3293,30 @@ components:
           type: integer
         existing:
           type: integer
+    TargetPersonalAccess:
+      type: object
+      required: [targetAccountId, status]
+      properties:
+        targetAccountId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - not_verified
+            - verifying
+            - ready
+            - invalid_login
+            - missing_credentials
+            - refresh_failed
+            - unavailable
+            - session_expired
+        checkedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
     PersonalProbeScope:
       type: object
       additionalProperties: false
