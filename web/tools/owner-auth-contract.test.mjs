@@ -8,6 +8,7 @@ const { fetch } = globalThis;
 let server;
 let baseUrl;
 let authenticated = false;
+const allowedOrigin = 'http://owner.local';
 
 function sendJson(response, status, body, headers = {}) {
   response.writeHead(status, {
@@ -24,7 +25,8 @@ function sendEmpty(response, status, headers = {}) {
 }
 
 function hasCsrf(request) {
-  return request.headers.cookie?.includes('tsw_csrf=contract-token') &&
+  return request.headers.origin === allowedOrigin &&
+    request.headers.cookie?.includes('tsw_csrf=contract-token') &&
     request.headers['x-csrf-token'] === 'contract-token';
 }
 
@@ -127,12 +129,21 @@ test('Owner authentication contract preserves CSRF and session boundaries', asyn
   const mutationHeaders = {
     'content-type': 'application/json',
     cookie: csrfCookie,
+    origin: allowedOrigin,
     'x-csrf-token': 'contract-token',
   };
 
+  const rejectedOrigin = await fetch(`${baseUrl}/api/owner/v1/login`, {
+    method: 'POST',
+    headers: { ...mutationHeaders, origin: 'http://evil.local' },
+    body: JSON.stringify({ username: 'owner', password: 'secret' }),
+  });
+  assert.equal(rejectedOrigin.status, 403);
+  assert.deepEqual(await rejectedOrigin.json(), { code: 'csrf_rejected' });
+
   const rejectedCsrf = await fetch(`${baseUrl}/api/owner/v1/login`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', cookie: csrfCookie },
+    headers: { 'content-type': 'application/json', cookie: csrfCookie, origin: allowedOrigin },
     body: JSON.stringify({ username: 'owner', password: 'secret' }),
   });
   assert.equal(rejectedCsrf.status, 403);
@@ -154,7 +165,7 @@ test('Owner authentication contract preserves CSRF and session boundaries', asyn
   assert.equal(login.status, 204);
   const sessionCookie = login.headers.get('set-cookie').split(';', 1)[0];
   const sessionHeaders = { cookie: `${csrfCookie}; ${sessionCookie}` };
-  const csrfSessionHeaders = { ...sessionHeaders, 'x-csrf-token': 'contract-token' };
+  const csrfSessionHeaders = { ...sessionHeaders, origin: allowedOrigin, 'x-csrf-token': 'contract-token' };
 
   const status = await fetch(`${baseUrl}/api/owner/v1/auth-status`, { headers: sessionHeaders });
   assert.equal(status.status, 200);

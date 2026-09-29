@@ -148,7 +148,7 @@ function LoginView({
             Owner 登录
           </Title>
           {notice ? (
-            <Alert color="red" title="无法登录" mt="xl">
+            <Alert color="error" title="无法登录" mt="xl">
               {notice}
             </Alert>
           ) : null}
@@ -197,6 +197,30 @@ function SignedInView({
 }) {
   const [pendingAction, setPendingAction] = useState<'refresh' | 'logout' | null>(null);
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    const revalidate = async () => {
+      try {
+        await getAuthStatus();
+      } catch (error: unknown) {
+        if (active && ownerProblem(error).status === 401) {
+          clearCsrf();
+          onSignedOut();
+        }
+      }
+    };
+    const interval = window.setInterval(() => void revalidate(), 60_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void revalidate();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [onSignedOut]);
 
   async function refresh() {
     setPendingAction('refresh');
@@ -272,7 +296,7 @@ function SignedInView({
                       {status.username}
                     </Text>
                   </div>
-                  <Badge color="green" variant="light">
+                  <Badge color="success" variant="light">
                     已登录
                   </Badge>
                 </Group>
@@ -291,7 +315,7 @@ function SignedInView({
                     刷新会话
                   </Button>
                 </Group>
-                {message ? <Alert color="blue">{message}</Alert> : null}
+                {message ? <Alert color="indigo">{message}</Alert> : null}
               </Stack>
             </Paper>
           </Stack>
