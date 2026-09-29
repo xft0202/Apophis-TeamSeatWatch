@@ -534,6 +534,50 @@ paths:
                 $ref: '#/components/schemas/Binding'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/workspaces/{workspaceId}/verification:
+    get:
+      operationId: getSelectedWorkspaceVerification
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: motherAccountId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Facts visible through the explicitly selected mother
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectedWorkspaceVerification'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: verifySelectedWorkspace
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifySelectedWorkspaceRequest'
+      responses:
+        '200':
+          description: Latest independent verification attempt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectedWorkspaceVerification'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/workspaces/{workspaceId}/refresh:
     post:
       operationId: refreshWorkspaceFacts
@@ -2416,6 +2460,110 @@ components:
         version:
           type: integer
           format: int64
+    VerifySelectedWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      required: [motherAccountId, confirmed]
+      properties:
+        motherAccountId:
+          type: string
+          format: uuid
+        confirmed:
+          type: boolean
+          enum: [true]
+    SelectedWorkspaceVerification:
+      type: object
+      additionalProperties: false
+      required:
+        - workspaceId
+        - motherAccountId
+        - workspaceName
+        - accessStatus
+        - status
+        - permission
+        - completeness
+        - members
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        motherAccountId:
+          type: string
+          format: uuid
+        workspaceName:
+          type: string
+        accessStatus:
+          type: string
+          enum: [readable, permission_denied, unknown]
+        status:
+          type: string
+          enum: [pending, verified, partial, failed, permission_denied, stale]
+        permission:
+          type: string
+          enum: [manage, read, denied, unknown]
+        completeness:
+          type: string
+          enum: [complete, partial, unknown]
+        source:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        activeUntil:
+          type: string
+          format: date-time
+        seatLimit:
+          type: integer
+        memberCount:
+          type: integer
+        pendingInviteCount:
+          type: integer
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectedWorkspaceMember'
+    SelectedWorkspaceMember:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - identifier
+        - status
+        - source
+        - observedAt
+        - completeness
+        - permission
+        - latestVerification
+      properties:
+        kind:
+          type: string
+          enum: [member, pending_invite]
+        identifier:
+          type: string
+        status:
+          type: string
+        role:
+          type: string
+        childAccountId:
+          type: string
+          format: uuid
+        source:
+          type: string
+        observedAt:
+          type: string
+          format: date-time
+        completeness:
+          type: string
+          enum: [complete, partial, unknown]
+        permission:
+          type: string
+          enum: [manage, read, denied, unknown]
+        latestVerification:
+          type: string
+          enum: [verified, pending]
     RefreshWorkspaceRequest:
       type: object
       additionalProperties: false

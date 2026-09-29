@@ -644,40 +644,10 @@ func (h *OwnerAuthHandler) createBinding(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *OwnerAuthHandler) refreshWorkspace(w http.ResponseWriter, r *http.Request) {
-	owner, ok := h.authenticated(w, r, true)
-	if !ok {
+	if _, ok := h.authenticated(w, r, true); !ok {
 		return
 	}
-	var request ownerapi.RefreshWorkspaceFactsJSONRequestBody
-	if !decodeJSON(w, r, &request) || !validLength(request.IdempotencyKey, 8, 128) {
-		h.rejectOwnerMutation(w, r, owner, "workspace_read.create", "invalid_request", http.StatusUnprocessableEntity, "invalid_idempotency_key", "Invalid Request", "A stable idempotency key is required")
-		return
-	}
-	item, _, err := h.workspaceTasks.CreateWorkspaceRead(r.Context(), r.PathValue("workspaceId"), request.IdempotencyKey, correlation(r))
-	if errors.Is(err, task.ErrIdempotencyConflict) {
-		h.rejectOwnerMutation(w, r, owner, "workspace_read.create", "idempotency_conflict", http.StatusConflict, "idempotency_conflict", "Conflict", "The key belongs to a different Workspace")
-		return
-	}
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			h.rejectOwnerMutation(w, r, owner, "workspace_read.create", "workspace_not_found", http.StatusNotFound, "workspace_not_found", "Not Found", "Workspace was not found")
-			return
-		}
-		h.workspaceFailure(w, r, err)
-		return
-	}
-	response, err := workspaceReadResponse(item)
-	if err != nil {
-		h.workspaceFailure(w, r, err)
-		return
-	}
-	if response.Status == "queued" || response.Status == "running" || response.Status == "retry_wait" {
-		retry := 2
-		response.RetryAfterSeconds = &retry
-		w.Header().Set("Retry-After", "2")
-	}
-	writeJSON(w, http.StatusAccepted, response)
+	writeProblem(w, r, http.StatusNotImplemented, "management_protocol_unavailable", "Unavailable", "Use selected-mother verification when a proven management reader is configured", 0)
 }
 
 func (h *OwnerAuthHandler) getWorkspaceRead(w http.ResponseWriter, r *http.Request) {

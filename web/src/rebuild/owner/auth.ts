@@ -153,6 +153,25 @@ export async function refreshMotherPersonalAccess(accountId: string): Promise<co
   return response.data;
 }
 
+export async function getSelectedWorkspaceVerification(workspaceId: string, motherAccountId: string): Promise<components['schemas']['SelectedWorkspaceVerification']> {
+  const response = await ownerApi.GET('/api/owner/v1/workspaces/{workspaceId}/verification', {
+    params: { path: { workspaceId }, query: { motherAccountId } },
+  });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
+export async function verifySelectedWorkspace(workspaceId: string, motherAccountId: string): Promise<components['schemas']['SelectedWorkspaceVerification']> {
+  const response = await ownerApi.POST('/api/owner/v1/workspaces/{workspaceId}/verification', {
+    params: { path: { workspaceId }, header: await mutationHeaders() },
+    body: { motherAccountId, confirmed: true },
+  });
+  throwIfFailed(response);
+  if (!response.data) throw new OwnerApiError(response.response.status, undefined);
+  return response.data;
+}
+
 export async function getMotherDiscovery(accountId: string): Promise<components['schemas']['MotherDiscovery']> {
   const response = await ownerApi.GET('/api/owner/v1/mother-accounts/{accountId}/discovery', { params: { path: { accountId } } });
   throwIfFailed(response);

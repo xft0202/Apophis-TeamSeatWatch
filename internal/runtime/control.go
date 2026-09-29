@@ -97,9 +97,6 @@ func NewControlHandlers(config ControlConfig) (ControlHandlers, error) {
 	workspaceWorker := &task.Worker{
 		Store: task.NewStore(workerPool, keyRing), Facts: workspace.NewService(workerPool, keyRing), Targets: targetdomain.NewService(),
 		Egress: config.Egress, ID: "workspace-reader-1",
-		Reader: func(client *http.Client, credentials platform.Credentials) (platform.Reader, error) {
-			return platformConfig.Reader(client, credentials)
-		},
 		TargetProber: func(client *http.Client, credentials platform.Credentials) (*platform.HTTPReader, error) {
 			return platformConfig.Reader(client, credentials)
 		},

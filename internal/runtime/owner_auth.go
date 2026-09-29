@@ -29,28 +29,30 @@ import (
 
 // OwnerAuthConfig contains the deployment-only dependencies for Owner authentication.
 type OwnerAuthConfig struct {
-	DatabaseURL      string
-	KeyRing          auth.KeyRing
-	Origins          auth.OriginPolicy
-	Egress           *egress.Manager
-	DestinationProbe DestinationProbe
-	Discovery       platform.DiscoveryAdapter
-	PersonalRefresh platform.PersonalSessionRefresher
+	DatabaseURL             string
+	KeyRing                 auth.KeyRing
+	Origins                 auth.OriginPolicy
+	Egress                  *egress.Manager
+	DestinationProbe        DestinationProbe
+	Discovery               platform.DiscoveryAdapter
+	PersonalRefresh         platform.PersonalSessionRefresher
+	SelectedWorkspaceReader platform.SelectedWorkspaceReader
 }
 
 // OwnerAuthHandler owns the HTTP boundary for the Ticket 03 Owner security API.
 type OwnerAuthHandler struct {
-	pool              *pgxpool.Pool
-	keyRing           auth.KeyRing
-	origins           auth.OriginPolicy
-	dummyPasswordHash string
-	workspaceFacts    *workspace.Service
-	workspaceTasks    *task.Store
-	egress            *egress.Manager
-	destinationProbe  DestinationProbe
-	discovery         platform.DiscoveryAdapter
-	personalRefresh   platform.PersonalSessionRefresher
-	secureCookies     bool
+	pool                    *pgxpool.Pool
+	keyRing                 auth.KeyRing
+	origins                 auth.OriginPolicy
+	dummyPasswordHash       string
+	workspaceFacts          *workspace.Service
+	workspaceTasks          *task.Store
+	egress                  *egress.Manager
+	destinationProbe        DestinationProbe
+	discovery               platform.DiscoveryAdapter
+	personalRefresh         platform.PersonalSessionRefresher
+	selectedWorkspaceReader platform.SelectedWorkspaceReader
+	secureCookies           bool
 }
 
 type ownerContext struct {
@@ -110,17 +112,18 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 		return nil, func() {}, err
 	}
 	handler := &OwnerAuthHandler{
-		pool:              pool,
-		keyRing:           config.KeyRing,
-		origins:           config.Origins,
-		dummyPasswordHash: dummy,
-		workspaceFacts:    workspace.NewService(pool, config.KeyRing),
-		workspaceTasks:    task.NewStore(pool, config.KeyRing),
-		egress:            config.Egress,
-		destinationProbe:  config.DestinationProbe,
-		discovery:         config.Discovery,
-		personalRefresh:   config.PersonalRefresh,
-		secureCookies:     config.Origins.SecureCookies(),
+		pool:                    pool,
+		keyRing:                 config.KeyRing,
+		origins:                 config.Origins,
+		dummyPasswordHash:       dummy,
+		workspaceFacts:          workspace.NewService(pool, config.KeyRing),
+		workspaceTasks:          task.NewStore(pool, config.KeyRing),
+		egress:                  config.Egress,
+		destinationProbe:        config.DestinationProbe,
+		discovery:               config.Discovery,
+		personalRefresh:         config.PersonalRefresh,
+		selectedWorkspaceReader: config.SelectedWorkspaceReader,
+		secureCookies:           config.Origins.SecureCookies(),
 	}
 	mux := http.NewServeMux()
 	ownerHandler := ownerapi.HandlerWithOptions(handler, ownerapi.StdHTTPServerOptions{

@@ -269,6 +269,9 @@ func (w *Worker) rejectTargetProbe(ctx context.Context, item Task, resultCode, s
 }
 
 func (w *Worker) runWorkspaceRead(ctx context.Context, item Task, lease *egress.Lease) error {
+	if w.Reader == nil {
+		return w.fail(ctx, item, "task.rejected", "management_protocol_unavailable", "prepare")
+	}
 	target, err := w.Store.WorkspaceReadTarget(ctx, item.WorkspaceID)
 	if err != nil {
 		return w.fail(ctx, item, "task.rejected", "platform_credential_unavailable", "credential_resolution")

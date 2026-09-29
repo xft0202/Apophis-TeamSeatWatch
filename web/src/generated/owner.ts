@@ -340,6 +340,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/workspaces/{workspaceId}/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSelectedWorkspaceVerification"];
+        put?: never;
+        post: operations["verifySelectedWorkspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/workspaces/{workspaceId}/refresh": {
         parameters: {
             query?: never;
@@ -1211,6 +1227,56 @@ export interface components {
             startedAt: string;
             /** Format: int64 */
             version: number;
+        };
+        VerifySelectedWorkspaceRequest: {
+            /** Format: uuid */
+            motherAccountId: string;
+            /** @enum {boolean} */
+            confirmed: true;
+        };
+        SelectedWorkspaceVerification: {
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            motherAccountId: string;
+            workspaceName: string;
+            /** @enum {string} */
+            accessStatus: "readable" | "permission_denied" | "unknown";
+            /** @enum {string} */
+            status: "pending" | "verified" | "partial" | "failed" | "permission_denied" | "stale";
+            /** @enum {string} */
+            permission: "manage" | "read" | "denied" | "unknown";
+            /** @enum {string} */
+            completeness: "complete" | "partial" | "unknown";
+            source?: string;
+            /** Format: date-time */
+            observedAt?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: date-time */
+            activeUntil?: string;
+            seatLimit?: number;
+            memberCount?: number;
+            pendingInviteCount?: number;
+            members: components["schemas"]["SelectedWorkspaceMember"][];
+        };
+        SelectedWorkspaceMember: {
+            /** @enum {string} */
+            kind: "member" | "pending_invite";
+            identifier: string;
+            status: string;
+            role?: string;
+            /** Format: uuid */
+            childAccountId?: string;
+            source: string;
+            /** Format: date-time */
+            observedAt: string;
+            /** @enum {string} */
+            completeness: "complete" | "partial" | "unknown";
+            /** @enum {string} */
+            permission: "manage" | "read" | "denied" | "unknown";
+            /** @enum {string} */
+            latestVerification: "verified" | "pending";
         };
         RefreshWorkspaceRequest: {
             idempotencyKey: string;
@@ -2637,6 +2703,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Binding"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSelectedWorkspaceVerification: {
+        parameters: {
+            query: {
+                motherAccountId: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Facts visible through the explicitly selected mother */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelectedWorkspaceVerification"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    verifySelectedWorkspace: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifySelectedWorkspaceRequest"];
+            };
+        };
+        responses: {
+            /** @description Latest independent verification attempt */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelectedWorkspaceVerification"];
                 };
             };
             default: components["responses"]["Problem"];

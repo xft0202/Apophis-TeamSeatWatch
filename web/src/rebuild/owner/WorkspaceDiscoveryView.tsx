@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { components } from '../../generated/owner';
 import { getMotherDiscovery, getMotherPersonalAccess, listAllMotherAccounts, ownerProblem, refreshMotherPersonalAccess, runMotherDiscovery } from './auth';
 import { canDiscover, confirmWorkspace, isWorkspaceSelectable } from './workspaceSelection';
+import SelectedWorkspaceConsole from './SelectedWorkspaceConsole';
 
 type Mother = components['schemas']['MotherAccount'];
 type Discovery = components['schemas']['MotherDiscovery'];
@@ -32,7 +33,7 @@ const resultLabels: Record<Discovery['status'], string> = {
 
 const visibilityLabels = { readable: '可读取 · 管理权限待核验', permission_denied: '权限不足', unknown: '权限待核验' } as const;
 
-export default function WorkspaceDiscoveryView() {
+export default function WorkspaceDiscoveryView({ onNextAction }: { onNextAction: () => void }) {
   const [mothers, setMothers] = useState<Mother[]>([]);
   const [motherId, setMotherId] = useState<string | null>(null);
   const [discovery, setDiscovery] = useState<Discovery | null>(null);
@@ -112,6 +113,9 @@ export default function WorkspaceDiscoveryView() {
   }
 
   const mother = mothers.find((item) => item.id === motherId);
+  if (confirmed && motherId) {
+    return <SelectedWorkspaceConsole key={`${motherId}:${confirmed}`} motherAccountId={motherId} workspaceId={confirmed} onBack={() => { setConfirmed(''); setCandidate(''); }} onNextAction={onNextAction} />;
+  }
   return (
     <section aria-labelledby="workspace-discovery-heading">
       <Stack gap="xl">
@@ -159,7 +163,6 @@ export default function WorkspaceDiscoveryView() {
                     </Stack>
                   </Radio.Group>
                   <Group justify="flex-end"><Button disabled={!candidate || pending} onClick={() => setConfirmed(confirmWorkspace(discovery, candidate) ?? '')}>确认目标空间</Button></Group>
-                  {confirmed ? <Alert color="yellow" role="status">已确认 {discovery.workspaces.find((workspace) => workspace.id === confirmed)?.displayName} · 管理权限及空间事实仍待核验</Alert> : null}
                 </>
               ) : null}
             </Stack>

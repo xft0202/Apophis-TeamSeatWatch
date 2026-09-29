@@ -885,6 +885,183 @@ func (e RevokeDeliveryCardResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for SelectedWorkspaceMemberCompleteness.
+const (
+	SelectedWorkspaceMemberCompletenessComplete SelectedWorkspaceMemberCompleteness = "complete"
+	SelectedWorkspaceMemberCompletenessPartial  SelectedWorkspaceMemberCompleteness = "partial"
+	SelectedWorkspaceMemberCompletenessUnknown  SelectedWorkspaceMemberCompleteness = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceMemberCompleteness enum.
+func (e SelectedWorkspaceMemberCompleteness) Valid() bool {
+	switch e {
+	case SelectedWorkspaceMemberCompletenessComplete:
+		return true
+	case SelectedWorkspaceMemberCompletenessPartial:
+		return true
+	case SelectedWorkspaceMemberCompletenessUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SelectedWorkspaceMemberKind.
+const (
+	Member        SelectedWorkspaceMemberKind = "member"
+	PendingInvite SelectedWorkspaceMemberKind = "pending_invite"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceMemberKind enum.
+func (e SelectedWorkspaceMemberKind) Valid() bool {
+	switch e {
+	case Member:
+		return true
+	case PendingInvite:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SelectedWorkspaceMemberLatestVerification.
+const (
+	SelectedWorkspaceMemberLatestVerificationPending  SelectedWorkspaceMemberLatestVerification = "pending"
+	SelectedWorkspaceMemberLatestVerificationVerified SelectedWorkspaceMemberLatestVerification = "verified"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceMemberLatestVerification enum.
+func (e SelectedWorkspaceMemberLatestVerification) Valid() bool {
+	switch e {
+	case SelectedWorkspaceMemberLatestVerificationPending:
+		return true
+	case SelectedWorkspaceMemberLatestVerificationVerified:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SelectedWorkspaceMemberPermission.
+const (
+	SelectedWorkspaceMemberPermissionDenied  SelectedWorkspaceMemberPermission = "denied"
+	SelectedWorkspaceMemberPermissionManage  SelectedWorkspaceMemberPermission = "manage"
+	SelectedWorkspaceMemberPermissionRead    SelectedWorkspaceMemberPermission = "read"
+	SelectedWorkspaceMemberPermissionUnknown SelectedWorkspaceMemberPermission = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceMemberPermission enum.
+func (e SelectedWorkspaceMemberPermission) Valid() bool {
+	switch e {
+	case SelectedWorkspaceMemberPermissionDenied:
+		return true
+	case SelectedWorkspaceMemberPermissionManage:
+		return true
+	case SelectedWorkspaceMemberPermissionRead:
+		return true
+	case SelectedWorkspaceMemberPermissionUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SelectedWorkspaceVerificationAccessStatus.
+const (
+	SelectedWorkspaceVerificationAccessStatusPermissionDenied SelectedWorkspaceVerificationAccessStatus = "permission_denied"
+	SelectedWorkspaceVerificationAccessStatusReadable         SelectedWorkspaceVerificationAccessStatus = "readable"
+	SelectedWorkspaceVerificationAccessStatusUnknown          SelectedWorkspaceVerificationAccessStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceVerificationAccessStatus enum.
+func (e SelectedWorkspaceVerificationAccessStatus) Valid() bool {
+	switch e {
+	case SelectedWorkspaceVerificationAccessStatusPermissionDenied:
+		return true
+	case SelectedWorkspaceVerificationAccessStatusReadable:
+		return true
+	case SelectedWorkspaceVerificationAccessStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SelectedWorkspaceVerificationCompleteness.
+const (
+	SelectedWorkspaceVerificationCompletenessComplete SelectedWorkspaceVerificationCompleteness = "complete"
+	SelectedWorkspaceVerificationCompletenessPartial  SelectedWorkspaceVerificationCompleteness = "partial"
+	SelectedWorkspaceVerificationCompletenessUnknown  SelectedWorkspaceVerificationCompleteness = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceVerificationCompleteness enum.
+func (e SelectedWorkspaceVerificationCompleteness) Valid() bool {
+	switch e {
+	case SelectedWorkspaceVerificationCompletenessComplete:
+		return true
+	case SelectedWorkspaceVerificationCompletenessPartial:
+		return true
+	case SelectedWorkspaceVerificationCompletenessUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SelectedWorkspaceVerificationPermission.
+const (
+	SelectedWorkspaceVerificationPermissionDenied  SelectedWorkspaceVerificationPermission = "denied"
+	SelectedWorkspaceVerificationPermissionManage  SelectedWorkspaceVerificationPermission = "manage"
+	SelectedWorkspaceVerificationPermissionRead    SelectedWorkspaceVerificationPermission = "read"
+	SelectedWorkspaceVerificationPermissionUnknown SelectedWorkspaceVerificationPermission = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceVerificationPermission enum.
+func (e SelectedWorkspaceVerificationPermission) Valid() bool {
+	switch e {
+	case SelectedWorkspaceVerificationPermissionDenied:
+		return true
+	case SelectedWorkspaceVerificationPermissionManage:
+		return true
+	case SelectedWorkspaceVerificationPermissionRead:
+		return true
+	case SelectedWorkspaceVerificationPermissionUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SelectedWorkspaceVerificationStatus.
+const (
+	SelectedWorkspaceVerificationStatusFailed           SelectedWorkspaceVerificationStatus = "failed"
+	SelectedWorkspaceVerificationStatusPartial          SelectedWorkspaceVerificationStatus = "partial"
+	SelectedWorkspaceVerificationStatusPending          SelectedWorkspaceVerificationStatus = "pending"
+	SelectedWorkspaceVerificationStatusPermissionDenied SelectedWorkspaceVerificationStatus = "permission_denied"
+	SelectedWorkspaceVerificationStatusStale            SelectedWorkspaceVerificationStatus = "stale"
+	SelectedWorkspaceVerificationStatusVerified         SelectedWorkspaceVerificationStatus = "verified"
+)
+
+// Valid indicates whether the value is a known member of the SelectedWorkspaceVerificationStatus enum.
+func (e SelectedWorkspaceVerificationStatus) Valid() bool {
+	switch e {
+	case SelectedWorkspaceVerificationStatusFailed:
+		return true
+	case SelectedWorkspaceVerificationStatusPartial:
+		return true
+	case SelectedWorkspaceVerificationStatusPending:
+		return true
+	case SelectedWorkspaceVerificationStatusPermissionDenied:
+		return true
+	case SelectedWorkspaceVerificationStatusStale:
+		return true
+	case SelectedWorkspaceVerificationStatusVerified:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StandbyChildBatchChangeAction.
 const (
 	Add    StandbyChildBatchChangeAction = "add"
@@ -1071,6 +1248,21 @@ func (e UpdateTargetAccountStatus) Valid() bool {
 	case UpdateTargetAccountStatusActive:
 		return true
 	case UpdateTargetAccountStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VerifySelectedWorkspaceRequestConfirmed.
+const (
+	VerifySelectedWorkspaceRequestConfirmedTrue VerifySelectedWorkspaceRequestConfirmed = true
+)
+
+// Valid indicates whether the value is a known member of the VerifySelectedWorkspaceRequestConfirmed enum.
+func (e VerifySelectedWorkspaceRequestConfirmed) Valid() bool {
+	switch e {
+	case VerifySelectedWorkspaceRequestConfirmedTrue:
 		return true
 	default:
 		return false
@@ -2245,6 +2437,63 @@ type SaveBatch struct {
 	TargetAccountIds []openapi_types.UUID `json:"targetAccountIds"`
 }
 
+// SelectedWorkspaceMember defines model for SelectedWorkspaceMember.
+type SelectedWorkspaceMember struct {
+	ChildAccountId     *openapi_types.UUID                       `json:"childAccountId,omitempty"`
+	Completeness       SelectedWorkspaceMemberCompleteness       `json:"completeness"`
+	Identifier         string                                    `json:"identifier"`
+	Kind               SelectedWorkspaceMemberKind               `json:"kind"`
+	LatestVerification SelectedWorkspaceMemberLatestVerification `json:"latestVerification"`
+	ObservedAt         time.Time                                 `json:"observedAt"`
+	Permission         SelectedWorkspaceMemberPermission         `json:"permission"`
+	Role               *string                                   `json:"role,omitempty"`
+	Source             string                                    `json:"source"`
+	Status             string                                    `json:"status"`
+}
+
+// SelectedWorkspaceMemberCompleteness defines model for SelectedWorkspaceMember.Completeness.
+type SelectedWorkspaceMemberCompleteness string
+
+// SelectedWorkspaceMemberKind defines model for SelectedWorkspaceMember.Kind.
+type SelectedWorkspaceMemberKind string
+
+// SelectedWorkspaceMemberLatestVerification defines model for SelectedWorkspaceMember.LatestVerification.
+type SelectedWorkspaceMemberLatestVerification string
+
+// SelectedWorkspaceMemberPermission defines model for SelectedWorkspaceMember.Permission.
+type SelectedWorkspaceMemberPermission string
+
+// SelectedWorkspaceVerification defines model for SelectedWorkspaceVerification.
+type SelectedWorkspaceVerification struct {
+	AccessStatus       SelectedWorkspaceVerificationAccessStatus `json:"accessStatus"`
+	ActiveUntil        *time.Time                                `json:"activeUntil,omitempty"`
+	Completeness       SelectedWorkspaceVerificationCompleteness `json:"completeness"`
+	ExpiresAt          *time.Time                                `json:"expiresAt,omitempty"`
+	MemberCount        *int                                      `json:"memberCount,omitempty"`
+	Members            []SelectedWorkspaceMember                 `json:"members"`
+	MotherAccountId    openapi_types.UUID                        `json:"motherAccountId"`
+	ObservedAt         *time.Time                                `json:"observedAt,omitempty"`
+	PendingInviteCount *int                                      `json:"pendingInviteCount,omitempty"`
+	Permission         SelectedWorkspaceVerificationPermission   `json:"permission"`
+	SeatLimit          *int                                      `json:"seatLimit,omitempty"`
+	Source             *string                                   `json:"source,omitempty"`
+	Status             SelectedWorkspaceVerificationStatus       `json:"status"`
+	WorkspaceId        openapi_types.UUID                        `json:"workspaceId"`
+	WorkspaceName      string                                    `json:"workspaceName"`
+}
+
+// SelectedWorkspaceVerificationAccessStatus defines model for SelectedWorkspaceVerification.AccessStatus.
+type SelectedWorkspaceVerificationAccessStatus string
+
+// SelectedWorkspaceVerificationCompleteness defines model for SelectedWorkspaceVerification.Completeness.
+type SelectedWorkspaceVerificationCompleteness string
+
+// SelectedWorkspaceVerificationPermission defines model for SelectedWorkspaceVerification.Permission.
+type SelectedWorkspaceVerificationPermission string
+
+// SelectedWorkspaceVerificationStatus defines model for SelectedWorkspaceVerification.Status.
+type SelectedWorkspaceVerificationStatus string
+
 // Session defines model for Session.
 type Session struct {
 	AbsoluteExpiresAt time.Time          `json:"absoluteExpiresAt"`
@@ -2469,6 +2718,15 @@ type UpdateTargetAccountStatus string
 type UpdateWorkspace struct {
 	DisplayName string `json:"displayName"`
 }
+
+// VerifySelectedWorkspaceRequest defines model for VerifySelectedWorkspaceRequest.
+type VerifySelectedWorkspaceRequest struct {
+	Confirmed       VerifySelectedWorkspaceRequestConfirmed `json:"confirmed"`
+	MotherAccountId openapi_types.UUID                      `json:"motherAccountId"`
+}
+
+// VerifySelectedWorkspaceRequestConfirmed defines model for VerifySelectedWorkspaceRequest.Confirmed.
+type VerifySelectedWorkspaceRequestConfirmed bool
 
 // Workspace defines model for Workspace.
 type Workspace struct {
@@ -3013,6 +3271,16 @@ type RefreshWorkspaceFactsParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// GetSelectedWorkspaceVerificationParams defines parameters for GetSelectedWorkspaceVerification.
+type GetSelectedWorkspaceVerificationParams struct {
+	MotherAccountId openapi_types.UUID `form:"motherAccountId" json:"motherAccountId"`
+}
+
+// VerifySelectedWorkspaceParams defines parameters for VerifySelectedWorkspace.
+type VerifySelectedWorkspaceParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // CreateBatchJSONRequestBody defines body for CreateBatch for application/json ContentType.
 type CreateBatchJSONRequestBody = SaveBatch
 
@@ -3114,6 +3382,9 @@ type CreateWorkspaceManualVerificationJSONRequestBody = ManualVerificationReques
 
 // RefreshWorkspaceFactsJSONRequestBody defines body for RefreshWorkspaceFacts for application/json ContentType.
 type RefreshWorkspaceFactsJSONRequestBody = RefreshWorkspaceRequest
+
+// VerifySelectedWorkspaceJSONRequestBody defines body for VerifySelectedWorkspace for application/json ContentType.
+type VerifySelectedWorkspaceJSONRequestBody = VerifySelectedWorkspaceRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -3333,6 +3604,12 @@ type ServerInterface interface {
 
 	// (POST /api/owner/v1/workspaces/{workspaceId}/refresh)
 	RefreshWorkspaceFacts(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params RefreshWorkspaceFactsParams)
+
+	// (GET /api/owner/v1/workspaces/{workspaceId}/verification)
+	GetSelectedWorkspaceVerification(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params GetSelectedWorkspaceVerificationParams)
+
+	// (POST /api/owner/v1/workspaces/{workspaceId}/verification)
+	VerifySelectedWorkspace(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params VerifySelectedWorkspaceParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -6975,6 +7252,102 @@ func (siw *ServerInterfaceWrapper) RefreshWorkspaceFacts(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// GetSelectedWorkspaceVerification operation middleware
+func (siw *ServerInterfaceWrapper) GetSelectedWorkspaceVerification(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", r.PathValue("workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSelectedWorkspaceVerificationParams
+
+	// ------------- Required query parameter "motherAccountId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "motherAccountId", r.URL.Query(), &params.MotherAccountId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "motherAccountId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "motherAccountId", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSelectedWorkspaceVerification(w, r, workspaceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifySelectedWorkspace operation middleware
+func (siw *ServerInterfaceWrapper) VerifySelectedWorkspace(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", r.PathValue("workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params VerifySelectedWorkspaceParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifySelectedWorkspace(w, r, workspaceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -7122,6 +7495,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}", wrapper.GetWorkspace)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}", wrapper.UpdateWorkspace)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/bindings", wrapper.CreateMotherWorkspaceBinding)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/verification", wrapper.GetSelectedWorkspaceVerification)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/verification", wrapper.VerifySelectedWorkspace)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/refresh", wrapper.RefreshWorkspaceFacts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspace-reads/{readId}", wrapper.GetWorkspaceReadStatus)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces/{workspaceId}/manual-verification", wrapper.CreateWorkspaceManualVerification)

@@ -210,6 +210,7 @@ function SignedInView({
 }) {
   const [pendingAction, setPendingAction] = useState<'refresh' | 'logout' | null>(null);
   const [message, setMessage] = useState('');
+  const [activeTab, setActiveTab] = useState<string | null>('workspaces');
 
   useEffect(() => {
     let active = true;
@@ -315,7 +316,7 @@ function SignedInView({
               </Stack>
             </Paper>
 
-            <Tabs defaultValue="workspaces" keepMounted={false}>
+            <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false}>
               <Tabs.List>
                 <Tabs.Tab value="workspaces">空间管理</Tabs.Tab>
                 <Tabs.Tab value="materials">母号资料</Tabs.Tab>
@@ -323,7 +324,7 @@ function SignedInView({
                 <Tabs.Tab value="standby">待用批次</Tabs.Tab>
                 <Tabs.Tab value="destinations">交付去向</Tabs.Tab>
               </Tabs.List>
-              <Tabs.Panel value="workspaces" pt="xl"><WorkspaceDiscoveryView /></Tabs.Panel>
+              <Tabs.Panel value="workspaces" pt="xl"><WorkspaceDiscoveryView onNextAction={() => setActiveTab('child')} /></Tabs.Panel>
               <Tabs.Panel value="materials" pt="xl"><MotherMaterialsView /></Tabs.Panel>
               <Tabs.Panel value="child" pt="xl"><ChildMaterialsView /></Tabs.Panel>
               <Tabs.Panel value="standby" pt="xl"><StandbyChildBatchesView /></Tabs.Panel>

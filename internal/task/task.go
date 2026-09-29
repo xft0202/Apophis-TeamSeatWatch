@@ -370,6 +370,7 @@ func (s *Store) EnqueueExpiredCleanups(ctx context.Context, limit int, period st
 		FROM (
 			SELECT workspace_id FROM tsw_workspace_observations WHERE expires_at<=now()
 			UNION SELECT workspace_id FROM tsw_workspace_member_snapshots WHERE expires_at<=now()
+			UNION SELECT workspace_id FROM tsw_workspace_verifications WHERE expires_at<=now()
 			UNION SELECT binding.workspace_id FROM tsw_batch_memberships membership JOIN tsw_batches batch ON batch.id=membership.batch_id JOIN tsw_mother_workspace_bindings binding ON binding.id=batch.binding_id WHERE membership.retention_due_at<=now()
 			UNION SELECT workspace_id FROM tsw_tasks WHERE workspace_id IS NOT NULL AND status IN ('succeeded','failed','interrupted') AND finished_at<=now()-interval '7 days'
 			UNION SELECT retention_scope_id FROM tsw_audit_events WHERE retention_scope_type='workspace' AND expires_at<=now()
