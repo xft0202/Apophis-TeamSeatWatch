@@ -9,6 +9,7 @@ func TestOwnerMutationRejectionKeepsRegisteredOperations(t *testing.T) {
 		"target_account.create", "target_account.import", "target_account.update",
 		"target_probe.create", "batch.create", "batch.update", "join.create",
 		"join.reconcile", "card.activate", "delivery.reclaim_authorize", "delivery.card_revoke",
+		"delivery_destination.create", "delivery_destination.update", "delivery_destination.test", "delivery_destination.select",
 	}
 	for _, operation := range operations {
 		t.Run(operation, func(t *testing.T) {

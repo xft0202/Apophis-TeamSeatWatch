@@ -276,6 +276,51 @@ func (e DeliveryCardFilter) Valid() bool {
 	}
 }
 
+// Defines values for DeliveryDestinationTestConnection.
+const (
+	DeliveryDestinationTestConnectionConnected        DeliveryDestinationTestConnection = "connected"
+	DeliveryDestinationTestConnectionConnectionFailed DeliveryDestinationTestConnection = "connection_failed"
+	DeliveryDestinationTestConnectionPermissionDenied DeliveryDestinationTestConnection = "permission_denied"
+)
+
+// Valid indicates whether the value is a known member of the DeliveryDestinationTestConnection enum.
+func (e DeliveryDestinationTestConnection) Valid() bool {
+	switch e {
+	case DeliveryDestinationTestConnectionConnected:
+		return true
+	case DeliveryDestinationTestConnectionConnectionFailed:
+		return true
+	case DeliveryDestinationTestConnectionPermissionDenied:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeliveryDestinationTestTarget.
+const (
+	DeliveryDestinationTestTargetConnected        DeliveryDestinationTestTarget = "connected"
+	DeliveryDestinationTestTargetPermissionDenied DeliveryDestinationTestTarget = "permission_denied"
+	DeliveryDestinationTestTargetTargetMismatch   DeliveryDestinationTestTarget = "target_mismatch"
+	DeliveryDestinationTestTargetUntested         DeliveryDestinationTestTarget = "untested"
+)
+
+// Valid indicates whether the value is a known member of the DeliveryDestinationTestTarget enum.
+func (e DeliveryDestinationTestTarget) Valid() bool {
+	switch e {
+	case DeliveryDestinationTestTargetConnected:
+		return true
+	case DeliveryDestinationTestTargetPermissionDenied:
+		return true
+	case DeliveryDestinationTestTargetTargetMismatch:
+		return true
+	case DeliveryDestinationTestTargetUntested:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DeliveryOrderFilter.
 const (
 	DeliveryOrderFilterClaimed   DeliveryOrderFilter = "claimed"
@@ -1391,6 +1436,16 @@ type CreateBinding struct {
 	WorkspaceId     openapi_types.UUID `json:"workspaceId"`
 }
 
+// CreateDeliveryDestination defines model for CreateDeliveryDestination.
+type CreateDeliveryDestination struct {
+	Endpoint string `json:"endpoint"`
+	Name     string `json:"name"`
+	Secret   string `json:"secret"`
+
+	// TargetGroup Positive decimal Sub2API customer group ID.
+	TargetGroup string `json:"targetGroup"`
+}
+
 // CreateMotherAccount defines model for CreateMotherAccount.
 type CreateMotherAccount struct {
 	DisplayName        string  `json:"displayName"`
@@ -1473,6 +1528,40 @@ type DeliveryCardStatus string
 
 // DeliveryCardFilter defines model for DeliveryCardFilter.
 type DeliveryCardFilter string
+
+// DeliveryDestination defines model for DeliveryDestination.
+type DeliveryDestination struct {
+	Enabled   bool               `json:"enabled"`
+	Endpoint  string             `json:"endpoint"`
+	HasSecret bool               `json:"hasSecret"`
+	Id        openapi_types.UUID `json:"id"`
+	Name      string             `json:"name"`
+	Revision  int64              `json:"revision"`
+	Selected  bool               `json:"selected"`
+
+	// TargetGroup Positive decimal Sub2API customer group ID, not a name.
+	TargetGroup string                   `json:"targetGroup"`
+	Test        *DeliveryDestinationTest `json:"test"`
+}
+
+// DeliveryDestinationList defines model for DeliveryDestinationList.
+type DeliveryDestinationList struct {
+	Items []DeliveryDestination `json:"items"`
+}
+
+// DeliveryDestinationTest defines model for DeliveryDestinationTest.
+type DeliveryDestinationTest struct {
+	Connection DeliveryDestinationTestConnection `json:"connection"`
+	Revision   int64                             `json:"revision"`
+	Target     DeliveryDestinationTestTarget     `json:"target"`
+	TestedAt   time.Time                         `json:"testedAt"`
+}
+
+// DeliveryDestinationTestConnection defines model for DeliveryDestinationTest.Connection.
+type DeliveryDestinationTestConnection string
+
+// DeliveryDestinationTestTarget defines model for DeliveryDestinationTest.Target.
+type DeliveryDestinationTestTarget string
 
 // DeliveryList defines model for DeliveryList.
 type DeliveryList struct {
@@ -1995,6 +2084,17 @@ type UpdateBatch struct {
 	TargetAccountIds []openapi_types.UUID `json:"targetAccountIds"`
 }
 
+// UpdateDeliveryDestination defines model for UpdateDeliveryDestination.
+type UpdateDeliveryDestination struct {
+	Enabled  bool    `json:"enabled"`
+	Endpoint string  `json:"endpoint"`
+	Name     string  `json:"name"`
+	Secret   *string `json:"secret,omitempty"`
+
+	// TargetGroup Positive decimal Sub2API customer group ID.
+	TargetGroup string `json:"targetGroup"`
+}
+
 // UpdateMotherAccount defines model for UpdateMotherAccount.
 type UpdateMotherAccount struct {
 	DisplayName string                    `json:"displayName"`
@@ -2341,6 +2441,26 @@ type AuthorizeDeliveryReclaimParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// CreateDeliveryDestinationParams defines parameters for CreateDeliveryDestination.
+type CreateDeliveryDestinationParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// UpdateDeliveryDestinationParams defines parameters for UpdateDeliveryDestination.
+type UpdateDeliveryDestinationParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// SelectDeliveryDestinationParams defines parameters for SelectDeliveryDestination.
+type SelectDeliveryDestinationParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// TestDeliveryDestinationParams defines parameters for TestDeliveryDestination.
+type TestDeliveryDestinationParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // ListJoinOperationsNeedingAttentionParams defines parameters for ListJoinOperationsNeedingAttention.
 type ListJoinOperationsNeedingAttentionParams struct {
 	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
@@ -2537,6 +2657,12 @@ type RevokeDeliveryCardJSONRequestBody = RevokeDeliveryCardRequest
 // AuthorizeDeliveryReclaimJSONRequestBody defines body for AuthorizeDeliveryReclaim for application/json ContentType.
 type AuthorizeDeliveryReclaimJSONRequestBody = AuthorizeDeliveryReclaimRequest
 
+// CreateDeliveryDestinationJSONRequestBody defines body for CreateDeliveryDestination for application/json ContentType.
+type CreateDeliveryDestinationJSONRequestBody = CreateDeliveryDestination
+
+// UpdateDeliveryDestinationJSONRequestBody defines body for UpdateDeliveryDestination for application/json ContentType.
+type UpdateDeliveryDestinationJSONRequestBody = UpdateDeliveryDestination
+
 // LoginOwnerJSONRequestBody defines body for LoginOwner for application/json ContentType.
 type LoginOwnerJSONRequestBody = LoginRequest
 
@@ -2662,6 +2788,21 @@ type ServerInterface interface {
 
 	// (POST /api/owner/v1/deliveries/{membershipId}/reclaim)
 	AuthorizeDeliveryReclaim(w http.ResponseWriter, r *http.Request, membershipId MembershipId, params AuthorizeDeliveryReclaimParams)
+
+	// (GET /api/owner/v1/delivery-destinations)
+	ListDeliveryDestinations(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api/owner/v1/delivery-destinations)
+	CreateDeliveryDestination(w http.ResponseWriter, r *http.Request, params CreateDeliveryDestinationParams)
+
+	// (PATCH /api/owner/v1/delivery-destinations/{destinationId})
+	UpdateDeliveryDestination(w http.ResponseWriter, r *http.Request, destinationId openapi_types.UUID, params UpdateDeliveryDestinationParams)
+
+	// (POST /api/owner/v1/delivery-destinations/{destinationId}/select)
+	SelectDeliveryDestination(w http.ResponseWriter, r *http.Request, destinationId openapi_types.UUID, params SelectDeliveryDestinationParams)
+
+	// (POST /api/owner/v1/delivery-destinations/{destinationId}/test)
+	TestDeliveryDestination(w http.ResponseWriter, r *http.Request, destinationId openapi_types.UUID, params TestDeliveryDestinationParams)
 
 	// (GET /api/owner/v1/exit-pool)
 	GetExitPoolStatus(w http.ResponseWriter, r *http.Request)
@@ -4193,6 +4334,227 @@ func (siw *ServerInterfaceWrapper) AuthorizeDeliveryReclaim(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AuthorizeDeliveryReclaim(w, r, membershipId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDeliveryDestinations operation middleware
+func (siw *ServerInterfaceWrapper) ListDeliveryDestinations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDeliveryDestinations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDeliveryDestination operation middleware
+func (siw *ServerInterfaceWrapper) CreateDeliveryDestination(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateDeliveryDestinationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDeliveryDestination(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateDeliveryDestination operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDeliveryDestination(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "destinationId" -------------
+	var destinationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "destinationId", r.PathValue("destinationId"), &destinationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "destinationId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateDeliveryDestinationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateDeliveryDestination(w, r, destinationId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SelectDeliveryDestination operation middleware
+func (siw *ServerInterfaceWrapper) SelectDeliveryDestination(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "destinationId" -------------
+	var destinationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "destinationId", r.PathValue("destinationId"), &destinationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "destinationId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SelectDeliveryDestinationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SelectDeliveryDestination(w, r, destinationId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestDeliveryDestination operation middleware
+func (siw *ServerInterfaceWrapper) TestDeliveryDestination(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "destinationId" -------------
+	var destinationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "destinationId", r.PathValue("destinationId"), &destinationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "destinationId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params TestDeliveryDestinationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestDeliveryDestination(w, r, destinationId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5843,6 +6205,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts/import", wrapper.ImportMotherAccounts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts/export", wrapper.ExportMotherAccounts)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/mother-accounts/{accountId}", wrapper.UpdateMotherAccount)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/delivery-destinations", wrapper.ListDeliveryDestinations)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/delivery-destinations", wrapper.CreateDeliveryDestination)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/owner/v1/delivery-destinations/{destinationId}", wrapper.UpdateDeliveryDestination)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/delivery-destinations/{destinationId}/test", wrapper.TestDeliveryDestination)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/delivery-destinations/{destinationId}/select", wrapper.SelectDeliveryDestination)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces", wrapper.ListWorkspaces)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/workspaces", wrapper.CreateWorkspace)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/workspaces/needs-attention", wrapper.ListWorkspacesNeedingAttention)

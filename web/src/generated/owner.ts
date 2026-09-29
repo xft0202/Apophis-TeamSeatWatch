@@ -180,6 +180,70 @@ export interface paths {
         patch: operations["updateMotherAccount"];
         trace?: never;
     };
+    "/api/owner/v1/delivery-destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listDeliveryDestinations"];
+        put?: never;
+        post: operations["createDeliveryDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/delivery-destinations/{destinationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateDeliveryDestination"];
+        trace?: never;
+    };
+    "/api/owner/v1/delivery-destinations/{destinationId}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["testDeliveryDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/delivery-destinations/{destinationId}/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["selectDeliveryDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/workspaces": {
         parameters: {
             query?: never;
@@ -1134,6 +1198,51 @@ export interface components {
             items: components["schemas"]["TargetProbeStatus"][];
             total: number;
         };
+        DeliveryDestination: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uri */
+            endpoint: string;
+            /** @description Positive decimal Sub2API customer group ID, not a name. */
+            targetGroup: string;
+            enabled: boolean;
+            hasSecret: boolean;
+            /** Format: int64 */
+            revision: number;
+            selected: boolean;
+            test: components["schemas"]["DeliveryDestinationTest"] | null;
+        };
+        DeliveryDestinationTest: {
+            /** @enum {string} */
+            connection: "connected" | "connection_failed" | "permission_denied";
+            /** @enum {string} */
+            target: "connected" | "target_mismatch" | "permission_denied" | "untested";
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            testedAt: string;
+        } | null;
+        DeliveryDestinationList: {
+            items: components["schemas"]["DeliveryDestination"][];
+        };
+        CreateDeliveryDestination: {
+            name: string;
+            /** Format: uri */
+            endpoint: string;
+            /** @description Positive decimal Sub2API customer group ID. */
+            targetGroup: string;
+            secret: string;
+        };
+        UpdateDeliveryDestination: {
+            name: string;
+            /** Format: uri */
+            endpoint: string;
+            /** @description Positive decimal Sub2API customer group ID. */
+            targetGroup: string;
+            secret?: string;
+            enabled: boolean;
+        };
         Batch: {
             /** Format: uuid */
             id: string;
@@ -1901,6 +2010,133 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MotherAccount"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listDeliveryDestinations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Owner delivery destinations with redacted secrets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryDestinationList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createDeliveryDestination: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDeliveryDestination"];
+            };
+        };
+        responses: {
+            /** @description Delivery destination created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryDestination"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateDeliveryDestination: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                destinationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDeliveryDestination"];
+            };
+        };
+        responses: {
+            /** @description Delivery destination updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryDestination"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    testDeliveryDestination: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                destinationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection and target validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryDestination"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    selectDeliveryDestination: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                destinationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selected delivery destination */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryDestination"];
                 };
             };
             default: components["responses"]["Problem"];

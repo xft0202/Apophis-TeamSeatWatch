@@ -29,7 +29,7 @@ import {
 import { appTheme } from '../shared/theme';
 import MotherMaterialsView from './MotherMaterialsView';
 import {
-  destinationStore,
+  destinationApi,
   type Destination,
   type DestinationError,
   type TestOutcome,
@@ -326,10 +326,12 @@ const blankDestinationForm: DestinationForm = { name: '', endpoint: '', targetGr
 function destinationErrorMessage(error: unknown): string {
   const code = (error as Partial<DestinationError>).code;
   switch (code) {
-    case 'permission_denied': return '没有权限修改交付去向，请使用 Owner 会话后重试。';
-    case 'invalid_destination': return '请填写名称、HTTPS 地址、目标组和连接秘密。不要填写客户账号密码或 2FA。';
-    case 'not_found': return '该交付去向已不存在，请刷新列表。';
-    case 'not_selectable': return '必须先启用并通过连接、目标组两项测试，才能选择去向。';
+    case 'session_expired': return 'Owner 会话已过期，请重新登录。';
+    case 'csrf_rejected': return '安全校验失败，请刷新页面后重试。';
+    case 'invalid_destination': return '请填写名称、以 /api/v1 结尾的 HTTPS Hub 地址、正整数目标组 ID 和连接密钥。不要填写客户账号密码或 2FA。';
+    case 'destination_not_found': return '该交付去向已不存在，请刷新列表。';
+    case 'destination_not_selectable': return '必须先启用并通过连接、目标组两项测试，才能选择去向。';
+    case 'destination_disabled': return '请先启用去向，再测试连接与目标组。';
     case 'test_stale': return '测试完成前配置已变化，请重新测试当前配置。';
     default: return '操作未完成，请稍后重试。';
   }
@@ -357,28 +359,33 @@ function DestinationTestSummary({ destination }: { destination: Destination }) {
 }
 
 function DeliveryDestinationPanel() {
-  const [destinations, setDestinations] = useState<Destination[]>(() => destinationStore.list(true));
-  const [selectedId, setSelectedId] = useState<string | null>(() => destinationStore.selected(true));
+  const [destinations, setDestinations] = useState<Destination[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<DestinationForm>(blankDestinationForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const [pending, setPending] = useState<string | null>(null);
 
-  const sync = () => {
-    setDestinations(destinationStore.list(true));
-    setSelectedId(destinationStore.selected(true));
+  const sync = async () => {
+    const items = await destinationApi.list();
+    setDestinations(items);
+    setSelectedId(items.find((item) => item.selected)?.id ?? null);
   };
+  useEffect(() => { void sync().catch((error: unknown) => setNotice(destinationErrorMessage(error))); }, []);
   const performAction = async (key: string, action: () => unknown | Promise<unknown>) => {
     setPending(key); setNotice('');
-    try { await action(); sync(); } catch (error: unknown) { setNotice(destinationErrorMessage(error)); } finally { setPending(null); }
+    try { await action(); await sync(); } catch (error: unknown) { setNotice(destinationErrorMessage(error)); } finally { setPending(null); }
   };
   const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     void performAction('save', () => {
-      if (editingId) destinationStore.update(true, editingId, form);
-      else destinationStore.create(true, form);
-      setForm(blankDestinationForm); setEditingId(null); setWizardOpen(false);
+      const operation = editingId
+        ? destinationApi.update(editingId, form, destinations.find((destination) => destination.id === editingId)?.enabled ?? true)
+        : destinationApi.create(form);
+      return operation.then(() => {
+        setForm(blankDestinationForm); setEditingId(null); setWizardOpen(false);
+      });
     });
   };
   const startEdit = (destination: Destination) => {
@@ -412,9 +419,9 @@ function DeliveryDestinationPanel() {
             <Stack gap="md">
               <div><Title order={3} size="h4">{editingId ? '修改交付去向' : '配置交付去向'}</Title><Text size="sm" c="dimmed" mt={4}>保存后仍需重新测试；任何配置变更都会使旧测试结果失效。</Text></div>
               <TextInput label="名称" required value={form.name} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} />
-              <TextInput label="HTTPS 连接地址" placeholder="https://delivery.example.test" required value={form.endpoint} onChange={(event) => setForm({ ...form, endpoint: event.currentTarget.value })} />
-              <TextInput label="目标组" placeholder="例如：team-seatwatch" required value={form.targetGroup} onChange={(event) => setForm({ ...form, targetGroup: event.currentTarget.value })} />
-              <PasswordInput label={editingId ? '连接秘密（留空则保留原秘密）' : '连接秘密'} required={!editingId} autoComplete="new-password" value={form.secret} onChange={(event) => setForm({ ...form, secret: event.currentTarget.value })} />
+              <TextInput label="Sub2API Hub HTTPS 地址" placeholder="https://hub.example.test/api/v1" required value={form.endpoint} onChange={(event) => setForm({ ...form, endpoint: event.currentTarget.value })} />
+              <TextInput label="目标组 ID" placeholder="例如：42" required value={form.targetGroup} onChange={(event) => setForm({ ...form, targetGroup: event.currentTarget.value })} />
+              <PasswordInput label={editingId ? 'Hub API 密钥（留空则保留原密钥）' : 'Hub API 密钥'} required={!editingId} autoComplete="new-password" value={form.secret} onChange={(event) => setForm({ ...form, secret: event.currentTarget.value })} />
               <Group justify="flex-end"><Button type="button" variant="default" radius={6} onClick={cancelEdit}>返回</Button><Button type="submit" radius={6} loading={pending === 'save'}>{editingId ? '保存修改' : '保存配置'}</Button></Group>
             </Stack>
           </form>
@@ -425,14 +432,14 @@ function DeliveryDestinationPanel() {
         {destinations.map((destination) => (
           <Card key={destination.id} withBorder radius={12} padding="lg">
             <Group justify="space-between" align="flex-start" wrap="nowrap">
-              <div><Title order={3} size="h4">{destination.name}</Title><Text size="sm" c="dimmed" mt={4}>{destination.endpoint}</Text><Text size="sm" c="dimmed">目标组：{destination.targetGroup}</Text></div>
+              <div><Title order={3} size="h4">{destination.name}</Title><Text size="sm" c="dimmed" mt={4}>{destination.endpoint}</Text><Text size="sm" c="dimmed">目标组 ID：{destination.targetGroup}</Text></div>
               <Badge color={destination.enabled ? 'green' : 'gray'} variant="light">{destination.enabled ? '已启用' : '已停用'}</Badge>
             </Group>
             <DestinationTestSummary destination={destination} />
             <Divider my="md" />
             <Group justify="space-between" align="center">
-              <Switch label={destination.enabled ? '启用' : '停用'} checked={destination.enabled} onChange={(event) => void performAction(`toggle:${destination.id}`, () => destinationStore.setEnabled(true, destination.id, event.currentTarget.checked))} disabled={pending !== null} />
-              <Group gap="xs"><Button variant="subtle" radius={6} onClick={() => startEdit(destination)} disabled={pending !== null}>修改</Button><Button variant="light" radius={6} onClick={() => void performAction(`test:${destination.id}`, () => destinationStore.test(true, destination.id))} loading={pending === `test:${destination.id}`} disabled={pending !== null || !destination.enabled}>测试连接与目标组</Button><Button radius={6} onClick={() => void performAction(`select:${destination.id}`, () => destinationStore.select(true, destination.id))} disabled={pending !== null || !destination.enabled || destination.test?.connection !== 'connected' || destination.test?.target !== 'connected'}>{selectedId === destination.id ? '当前已选择' : '选择去向'}</Button></Group>
+              <Switch label={destination.enabled ? '启用' : '停用'} checked={destination.enabled} onChange={(event) => void performAction(`toggle:${destination.id}`, () => destinationApi.setEnabled(destination.id, event.currentTarget.checked))} disabled={pending !== null} />
+              <Group gap="xs"><Button variant="subtle" radius={6} onClick={() => startEdit(destination)} disabled={pending !== null}>修改</Button><Button variant="light" radius={6} onClick={() => void performAction(`test:${destination.id}`, () => destinationApi.test(destination.id))} loading={pending === `test:${destination.id}`} disabled={pending !== null || !destination.enabled}>测试连接与目标组</Button><Button radius={6} onClick={() => void performAction(`select:${destination.id}`, () => destinationApi.select(destination.id))} disabled={pending !== null || !destination.enabled || destination.test?.connection !== 'connected' || destination.test?.target !== 'connected'}>{selectedId === destination.id ? '当前已选择' : '选择去向'}</Button></Group>
             </Group>
           </Card>
         ))}

@@ -225,6 +225,113 @@ paths:
                 $ref: '#/components/schemas/MotherAccount'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/delivery-destinations:
+    get:
+      operationId: listDeliveryDestinations
+      security:
+        - ownerSession: []
+      responses:
+        '200':
+          description: Owner delivery destinations with redacted secrets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryDestinationList'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createDeliveryDestination
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDeliveryDestination'
+      responses:
+        '201':
+          description: Delivery destination created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryDestination'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/delivery-destinations/{destinationId}:
+    patch:
+      operationId: updateDeliveryDestination
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - name: destinationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDeliveryDestination'
+      responses:
+        '200':
+          description: Delivery destination updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryDestination'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/delivery-destinations/{destinationId}/test:
+    post:
+      operationId: testDeliveryDestination
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - name: destinationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Connection and target validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryDestination'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/delivery-destinations/{destinationId}/select:
+    post:
+      operationId: selectDeliveryDestination
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - name: destinationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Selected delivery destination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryDestination'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/workspaces:
     get:
       operationId: listWorkspaces
@@ -2417,6 +2524,125 @@ components:
             $ref: '#/components/schemas/TargetProbeStatus'
         total:
           type: integer
+    DeliveryDestination:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - endpoint
+        - targetGroup
+        - enabled
+        - hasSecret
+        - revision
+        - selected
+        - test
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        endpoint:
+          type: string
+          format: uri
+        targetGroup:
+          type: string
+          description: Positive decimal Sub2API customer group ID, not a name.
+          pattern: '^[1-9][0-9]{0,18}$'
+        enabled:
+          type: boolean
+        hasSecret:
+          type: boolean
+        revision:
+          type: integer
+          format: int64
+        selected:
+          type: boolean
+        test:
+          oneOf:
+            - $ref: '#/components/schemas/DeliveryDestinationTest'
+            - type: 'null'
+    DeliveryDestinationTest:
+      type: object
+      nullable: true
+      additionalProperties: false
+      required:
+        - connection
+        - target
+        - revision
+        - testedAt
+      properties:
+        connection:
+          type: string
+          enum: [connected, connection_failed, permission_denied]
+        target:
+          type: string
+          enum: [connected, target_mismatch, permission_denied, untested]
+        revision:
+          type: integer
+          format: int64
+        testedAt:
+          type: string
+          format: date-time
+    DeliveryDestinationList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeliveryDestination'
+    CreateDeliveryDestination:
+      type: object
+      additionalProperties: false
+      required: [name, endpoint, targetGroup, secret]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        endpoint:
+          type: string
+          format: uri
+          minLength: 1
+          maxLength: 2048
+        targetGroup:
+          type: string
+          description: Positive decimal Sub2API customer group ID.
+          pattern: '^[1-9][0-9]{0,18}$'
+          maxLength: 19
+        secret:
+          type: string
+          minLength: 1
+          maxLength: 4096
+    UpdateDeliveryDestination:
+      type: object
+      additionalProperties: false
+      required: [name, endpoint, targetGroup, enabled]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        endpoint:
+          type: string
+          format: uri
+          minLength: 1
+          maxLength: 2048
+        targetGroup:
+          type: string
+          description: Positive decimal Sub2API customer group ID.
+          pattern: '^[1-9][0-9]{0,18}$'
+          maxLength: 19
+        secret:
+          type: string
+          minLength: 0
+          maxLength: 4096
+        enabled:
+          type: boolean
     Batch:
       type: object
       additionalProperties: false

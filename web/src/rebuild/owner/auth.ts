@@ -46,7 +46,7 @@ async function ensureCsrf(): Promise<string> {
   return csrfRequest;
 }
 
-function mutationHeaders() {
+export function mutationHeaders() {
   return ensureCsrf().then((token) => ({ 'X-CSRF-Token': token }));
 }
 

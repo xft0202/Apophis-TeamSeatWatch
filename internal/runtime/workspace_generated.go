@@ -27,6 +27,22 @@ func (h *OwnerAuthHandler) ListMotherAccounts(w http.ResponseWriter, r *http.Req
 	h.listMotherAccounts(w, r, params)
 }
 
+func (h *OwnerAuthHandler) ListDeliveryDestinations(w http.ResponseWriter, r *http.Request) {
+	h.listDeliveryDestinations(w, r)
+}
+func (h *OwnerAuthHandler) CreateDeliveryDestination(w http.ResponseWriter, r *http.Request, _ ownerapi.CreateDeliveryDestinationParams) {
+	h.createDeliveryDestination(w, r)
+}
+func (h *OwnerAuthHandler) UpdateDeliveryDestination(w http.ResponseWriter, r *http.Request, destinationID openapi_types.UUID, _ ownerapi.UpdateDeliveryDestinationParams) {
+	h.updateDeliveryDestination(w, r, destinationID)
+}
+func (h *OwnerAuthHandler) TestDeliveryDestination(w http.ResponseWriter, r *http.Request, destinationID openapi_types.UUID, _ ownerapi.TestDeliveryDestinationParams) {
+	h.testDeliveryDestination(w, r, destinationID)
+}
+func (h *OwnerAuthHandler) SelectDeliveryDestination(w http.ResponseWriter, r *http.Request, destinationID openapi_types.UUID, _ ownerapi.SelectDeliveryDestinationParams) {
+	h.selectDeliveryDestination(w, r, destinationID)
+}
+
 func (h *OwnerAuthHandler) CreateMotherAccount(w http.ResponseWriter, r *http.Request, _ ownerapi.CreateMotherAccountParams) {
 	h.createMotherAccount(w, r)
 }

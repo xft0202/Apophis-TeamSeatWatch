@@ -115,8 +115,9 @@ func decodeKeys(decoder *json.Decoder) (map[uint16][32]byte, error) {
 	return keys, nil
 }
 
-// EncryptTOTP seals a TOTP secret with the current versioned deployment key and a fresh nonce.
-func EncryptTOTP(secret []byte, ring KeyRing) (version uint16, nonce, ciphertext []byte, err error) {
+// EncryptSecret seals deployment-held secret material with the current versioned key.
+// The caller owns the plaintext and must clear it when it is no longer needed.
+func EncryptSecret(secret []byte, ring KeyRing) (version uint16, nonce, ciphertext []byte, err error) {
 	version, key := ring.Current()
 	block, err := aes.NewCipher(key[:])
 	if err != nil {
@@ -134,8 +135,8 @@ func EncryptTOTP(secret []byte, ring KeyRing) (version uint16, nonce, ciphertext
 	return version, nonce, gcm.Seal(nil, nonce, secret, nil), nil
 }
 
-// DecryptTOTP authenticates ciphertext with the key version stored alongside it.
-func DecryptTOTP(version uint16, nonce, ciphertext []byte, ring KeyRing) ([]byte, error) {
+// DecryptSecret authenticates ciphertext with the key version stored alongside it.
+func DecryptSecret(version uint16, nonce, ciphertext []byte, ring KeyRing) ([]byte, error) {
 	key, ok := ring.Lookup(version)
 	if !ok {
 		return nil, errors.New("TOTP key version unavailable")
@@ -153,4 +154,14 @@ func DecryptTOTP(version uint16, nonce, ciphertext []byte, ring KeyRing) ([]byte
 		return nil, errors.New("invalid TOTP ciphertext")
 	}
 	return plaintext, nil
+}
+
+// EncryptTOTP and DecryptTOTP are retained for compatibility with existing
+// credential storage; new secret-bearing domains should use the generic names.
+func EncryptTOTP(secret []byte, ring KeyRing) (uint16, []byte, []byte, error) {
+	return EncryptSecret(secret, ring)
+}
+
+func DecryptTOTP(version uint16, nonce, ciphertext []byte, ring KeyRing) ([]byte, error) {
+	return DecryptSecret(version, nonce, ciphertext, ring)
 }

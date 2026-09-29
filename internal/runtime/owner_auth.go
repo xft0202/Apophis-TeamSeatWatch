@@ -27,10 +27,11 @@ import (
 
 // OwnerAuthConfig contains the deployment-only dependencies for Owner authentication.
 type OwnerAuthConfig struct {
-	DatabaseURL string
-	KeyRing     auth.KeyRing
-	Origins     auth.OriginPolicy
-	Egress      *egress.Manager
+	DatabaseURL      string
+	KeyRing          auth.KeyRing
+	Origins          auth.OriginPolicy
+	Egress           *egress.Manager
+	DestinationProbe DestinationProbe
 }
 
 // OwnerAuthHandler owns the HTTP boundary for the Ticket 03 Owner security API.
@@ -42,6 +43,7 @@ type OwnerAuthHandler struct {
 	workspaceFacts    *workspace.Service
 	workspaceTasks    *task.Store
 	egress            *egress.Manager
+	destinationProbe  DestinationProbe
 	secureCookies     bool
 }
 
@@ -100,6 +102,7 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 		workspaceFacts:    workspace.NewService(pool, config.KeyRing),
 		workspaceTasks:    task.NewStore(pool),
 		egress:            config.Egress,
+		destinationProbe:  config.DestinationProbe,
 		secureCookies:     config.Origins.SecureCookies(),
 	}
 	mux := http.NewServeMux()
