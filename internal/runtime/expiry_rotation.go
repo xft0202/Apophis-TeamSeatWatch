@@ -31,10 +31,40 @@ type rotationProof struct {
 }
 type rotationUsageProof struct {
 	rotationProof
-	WorkspaceID uuid.UUID `json:"workspaceId"`
-	AccountID   uuid.UUID `json:"accountId"`
-	State       string    `json:"state"`
-	EverUsed    bool      `json:"everUsed"`
+	WorkspaceID uuid.UUID                  `json:"workspaceId"`
+	AccountID   uuid.UUID                  `json:"accountId"`
+	State       string                     `json:"state"`
+	EverUsed    bool                       `json:"everUsed"`
+	Absence     *rotationUsageAbsenceProof `json:"absence,omitempty"`
+}
+
+// Only a complete negative mock ledger lookup may distinguish no first-use
+// record from a failed/partial probe. Neither this fixture nor preview history
+// constitutes an authoritative production ledger.
+type rotationUsageAbsenceProof struct {
+	rotationProof
+	WorkspaceID          uuid.UUID `json:"workspaceId"`
+	AccountID            uuid.UUID `json:"accountId"`
+	MotherID             uuid.UUID `json:"motherId"`
+	SessionGeneration    uuid.UUID `json:"sessionGeneration"`
+	VerificationID       int64     `json:"verificationId"`
+	Identifier           string    `json:"identifier"`
+	AccountVersion       int64     `json:"accountVersion"`
+	CredentialVersion    int64     `json:"credentialVersion"`
+	MembershipVersion    int64     `json:"membershipVersion"`
+	LookupComplete       bool      `json:"lookupComplete"`
+	FirstUseRecordStatus string    `json:"firstUseRecordStatus"`
+}
+type rotationCandidateScope struct {
+	WorkspaceID       uuid.UUID
+	AccountID         uuid.UUID
+	MotherID          uuid.UUID
+	SessionGeneration uuid.UUID
+	VerificationID    int64
+	Identifier        string
+	AccountVersion    int64
+	CredentialVersion int64
+	MembershipVersion int64
 }
 type rotationProtectionProof struct {
 	rotationProof
@@ -78,7 +108,19 @@ func validRotationUsage(u rotationUsageProof, workspaceID, accountID uuid.UUID, 
 	if !validRotationProof(u.rotationProof, "mock_workspace_usage", now) || u.WorkspaceID != workspaceID || u.AccountID != accountID {
 		return false
 	}
-	return u.State == "used" && u.EverUsed || u.State == "never_used" && !u.EverUsed || u.State == "unknown"
+	return u.Absence == nil && (u.State == "used" && u.EverUsed || u.State == "never_used" && !u.EverUsed || u.State == "unknown")
+}
+func validRotationCandidateUsage(u rotationUsageProof, scope rotationCandidateScope, now time.Time) bool {
+	if u.State != "unobserved_prejoin" {
+		return validRotationUsage(u, scope.WorkspaceID, scope.AccountID, now)
+	}
+	a := u.Absence
+	return !u.EverUsed && validRotationProof(u.rotationProof, "mock_workspace_usage", now) && u.WorkspaceID == scope.WorkspaceID && u.AccountID == scope.AccountID && a != nil &&
+		validRotationProof(a.rotationProof, "mock_usage_ledger_lookup", now) && a.EvidenceID != u.EvidenceID &&
+		a.WorkspaceID == scope.WorkspaceID && a.AccountID == scope.AccountID && a.MotherID == scope.MotherID &&
+		a.SessionGeneration == scope.SessionGeneration && a.VerificationID == scope.VerificationID &&
+		a.Identifier == scope.Identifier && a.AccountVersion == scope.AccountVersion && a.CredentialVersion == scope.CredentialVersion && a.MembershipVersion == scope.MembershipVersion &&
+		a.AccountVersion > 0 && a.CredentialVersion > 0 && a.MembershipVersion > 0 && a.LookupComplete && a.FirstUseRecordStatus == "absent"
 }
 func validRotationProtection(p rotationProtectionProof, accountID uuid.UUID, now time.Time) bool {
 	if !validRotationProof(p.rotationProof, "mock_global_protection", now) || p.AccountID != accountID {
@@ -119,12 +161,12 @@ type rotationRow interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 }
 
-// A persisted used observation can never be downgraded to never_used for the
-// same account and Workspace by a later mock. This is a fixture-only guard,
-// not a production usage ledger or remote usage observation.
-func rotationPreviouslyUsed(ctx context.Context, db rotationRow, workspaceID, accountID uuid.UUID) (bool, error) {
+// A retained mock everUsed observation in any Workspace cannot be downgraded
+// by a later preview of the same account. This fixture-only history check is
+// not a durable production usage ledger or remote usage observation.
+func rotationPreviouslyUsed(ctx context.Context, db rotationRow, accountID uuid.UUID) (bool, error) {
 	var used bool
-	err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tsw_expiry_rotation_previews prior, LATERAL jsonb_array_elements(COALESCE(prior.facts->'slots','[]'::jsonb) || COALESCE(prior.facts->'candidates','[]'::jsonb)) item WHERE prior.workspace_id=$1 AND prior.facts->>'source'='mock_capability' AND item->>'accountId'=$2 AND item->>'everUsed'='true')`, workspaceID, accountID.String()).Scan(&used)
+	err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tsw_expiry_rotation_previews prior, LATERAL jsonb_array_elements(COALESCE(prior.facts->'slots','[]'::jsonb) || COALESCE(prior.facts->'candidates','[]'::jsonb)) item WHERE prior.facts->>'source'='mock_capability' AND item->>'accountId'=$1 AND item->>'everUsed'='true')`, accountID.String()).Scan(&used)
 	return used, err
 }
 
@@ -264,7 +306,7 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			if !invitations[strings.ToLower(c.identifier)] {
 				reason = "invitation_required"
 			}
-			p.Candidates = append(p.Candidates, ownerapi.ExpiryRotationCandidate{AccountId: c.id, Identifier: c.identifier, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "excluded", Reason: reason})
+			p.Candidates = append(p.Candidates, ownerapi.ExpiryRotationCandidate{AccountId: c.id, Identifier: c.identifier, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "excluded", DeliveryStatus: "blocked", Reason: reason})
 		}
 	}
 	if h.rotationCapability == nil {
@@ -346,7 +388,7 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			}
 			var previouslyUsed bool
 			if !verdict.Usage.EverUsed {
-				previouslyUsed, err = rotationPreviouslyUsed(ctx, db, p.WorkspaceId, verdict.AccountID)
+				previouslyUsed, err = rotationPreviouslyUsed(ctx, db, verdict.AccountID)
 				if err != nil {
 					return p, err
 				}
@@ -392,8 +434,9 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 	}
 	for _, c := range found {
 		verdict, ok := ev.Candidates[c.id]
-		candidate := ownerapi.ExpiryRotationCandidate{AccountId: c.id, Identifier: c.identifier, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "excluded", Reason: "eligibility_proof_missing"}
-		if ok && verdict.AccountID == c.id && verdict.SeatType == "prolite" && validRotationProof(verdict.rotationProof, "mock_candidate_protection", now) && validRotationUsage(verdict.Usage, p.WorkspaceId, c.id, now) && validRotationProtection(verdict.Protection, c.id, now) {
+		candidate := ownerapi.ExpiryRotationCandidate{AccountId: c.id, Identifier: c.identifier, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "excluded", DeliveryStatus: "blocked", Reason: "eligibility_proof_missing"}
+		scope := rotationCandidateScope{WorkspaceID: p.WorkspaceId, AccountID: c.id, MotherID: p.MotherAccountId, SessionGeneration: generation, VerificationID: p.VerificationId, Identifier: c.identifier, AccountVersion: c.accountVersion, CredentialVersion: c.credentialVersion, MembershipVersion: p.SourceRevisions["membership:"+c.id.String()]}
+		if ok && verdict.AccountID == c.id && verdict.SeatType == "prolite" && validRotationProof(verdict.rotationProof, "mock_candidate_protection", now) && validRotationCandidateUsage(verdict.Usage, scope, now) && validRotationProtection(verdict.Protection, c.id, now) {
 			candidate.SeatType = "prolite"
 			candidate.UsageState = ownerapi.ExpiryRotationCandidateUsageState(verdict.Usage.State)
 			candidate.EverUsed = verdict.Usage.EverUsed
@@ -404,9 +447,9 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 				ready = false
 			case verdict.Protection.Status == "delivered" || verdict.Protection.Status == "canceled_retired":
 				candidate.Reason = "global_delivery_protected"
-			case verdict.Usage.State == "never_used" && !verdict.Usage.EverUsed:
+			case (verdict.Usage.State == "unobserved_prejoin" || verdict.Usage.State == "never_used") && !verdict.Usage.EverUsed && verdict.Protection.Status == "none":
 				candidate.Decision = "eligible"
-				candidate.Reason = "fixture_never_used_unprotected"
+				candidate.Reason = "join_candidate_pending_first_probe"
 			case verdict.Usage.State == "used" || verdict.Usage.EverUsed:
 				candidate.Reason = "sticky_usage_protected"
 			default:
@@ -415,7 +458,7 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			}
 			var previouslyUsed bool
 			if !verdict.Usage.EverUsed {
-				previouslyUsed, err = rotationPreviouslyUsed(ctx, db, p.WorkspaceId, c.id)
+				previouslyUsed, err = rotationPreviouslyUsed(ctx, db, c.id)
 				if err != nil {
 					return p, err
 				}
@@ -426,6 +469,14 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 				ready = false
 			}
 		} else {
+			// A correctly scoped everUsed assertion remains sticky even when its
+			// incompatible absence claim makes the candidate ineligible.
+			if verdict.AccountID == c.id && validRotationProof(verdict.Usage.rotationProof, "mock_workspace_usage", now) && verdict.Usage.WorkspaceID == p.WorkspaceId && verdict.Usage.AccountID == c.id && verdict.Usage.EverUsed {
+				candidate.EverUsed = true
+				candidate.Reason = "sticky_usage_protected"
+			} else if verdict.Usage.State == "unobserved_prejoin" {
+				candidate.Reason = "usage_absence_unverified"
+			}
 			ready = false
 		}
 		if !c.complete {
@@ -455,13 +506,16 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 		}
 		if verdict.Decision != string(candidate.Decision) {
 			candidate.Decision = "excluded"
-			if candidate.Reason == "eligibility_proof_missing" || candidate.Reason == "fixture_never_used_unprotected" {
+			if candidate.Reason == "eligibility_proof_missing" || candidate.Reason == "join_candidate_pending_first_probe" {
 				candidate.Reason = "verdict_conflicts_with_evidence"
 			}
 			ready = false
 		}
 		if candidate.Decision == "eligible" {
 			eligible++
+			// The preview has no joined identity or persisted post-join zero
+			// observation. Join eligibility can never certify delivery here.
+			candidate.DeliveryStatus = "join_candidate_pending_first_probe"
 		}
 		p.Candidates = append(p.Candidates, candidate)
 	}
@@ -499,6 +553,9 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			if expiry.Before(p.ExpiresAt) {
 				p.ExpiresAt = expiry
 			}
+		}
+		if v.Usage.Absence != nil && v.Usage.Absence.ExpiresAt.Before(p.ExpiresAt) {
+			p.ExpiresAt = v.Usage.Absence.ExpiresAt
 		}
 	}
 	for _, invite := range ev.Invitations {

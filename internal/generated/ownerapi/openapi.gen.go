@@ -495,6 +495,27 @@ func (e ExpiryRotationCandidateDecision) Valid() bool {
 	}
 }
 
+// Defines values for ExpiryRotationCandidateDeliveryStatus.
+const (
+	ExpiryRotationCandidateDeliveryStatusBlocked                        ExpiryRotationCandidateDeliveryStatus = "blocked"
+	ExpiryRotationCandidateDeliveryStatusDeliverable                    ExpiryRotationCandidateDeliveryStatus = "deliverable"
+	ExpiryRotationCandidateDeliveryStatusJoinCandidatePendingFirstProbe ExpiryRotationCandidateDeliveryStatus = "join_candidate_pending_first_probe"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryRotationCandidateDeliveryStatus enum.
+func (e ExpiryRotationCandidateDeliveryStatus) Valid() bool {
+	switch e {
+	case ExpiryRotationCandidateDeliveryStatusBlocked:
+		return true
+	case ExpiryRotationCandidateDeliveryStatusDeliverable:
+		return true
+	case ExpiryRotationCandidateDeliveryStatusJoinCandidatePendingFirstProbe:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ExpiryRotationCandidateProtectionStatus.
 const (
 	ExpiryRotationCandidateProtectionStatusCanceledRetired ExpiryRotationCandidateProtectionStatus = "canceled_retired"
@@ -530,9 +551,10 @@ func (e ExpiryRotationCandidateProtectionStatus) Valid() bool {
 
 // Defines values for ExpiryRotationCandidateUsageState.
 const (
-	ExpiryRotationCandidateUsageStateNeverUsed ExpiryRotationCandidateUsageState = "never_used"
-	ExpiryRotationCandidateUsageStateUnknown   ExpiryRotationCandidateUsageState = "unknown"
-	ExpiryRotationCandidateUsageStateUsed      ExpiryRotationCandidateUsageState = "used"
+	ExpiryRotationCandidateUsageStateNeverUsed         ExpiryRotationCandidateUsageState = "never_used"
+	ExpiryRotationCandidateUsageStateUnknown           ExpiryRotationCandidateUsageState = "unknown"
+	ExpiryRotationCandidateUsageStateUnobservedPrejoin ExpiryRotationCandidateUsageState = "unobserved_prejoin"
+	ExpiryRotationCandidateUsageStateUsed              ExpiryRotationCandidateUsageState = "used"
 )
 
 // Valid indicates whether the value is a known member of the ExpiryRotationCandidateUsageState enum.
@@ -541,6 +563,8 @@ func (e ExpiryRotationCandidateUsageState) Valid() bool {
 	case ExpiryRotationCandidateUsageStateNeverUsed:
 		return true
 	case ExpiryRotationCandidateUsageStateUnknown:
+		return true
+	case ExpiryRotationCandidateUsageStateUnobservedPrejoin:
 		return true
 	case ExpiryRotationCandidateUsageStateUsed:
 		return true
@@ -2593,8 +2617,11 @@ type ExpiryRotationAssignment struct {
 
 // ExpiryRotationCandidate defines model for ExpiryRotationCandidate.
 type ExpiryRotationCandidate struct {
-	AccountId        openapi_types.UUID                      `json:"accountId"`
-	Decision         ExpiryRotationCandidateDecision         `json:"decision"`
+	AccountId openapi_types.UUID              `json:"accountId"`
+	Decision  ExpiryRotationCandidateDecision `json:"decision"`
+
+	// DeliveryStatus Mock preview only. Pre-join candidates are never deliverable; no persisted post-join scoped zero probe or delivery grant exists.
+	DeliveryStatus   ExpiryRotationCandidateDeliveryStatus   `json:"deliveryStatus"`
 	EverUsed         bool                                    `json:"everUsed"`
 	Identifier       string                                  `json:"identifier"`
 	ProtectionStatus ExpiryRotationCandidateProtectionStatus `json:"protectionStatus"`
@@ -2605,6 +2632,9 @@ type ExpiryRotationCandidate struct {
 
 // ExpiryRotationCandidateDecision defines model for ExpiryRotationCandidate.Decision.
 type ExpiryRotationCandidateDecision string
+
+// ExpiryRotationCandidateDeliveryStatus Mock preview only. Pre-join candidates are never deliverable; no persisted post-join scoped zero probe or delivery grant exists.
+type ExpiryRotationCandidateDeliveryStatus string
 
 // ExpiryRotationCandidateProtectionStatus defines model for ExpiryRotationCandidate.ProtectionStatus.
 type ExpiryRotationCandidateProtectionStatus string

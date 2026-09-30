@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -136,7 +137,9 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 		return rotationProtectionProof{rotationProof: proof("mock_global_protection", "protection-"+id.String()), AccountID: id, Status: status}
 	}
 	usedSlot := rotationVerdict{rotationProof: proof("mock_member_protection", "member-1"), AccountID: original, SeatType: "prolite", Usage: usage(original, "used", true), Protection: protection(original, "none"), Decision: "replaceable", Reason: "fixture-used-unprotected"}
-	eligibleChild := rotationVerdict{rotationProof: proof("mock_candidate_protection", "candidate-1"), AccountID: child, SeatType: "prolite", Usage: usage(child, "never_used", false), Protection: protection(child, "none"), Decision: "eligible", Reason: "fixture-invited-unprotected"}
+	eligibleChild := rotationVerdict{rotationProof: proof("mock_candidate_protection", "candidate-1"), AccountID: child, SeatType: "prolite", Usage: usage(child, "unobserved_prejoin", false), Protection: protection(child, "none"), Decision: "eligible", Reason: "join_candidate_pending_first_probe"}
+	eligibleChild.Usage.Absence = &rotationUsageAbsenceProof{rotationProof: proof("mock_usage_ledger_lookup", "complete-absence-1"), WorkspaceID: space, AccountID: child, MotherID: mother, SessionGeneration: generation, VerificationID: verification, Identifier: "child@rotate.test", AccountVersion: 1, CredentialVersion: 1, MembershipVersion: 1, LookupComplete: true, FirstUseRecordStatus: "absent"}
+	eligibleChild.Usage.Absence.ExpiresAt = now.Add(2 * time.Minute)
 	mock := &mockRotation{evidence: rotationEvidence{WorkspaceID: space, MotherID: mother, VerificationID: verification, Permission: proof("mock_write_permission", "write-1"), PermissionDecision: "manage", Counts: proof("mock_seat_type_counts", "seats-1"), PaidDefault: proof("mock_paid_default_entitlement", "paid-1"), PaidDefaultEntitlement: 2, SeatTypeCounts: map[string]int{"default": 0, "prolite": 1}, Invitations: map[string]rotationInvitationProof{"child@rotate.test": {rotationProof: proof("mock_invite_seat_type", "invite-1"), WorkspaceID: space, VerificationID: verification, Identifier: "child@rotate.test", Status: "pending", SeatType: "prolite"}}, Slots: map[string]rotationVerdict{"member-1": usedSlot}, Candidates: map[uuid.UUID]rotationVerdict{child: eligibleChild}}}
 	h.rotationCapability = mock
 	mock.evidence.PermissionDecision = "read"
@@ -214,8 +217,26 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	unknownUsage.Usage = usage(child, "unknown", false)
 	unknownUsage.Decision = "excluded"
 	mock.evidence.Candidates[child] = unknownUsage
-	if p := preview(); p.Status != "needs_verification" {
+	if p := preview(); p.Status != "needs_verification" || p.Candidates[0].Decision != "excluded" {
 		t.Fatalf("unknown candidate usage accepted: %+v", p)
+	}
+	for name, corrupt := range map[string]func(*rotationVerdict){
+		"missing_lookup":   func(v *rotationVerdict) { v.Usage.Absence = nil },
+		"failed_lookup":    func(v *rotationVerdict) { v.Usage.Absence.LookupComplete = false },
+		"record_exists":    func(v *rotationVerdict) { v.Usage.Absence.FirstUseRecordStatus = "present" },
+		"stale_generation": func(v *rotationVerdict) { v.Usage.Absence.SessionGeneration = uuid.New() },
+		"stale_account":    func(v *rotationVerdict) { v.Usage.Absence.AccountVersion++ },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := eligibleChild
+			bad.Usage.Absence = new(rotationUsageAbsenceProof)
+			*bad.Usage.Absence = *eligibleChild.Usage.Absence
+			corrupt(&bad)
+			mock.evidence.Candidates[child] = bad
+			if p := preview(); p.Status == "ready" || p.Candidates[0].Decision == "eligible" {
+				t.Fatalf("unproved negative lookup accepted: %+v", p)
+			}
+		})
 	}
 	mock.evidence.Candidates[child] = eligibleChild
 	delete(mock.evidence.Invitations, "child@rotate.test")
@@ -257,8 +278,17 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 		t.Fatalf("cross-Workspace delivered candidate was eligible: %+v", p)
 	}
 	seed(`UPDATE tsw_batch_memberships SET target_account_id=$2 WHERE id=$1`, deliveredMembership, priorAccount)
+	// A mock pre-join zero claim is still not a measured and persisted post-join
+	// scoped zero. No preview-only state can declare this account deliverable.
+	prejoinZero := eligibleChild
+	prejoinZero.Usage = usage(child, "never_used", false)
+	mock.evidence.Candidates[child] = prejoinZero
+	if p := preview(); p.Status != "ready" || p.Candidates[0].DeliveryStatus != "join_candidate_pending_first_probe" {
+		t.Fatalf("pre-join zero falsely marked deliverable: %+v", p)
+	}
+	mock.evidence.Candidates[child] = eligibleChild
 	ready := preview()
-	if ready.Status != "ready" || len(ready.Slots) != 1 || len(ready.Candidates) != 1 || ready.Candidates[0].Decision != "eligible" {
+	if ready.Status != "ready" || len(ready.Slots) != 1 || len(ready.Candidates) != 1 || ready.Candidates[0].Decision != "eligible" || ready.Candidates[0].DeliveryStatus != "join_candidate_pending_first_probe" || ready.Candidates[0].UsageState != "unobserved_prejoin" || ready.ExpiresAt.After(eligibleChild.Usage.Absence.ExpiresAt) {
 		t.Fatalf("ready evidence rejected: %+v", ready)
 	}
 	confirmPath := path + "/" + ready.Id.String() + "/confirm"
@@ -331,14 +361,33 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	invite := mock.evidence.Invitations["child@rotate.test"]
 	invite.VerificationID = futureVerification
 	mock.evidence.Invitations["child@rotate.test"] = invite
+	absent := *eligibleChild.Usage.Absence
+	absent.VerificationID = futureVerification
+	eligibleChild.Usage.Absence = &absent
+	mock.evidence.Candidates[child] = eligibleChild
 	if p := preview(); p.Status != "not_expired" {
 		t.Fatalf("future expiry accepted: %s", p.Status)
+	}
+	// Retained mock history for the exact account in another Workspace is
+	// sticky too; a fresh local absence assertion cannot erase everUsed.
+	otherSpace := uuid.New()
+	seed(`INSERT INTO tsw_workspaces(id,platform_workspace_id,display_name) VALUES($1,$2,'other Workspace')`, otherSpace, otherSpace.String())
+	seed(`INSERT INTO tsw_expiry_rotation_previews(owner_id,draft_id,draft_version,workspace_id,verification_id,facts,digest,status,expires_at) VALUES($1,$2,1,$3,$4,$5,$6,'needs_verification',now()+interval '1 minute')`, owner, draft, otherSpace, verification, []byte(`{"source":"mock_capability","candidates":[{"accountId":"`+child.String()+`","everUsed":true}]}`), strings.Repeat("a", 64))
+	if p := preview(); p.Candidates[0].Decision != "excluded" || p.Candidates[0].Reason != "sticky_usage_conflict" || p.Candidates[0].DeliveryStatus != "blocked" {
+		t.Fatalf("cross-Workspace everUsed downgraded by absence: %+v", p)
+	}
+	contradictory := eligibleChild
+	contradictory.Usage.EverUsed = true
+	contradictory.Decision = "excluded"
+	mock.evidence.Candidates[child] = contradictory
+	if p := preview(); p.Candidates[0].Decision != "excluded" || !p.Candidates[0].EverUsed || p.Candidates[0].DeliveryStatus != "blocked" {
+		t.Fatalf("everUsed erased by invalid absence: %+v", p)
 	}
 	wasUsed := eligibleChild
 	wasUsed.Usage = usage(child, "used", true)
 	wasUsed.Decision = "excluded"
 	mock.evidence.Candidates[child] = wasUsed
-	if p := preview(); p.Candidates[0].EverUsed != true {
+	if p := preview(); p.Candidates[0].EverUsed != true || p.Candidates[0].DeliveryStatus != "blocked" {
 		t.Fatalf("used observation not persisted: %+v", p)
 	}
 	mock.evidence.Candidates[child] = eligibleChild

@@ -1269,7 +1269,7 @@ export interface components {
             /** Format: uuid */
             accountId: string;
             /** @enum {string} */
-            usageState: "unknown" | "used" | "never_used";
+            usageState: "unknown" | "used" | "never_used" | "unobserved_prejoin";
             everUsed: boolean;
             /** @enum {string} */
             protectionStatus: "unknown" | "none" | "delivered" | "canceled_retired" | "sale_reserved" | "delivery_pending" | "suspected_sold";
@@ -1277,6 +1277,11 @@ export interface components {
             seatType: string;
             /** @enum {string} */
             decision: "eligible" | "excluded";
+            /**
+             * @description Mock preview only. Pre-join candidates are never deliverable; no persisted post-join scoped zero probe or delivery grant exists.
+             * @enum {string}
+             */
+            deliveryStatus: "blocked" | "join_candidate_pending_first_probe" | "deliverable";
             reason: string;
         };
         ExpiryRotationPreview: {

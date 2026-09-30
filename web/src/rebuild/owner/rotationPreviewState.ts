@@ -20,6 +20,19 @@ export function canConfirmRotation(item: ExpiryPreview, draftVersion: number, no
     new Date(item.expiresAt).getTime() > now && item.slots.some((slot) => slot.decision === 'replaceable') &&
     item.candidates.filter((candidate) => candidate.decision === 'eligible').length === item.slots.filter((slot) => slot.decision === 'replaceable').length;
 }
+export function rotationCandidateStatus(candidate: ExpiryPreview['candidates'][number]): string {
+  if (candidate.deliveryStatus === 'join_candidate_pending_first_probe') {
+    return '仅可作为受控加入候选；加入后须实测目标空间零用量并成功落账，当前不可交付。';
+  }
+  if (candidate.reason === 'usage_absence_unverified' || candidate.reason === 'usage_unknown') {
+    return '未取得完整的加入前无首次用量记录证明；探测失败或未知不能当作无记录。';
+  }
+  if (candidate.reason === 'sticky_usage_conflict' || candidate.reason === 'sticky_usage_protected') {
+    return '曾有用量记录，不可按未使用新号加入或交付。';
+  }
+  return `不可加入或交付：${candidate.reason}`;
+}
+
 export function rotationStatus(item: ExpiryPreview): string {
   switch (item.status) {
     case 'pending_permission': return '写入管理权限缺少独立证据；可读取空间不代表允许管理。本预览不能授权。';
@@ -28,6 +41,6 @@ export function rotationStatus(item: ExpiryPreview): string {
     case 'needs_verification': return '原席位保护、候选资格或席位与合格候选数待核验；请修订草案后重新预览。不会整批清退，也不会临时发邀请。';
     case 'authorized': return '已记录冻结授权；本阶段不执行邀请、加入、清退或推送。';
     case 'revoked': return '授权已撤销；原确认不能再次使用。';
-    case 'ready': return '只读预览事实已齐；授权写入围栏待实现。本阶段不会建立可执行授权。';
+    case 'ready': return '只读预览仅核对逐席受控加入候选；加入后首次目标空间零用量实测与持久化前不可交付。授权写入围栏待实现，本阶段不会建立可执行授权。';
   }
 }

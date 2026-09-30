@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canConfirmRotation, explicitRotationAssignments, rotationStatus } from '../src/rebuild/owner/rotationPreviewState.ts';
+import { canConfirmRotation, explicitRotationAssignments, rotationCandidateStatus, rotationStatus } from '../src/rebuild/owner/rotationPreviewState.ts';
 
 const now = Date.parse('2026-01-01T00:00:00Z');
 const ready = {
@@ -22,7 +22,16 @@ test('wizard submits explicit mapping review only for a fresh, exact ready previ
   assert.equal(canConfirmRotation({ ...ready, slots: [{ decision: 'retained' }] }, 4, now), false);
   assert.match(rotationStatus({ ...ready, status: 'pending_permission' }), /可读取空间不代表允许管理/);
   assert.match(rotationStatus({ ...ready, status: 'needs_verification' }), /不会整批清退/);
-  assert.match(rotationStatus(ready), /不会建立可执行授权/);
+  assert.match(rotationStatus(ready), /加入后首次目标空间零用量实测与持久化前不可交付/);
+});
+
+test('join candidate is not a deliverable before persisted post-join scoped zero', () => {
+  const candidate = { decision: 'eligible', usageState: 'unobserved_prejoin', deliveryStatus: 'join_candidate_pending_first_probe', reason: 'join_candidate_pending_first_probe' };
+  assert.match(rotationCandidateStatus(candidate), /当前不可交付/);
+  for (const reason of ['usage_absence_unverified', 'usage_unknown']) {
+    assert.match(rotationCandidateStatus({ ...candidate, decision: 'excluded', deliveryStatus: 'blocked', reason }), /不能当作无记录/);
+  }
+  assert.match(rotationCandidateStatus({ ...candidate, decision: 'excluded', deliveryStatus: 'blocked', reason: 'sticky_usage_conflict' }), /曾有用量/);
 });
 
 test('Owner must explicitly match each independently eligible candidate to one compatible original seat', () => {

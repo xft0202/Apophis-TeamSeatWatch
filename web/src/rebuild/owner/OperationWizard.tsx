@@ -5,7 +5,7 @@ import { getMotherDiscovery, getSelectedWorkspaceAccess, getSelectedWorkspaceVer
 import { destinationApi, type Destination } from './deliveryDestination';
 import { operationDraftApi, type Draft, type DraftChange, type DraftChild } from './operationDraft';
 import { expiryRotationApi, type ExpiryPreview } from './expiryRotation';
-import { canConfirmRotation, explicitRotationAssignments, rotationStatus } from './rotationPreviewState';
+import { canConfirmRotation, explicitRotationAssignments, rotationCandidateStatus, rotationStatus } from './rotationPreviewState';
 import { canChooseDestination, draftStatus } from './operationWizardState';
 import { createOperationWizardRequests } from './operationWizardRequests';
 import { standbyApi, type Batch, type Selection } from './standbyBatches';
@@ -207,12 +207,12 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
           <Title order={4}>原席位逐项处理</Title>
           {rotation.slots.map((slot) => <Text size="sm" key={slot.platformMemberId}>{slot.identifier} · {slot.platformMemberId} · {slot.seatType || '类型待核验'} · 使用 {slot.usageState}{slot.everUsed ? '（曾使用）' : ''} · 全局保护 {slot.protectionStatus} · {slot.decision} · {slot.reason}</Text>)}
           <Title order={4}>候选与排除原因</Title>
-          {rotation.candidates.map((child) => <Text size="sm" key={child.accountId}>{child.identifier} · {child.accountId} · {child.seatType || '类型待核验'} · 使用 {child.usageState}{child.everUsed ? '（曾使用）' : ''} · 全局保护 {child.protectionStatus} · {child.decision} · {child.reason}</Text>)}
+          {rotation.candidates.map((child) => <Text size="sm" key={child.accountId}>{child.identifier} · {child.accountId} · {child.seatType || '类型待核验'} · 使用 {child.usageState}{child.everUsed ? '（曾使用）' : ''} · 全局保护 {child.protectionStatus} · {child.decision} · {rotationCandidateStatus(child)}</Text>)}
           <Text size="xs">预览指纹：{rotation.digest}。缺少邀请的候选仅标记“需邀请”；任何新邀请是独立的明确准备步骤，本阶段不会发出邀请。</Text>
           {rotation.status === 'authorized' ? <Button variant="light" color="red" loading={pending} onClick={() => void rotationAction('revoke')}>撤销授权（尚未执行）</Button> : null}
           {rotation.status === 'authorized' ? <Text size="sm">明确匹配：{rotation.assignments.map((mapping) => `${mapping.platformMemberId} → ${mapping.accountId}`).join('；')} · 授权指纹 {rotation.authorizationDigest}</Text> : null}
           {canConfirmRotation(rotation, draft.version, Date.now()) && !stale ? <Stack gap="xs">
-            <Text size="sm">逐席选择替换子号；不会按顺序自动配对。一个候选不能占用多个席位。</Text>
+            <Text size="sm">逐席选择受控加入候选；不会按顺序自动配对。一个候选不能占用多个席位。匹配不是加入或交付授权；首次用量须加入后实测并落账。</Text>
             {rotation.slots.filter((slot) => slot.decision === 'replaceable').map((slot) => <Select key={slot.platformMemberId} label={`${slot.identifier} · ${slot.platformMemberId} · ${slot.seatType}`} placeholder="明确选择此席候选" data={rotation.candidates.filter((child) => child.decision === 'eligible' && child.seatType === slot.seatType).map((child) => ({ value: child.accountId, label: `${child.identifier} · ${child.accountId}`, disabled: Object.entries(rotationChoices).some(([selectedSlot, id]) => selectedSlot !== slot.platformMemberId && id === child.accountId) }))} value={rotationChoices[slot.platformMemberId] || null} onChange={(value) => setRotationChoices((current) => ({ ...current, [slot.platformMemberId]: value || '' }))} />)}
             <Button disabled={!explicitRotationAssignments(rotation, rotationChoices)} loading={pending} onClick={() => void rotationAction('confirm')}>提交逐席匹配核对（写入围栏未就绪时拒绝授权）</Button>
           </Stack> : null}

@@ -2359,6 +2359,7 @@ components:
         - everUsed
         - protectionStatus
         - decision
+        - deliveryStatus
         - reason
       properties:
         accountId:
@@ -2366,7 +2367,7 @@ components:
           format: uuid
         usageState:
           type: string
-          enum: [unknown, used, never_used]
+          enum: [unknown, used, never_used, unobserved_prejoin]
         everUsed:
           type: boolean
         protectionStatus:
@@ -2386,6 +2387,12 @@ components:
         decision:
           type: string
           enum: [eligible, excluded]
+        deliveryStatus:
+          type: string
+          description: >-
+            Mock preview only. Pre-join candidates are never deliverable;
+            no persisted post-join scoped zero probe or delivery grant exists.
+          enum: [blocked, join_candidate_pending_first_probe, deliverable]
         reason:
           type: string
     ExpiryRotationPreview:

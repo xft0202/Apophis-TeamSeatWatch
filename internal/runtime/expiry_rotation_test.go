@@ -52,6 +52,46 @@ func TestExpiryRotationUsageAndGlobalProtectionAreScopedAndSticky(t *testing.T) 
 	}
 }
 
+func TestExpiryRotationPrejoinAbsenceRequiresCompleteCurrentScopedLookup(t *testing.T) {
+	now := time.Now().UTC()
+	workspace, account, mother, generation := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	proof := rotationProof{Source: "mock_usage_ledger_lookup", EvidenceID: "negative-ledger-lookup", ObservedAt: now.Add(-time.Second), ExpiresAt: now.Add(time.Minute)}
+	absence := &rotationUsageAbsenceProof{rotationProof: proof, WorkspaceID: workspace, AccountID: account, MotherID: mother, SessionGeneration: generation, VerificationID: 42, Identifier: "child@rotate.test", AccountVersion: 3, CredentialVersion: 2, MembershipVersion: 1, LookupComplete: true, FirstUseRecordStatus: "absent"}
+	usage := rotationUsageProof{rotationProof: rotationProof{Source: "mock_workspace_usage", EvidenceID: "usage-check", ObservedAt: proof.ObservedAt, ExpiresAt: proof.ExpiresAt}, WorkspaceID: workspace, AccountID: account, State: "unobserved_prejoin", Absence: absence}
+	scope := rotationCandidateScope{WorkspaceID: workspace, AccountID: account, MotherID: mother, SessionGeneration: generation, VerificationID: 42, Identifier: "child@rotate.test", AccountVersion: 3, CredentialVersion: 2, MembershipVersion: 1}
+	if !validRotationCandidateUsage(usage, scope, now) {
+		t.Fatal("complete scoped absence rejected")
+	}
+	for name, change := range map[string]func(*rotationUsageProof){
+		"missing":          func(u *rotationUsageProof) { u.Absence = nil },
+		"incomplete":       func(u *rotationUsageProof) { u.Absence.LookupComplete = false },
+		"record_exists":    func(u *rotationUsageProof) { u.Absence.FirstUseRecordStatus = "present" },
+		"ever_used":        func(u *rotationUsageProof) { u.EverUsed = true },
+		"unknown":          func(u *rotationUsageProof) { u.State = "unknown" },
+		"wrong_workspace":  func(u *rotationUsageProof) { u.Absence.WorkspaceID = uuid.New() },
+		"wrong_account":    func(u *rotationUsageProof) { u.Absence.AccountID = uuid.New() },
+		"wrong_mother":     func(u *rotationUsageProof) { u.Absence.MotherID = uuid.New() },
+		"wrong_generation": func(u *rotationUsageProof) { u.Absence.SessionGeneration = uuid.New() },
+		"old_verification": func(u *rotationUsageProof) { u.Absence.VerificationID-- },
+		"wrong_identifier": func(u *rotationUsageProof) { u.Absence.Identifier = "other@rotate.test" },
+		"old_account":      func(u *rotationUsageProof) { u.Absence.AccountVersion-- },
+		"old_credential":   func(u *rotationUsageProof) { u.Absence.CredentialVersion-- },
+		"old_membership":   func(u *rotationUsageProof) { u.Absence.MembershipVersion-- },
+		"wrong_source":     func(u *rotationUsageProof) { u.Absence.Source = "mock_workspace_usage" },
+		"expired":          func(u *rotationUsageProof) { u.Absence.ExpiresAt = now },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := usage
+			copyProof := *absence
+			bad.Absence = &copyProof
+			change(&bad)
+			if validRotationCandidateUsage(bad, scope, now) {
+				t.Fatal("unproved absence admitted")
+			}
+		})
+	}
+}
+
 func TestExpiryRotationDeadlineBoundary(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	if rotationExpired(now.Add(time.Nanosecond), now) || !rotationExpired(now, now) || !rotationExpired(now.Add(-time.Nanosecond), now) {
