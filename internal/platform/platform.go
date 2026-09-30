@@ -51,6 +51,7 @@ type Result struct {
 	SeatLimit          *int
 	MemberCount        *int
 	PendingInviteCount *int
+	SeatTypeCounts     map[string]int
 	Completeness       Completeness
 	Members            []Member
 }
@@ -61,6 +62,7 @@ type Member struct {
 	Identifier       string `json:"identifier"`
 	Status           string `json:"status"`
 	Role             string `json:"role"`
+	SeatType         string `json:"seat_type"`
 }
 
 // Reader is intentionally split by capability so fixtures can control each

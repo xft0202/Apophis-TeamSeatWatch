@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// The current standby editor takes account then batch parent locks before it
-// mutates membership and batch version. It must not take an account epoch while
-// already waiting on the batch epoch held by the reader.
+// The standby editor takes account then batch parent locks before it mutates
+// membership. The membership trigger joins both epochs; a confirmation that
+// already owns them serializes the writer without taking any fact-row lock.
 func TestStandbyEditorEpochLockOrderIntegration(t *testing.T) {
 	db, ctx := epochFixture(t)
 	account, batch := uuid.New(), uuid.New()
@@ -63,7 +63,7 @@ func TestStandbyEditorEpochLockOrderIntegration(t *testing.T) {
 	if err = writer.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if epochVersion(t, ctx, db, Key{StandbyBatch, batch}) != 2 {
+	if epochVersion(t, ctx, db, Key{StandbyBatch, batch}) != 3 {
 		t.Fatal("batch epoch not advanced")
 	}
 }

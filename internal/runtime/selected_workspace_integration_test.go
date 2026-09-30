@@ -434,15 +434,15 @@ func TestSelectedWorkspaceFactsIsolatedAcrossMothersAndWorkspaces(t *testing.T) 
 		case req.URL.Path == "/backend-api/accounts/canonical-b/users/seat_type_counts":
 			body = `{"seat_type_counts":{"default":2,"usage_based":0,"automation":0,"prolite":0}}`
 		case req.URL.Path == "/backend-api/accounts/canonical-b/users" && req.URL.Query().Get("offset") == "0":
-			body = `{"total":2,"limit":100,"offset":0,"items":[{"id":"user-a","email":"child@example.test","role":"owner"}]}`
+			body = `{"total":2,"limit":100,"offset":0,"items":[{"id":"user-a","email":"child@example.test","role":"owner","seat_type":"default"}]}`
 		case req.URL.Path == "/backend-api/accounts/canonical-b/users" && req.URL.Query().Get("offset") == "1":
 			if httpMode.Load() == 2 {
 				body = `{"total":2,"limit":100,"offset":1,"items":[]}`
 			} else {
-				body = `{"total":2,"limit":100,"offset":1,"items":[{"id":"user-b","email":"other@example.test","role":"standard-user"}]}`
+				body = `{"total":2,"limit":100,"offset":1,"items":[{"id":"user-b","email":"other@example.test","role":"standard-user","seat_type":"default"}]}`
 			}
 		case req.URL.Path == "/backend-api/accounts/canonical-b/invites" && req.URL.Query().Get("offset") == "0":
-			body = `{"total":1,"limit":100,"offset":0,"items":[{"email_address":"invited@example.test","status":2}]}`
+			body = `{"total":1,"limit":100,"offset":0,"items":[{"email_address":"invited@example.test","status":2,"seat_type":"default"}]}`
 		default:
 			return nil, errors.New("endpoint not allowlisted")
 		}

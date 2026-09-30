@@ -45,8 +45,10 @@ type MotherMaterial struct {
 type DiscoveredWorkspace struct {
 	PlatformID string
 	Name       string
-	// Readable is never a grant of management permission.
+	// Readable is never a grant of management permission. Role is independent
+	// first-party discovery evidence and may still be unknown.
 	Access string // readable, permission_denied, unknown
+	Role   string // owner, admin, member, unknown
 }
 
 type DiscoveryResult struct {
@@ -103,7 +105,8 @@ func ValidateDiscovery(result DiscoveryResult) bool {
 	seen := make(map[string]bool, len(result.Workspaces))
 	for _, item := range result.Workspaces {
 		if strings.TrimSpace(item.PlatformID) == "" || len(item.PlatformID) > 255 || strings.TrimSpace(item.Name) == "" || len(item.Name) > 120 ||
-			(item.Access != "readable" && item.Access != "permission_denied" && item.Access != "unknown") || seen[item.PlatformID] {
+			(item.Access != "readable" && item.Access != "permission_denied" && item.Access != "unknown") ||
+			(item.Role != "" && item.Role != "owner" && item.Role != "admin" && item.Role != "member" && item.Role != "unknown") || seen[item.PlatformID] {
 			return false
 		}
 		seen[item.PlatformID] = true

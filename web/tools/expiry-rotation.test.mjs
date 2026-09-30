@@ -24,7 +24,7 @@ test('wizard submits explicit mapping review only for a fresh, exact ready previ
   assert.equal(canConfirmRotation({ ...ready, slots: [{ decision: 'retained' }] }, 4, now), false);
   assert.match(rotationStatus({ ...ready, status: 'pending_permission' }), /可读取空间不代表允许管理/);
   assert.match(rotationStatus({ ...ready, status: 'needs_verification' }), /不会整批清退/);
-  assert.match(rotationStatus(ready), /加入后首次目标空间零用量实测与持久化前不可交付/);
+  assert.match(rotationStatus(ready), /可明确冻结逐席授权/);
 });
 
 test('join candidate is not a deliverable before persisted post-join scoped zero', () => {

@@ -44,11 +44,12 @@ func (r OfficialSelectedWorkspaceReader) VerifySelectedWorkspace(ctx context.Con
 	read := selectedHTTPRead{client: &client, access: access, workspaceID: workspaceID}
 	var activeUntil *time.Time
 	var paid *int
+	var seatTypeCounts map[string]int
 	var memberList, inviteList []Member
 	var subOK, countsOK, membersOK, invitesOK bool
 	var denied bool
 	activeUntil, paid, subOK = read.subscription(ctx, &facts)
-	countsOK = read.counts(ctx, &facts)
+	seatTypeCounts, countsOK = read.counts(ctx, &facts)
 	memberList, membersOK = read.members(ctx, &facts)
 	inviteList, invitesOK = read.invites(ctx, &facts)
 	for _, source := range facts.Sources {
@@ -69,7 +70,8 @@ func (r OfficialSelectedWorkspaceReader) VerifySelectedWorkspace(ctx context.Con
 	members, invites := len(memberList), len(inviteList)
 	facts.Permission = "read"
 	facts.Result = Result{Outcome: OutcomeOperational, Completeness: Complete, ObservedAt: facts.Result.ObservedAt,
-		ActiveUntil: activeUntil, SeatLimit: paid, MemberCount: &members, PendingInviteCount: &invites, Members: append(memberList, inviteList...)}
+		ActiveUntil: activeUntil, SeatLimit: paid, MemberCount: &members, PendingInviteCount: &invites,
+		SeatTypeCounts: seatTypeCounts, Members: append(memberList, inviteList...)}
 	return facts, nil
 }
 
@@ -208,7 +210,7 @@ func (r selectedHTTPRead) subscription(ctx context.Context, facts *SelectedWorks
 	return expiry, paid, outcome == OutcomeOperational
 }
 
-func (r selectedHTTPRead) counts(ctx context.Context, facts *SelectedWorkspaceFacts) bool {
+func (r selectedHTTPRead) counts(ctx context.Context, facts *SelectedWorkspaceFacts) (map[string]int, bool) {
 	observed := time.Now().UTC()
 	body, outcome := r.get(ctx, "seat_type_counts")
 	var payload struct {
@@ -226,7 +228,13 @@ func (r selectedHTTPRead) counts(ctx context.Context, facts *SelectedWorkspaceFa
 		}
 	}
 	appendReadSource(facts, "seat_type_counts", observed, outcome)
-	return outcome == OutcomeOperational
+	if outcome != OutcomeOperational {
+		return nil, false
+	}
+	return map[string]int{
+		"default": *payload.Counts.Default, "usage_based": *payload.Counts.UsageBased,
+		"automation": *payload.Counts.Automation, "prolite": *payload.Counts.Prolite,
+	}, true
 }
 
 type selectedPage[T any] struct {
@@ -279,6 +287,7 @@ func (r selectedHTTPRead) members(ctx context.Context, facts *SelectedWorkspaceF
 		AccountUserID string `json:"account_user_id"`
 		Email         string `json:"email"`
 		Role          string `json:"role"`
+		SeatType      string `json:"seat_type"`
 	}
 	entries, outcome := fetchSelectedPages[item](ctx, r, "workspace_members", func(raw item) (Member, bool) {
 		identifier := strings.ToLower(strings.TrimSpace(raw.Email))
@@ -286,7 +295,8 @@ func (r selectedHTTPRead) members(ctx context.Context, facts *SelectedWorkspaceF
 		if id == "" {
 			id = strings.TrimSpace(raw.AccountUserID)
 		}
-		return Member{Kind: "member", PlatformMemberID: id, Identifier: identifier, Status: "listed", Role: raw.Role}, id != "" && identifier != "" && len(identifier) <= 254 && len(raw.Role) <= 64
+		seatType, seatOK := selectedSeatType(raw.SeatType)
+		return Member{Kind: "member", PlatformMemberID: id, Identifier: identifier, Status: "listed", Role: raw.Role, SeatType: seatType}, id != "" && identifier != "" && len(identifier) <= 254 && len(raw.Role) <= 64 && seatOK
 	})
 	appendReadSource(facts, "workspace_members", observed, outcome)
 	return entries, outcome == OutcomeOperational
@@ -298,6 +308,7 @@ func (r selectedHTTPRead) invites(ctx context.Context, facts *SelectedWorkspaceF
 		EmailAddress string          `json:"email_address"`
 		Email        string          `json:"email"`
 		Status       json.RawMessage `json:"status"`
+		SeatType     string          `json:"seat_type"`
 	}
 	entries, outcome := fetchSelectedPages[item](ctx, r, "outbound_invites", func(raw item) (Member, bool) {
 		identifier := strings.ToLower(strings.TrimSpace(raw.EmailAddress))
@@ -311,8 +322,18 @@ func (r selectedHTTPRead) invites(ctx context.Context, facts *SelectedWorkspaceF
 		if status != "pending" && status != "2" {
 			return Member{}, false
 		}
-		return Member{Kind: "pending_invite", Identifier: identifier, Status: "pending"}, identifier != "" && len(identifier) <= 254
+		seatType, seatOK := selectedSeatType(raw.SeatType)
+		return Member{Kind: "pending_invite", Identifier: identifier, Status: "pending", SeatType: seatType}, identifier != "" && len(identifier) <= 254 && seatOK
 	})
 	appendReadSource(facts, "outbound_invites", observed, outcome)
 	return entries, outcome == OutcomeOperational
+}
+
+func selectedSeatType(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "default", "usage_based", "automation", "prolite":
+		return strings.ToLower(strings.TrimSpace(value)), true
+	default:
+		return "", false
+	}
 }

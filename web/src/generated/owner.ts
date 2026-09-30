@@ -1278,7 +1278,7 @@ export interface components {
             /** @enum {string} */
             decision: "eligible" | "excluded";
             /**
-             * @description Mock preview only. Pre-join candidates are never deliverable; no persisted post-join scoped zero probe or delivery grant exists.
+             * @description Pre-join candidates are never deliverable. Delivery requires a separately persisted post-join scoped zero observation.
              * @enum {string}
              */
             deliveryStatus: "blocked" | "join_candidate_pending_first_probe" | "deliverable";
@@ -1321,6 +1321,8 @@ export interface components {
             slots: components["schemas"]["ExpiryRotationSlot"][];
             candidates: components["schemas"]["ExpiryRotationCandidate"][];
             source: string;
+            /** @enum {string} */
+            managementPermission: "unknown" | "manage";
             evidenceFingerprint: string;
             assignments: components["schemas"]["ExpiryRotationAssignment"][];
             authorizationDigest?: string;
@@ -2841,7 +2843,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Reserved for a separately reviewed durable write fence */
+            /** @description Frozen, writer-fenced authorization; no remote mutation is dispatched */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2850,7 +2852,7 @@ export interface operations {
                     "application/json": components["schemas"]["ExpiryRotationPreview"];
                 };
             };
-            /** @description Currently returns pending_write_fence for valid mapping */
+            /** @description Preview, permission, evidence, assignment, or idempotency conflict */
             409: {
                 headers: {
                     [name: string]: unknown;

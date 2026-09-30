@@ -14,7 +14,7 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// Rehearse 24 -> 25 -> 26 -> 27 while preserving a completed selection and preview.
+// Rehearse 24 -> 25 -> 26 -> 27 -> 28 while preserving a completed selection and preview.
 func TestOperationSelectionUpgradeFrom24Integration(t *testing.T) {
 	dsn := os.Getenv("TSW_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -99,15 +99,29 @@ func TestOperationSelectionUpgradeFrom24Integration(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_operation_selection_drafts WHERE id=$1 AND owner_id=$2 AND mother_account_id=$3 AND workspace_id=$4 AND batch_id=$5 AND destination_id=$6 AND step='complete'`, id, owner, mother, workspace, batch, destination).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("idempotent upgrade lost selection dependencies: count=%d err=%v", count, err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_expiry_rotation_previews WHERE id=$1 AND draft_id=$2 AND facts->>'source'='upgrade'`, preview, id).Scan(&count); err != nil || count != 1 {
-		t.Fatalf("26 -> 27 upgrade lost preview: count=%d err=%v", count, err)
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_expiry_rotation_previews WHERE id=$1 AND draft_id=$2 AND facts->>'source'='upgrade' AND epoch_versions IS NULL`, preview, id).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("26 -> 28 upgrade lost preview or treated legacy authorization as fenced: count=%d err=%v", count, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('tsw_rotation_usage_ledger','tsw_rotation_global_protections')`).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("migration 28 evidence ledgers missing: count=%d err=%v", count, err)
 	}
 	for _, key := range []struct {
 		kind string
 		id   uuid.UUID
-	}{{"workspace", workspace}, {"mother", mother}, {"standby_batch", batch}, {"destination", destination}} {
+	}{{"workspace", workspace}, {"mother", mother}, {"standby_batch", batch}, {"destination", destination},
+		{"target_identity", uuid.MustParse("00000000-0000-0000-0000-000000000001")},
+		{"standby_membership", uuid.MustParse("00000000-0000-0000-0000-000000000002")}} {
 		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_rotation_epochs WHERE kind=$1 AND id=$2`, key.kind, key.id).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("missing backfilled epoch %s/%s: count=%d err=%v", key.kind, key.id, count, err)
 		}
+	}
+	if _, err := provider.DownTo(ctx, 27); err != nil {
+		t.Fatalf("28 -> 27 downgrade: %v", err)
+	}
+	if _, err := provider.UpTo(ctx, 28); err != nil {
+		t.Fatalf("27 -> 28 reapply: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_expiry_rotation_previews WHERE id=$1 AND draft_id=$2`, preview, id).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("28 downgrade/reapply lost frozen preview: count=%d err=%v", count, err)
 	}
 }

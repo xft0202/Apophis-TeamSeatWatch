@@ -573,6 +573,24 @@ func (e ExpiryRotationCandidateUsageState) Valid() bool {
 	}
 }
 
+// Defines values for ExpiryRotationPreviewManagementPermission.
+const (
+	ExpiryRotationPreviewManagementPermissionManage  ExpiryRotationPreviewManagementPermission = "manage"
+	ExpiryRotationPreviewManagementPermissionUnknown ExpiryRotationPreviewManagementPermission = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryRotationPreviewManagementPermission enum.
+func (e ExpiryRotationPreviewManagementPermission) Valid() bool {
+	switch e {
+	case ExpiryRotationPreviewManagementPermissionManage:
+		return true
+	case ExpiryRotationPreviewManagementPermissionUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ExpiryRotationPreviewStatus.
 const (
 	ExpiryRotationPreviewStatusAuthorized        ExpiryRotationPreviewStatus = "authorized"
@@ -2620,7 +2638,7 @@ type ExpiryRotationCandidate struct {
 	AccountId openapi_types.UUID              `json:"accountId"`
 	Decision  ExpiryRotationCandidateDecision `json:"decision"`
 
-	// DeliveryStatus Mock preview only. Pre-join candidates are never deliverable; no persisted post-join scoped zero probe or delivery grant exists.
+	// DeliveryStatus Pre-join candidates are never deliverable. Delivery requires a separately persisted post-join scoped zero observation.
 	DeliveryStatus   ExpiryRotationCandidateDeliveryStatus   `json:"deliveryStatus"`
 	EverUsed         bool                                    `json:"everUsed"`
 	Identifier       string                                  `json:"identifier"`
@@ -2633,7 +2651,7 @@ type ExpiryRotationCandidate struct {
 // ExpiryRotationCandidateDecision defines model for ExpiryRotationCandidate.Decision.
 type ExpiryRotationCandidateDecision string
 
-// ExpiryRotationCandidateDeliveryStatus Mock preview only. Pre-join candidates are never deliverable; no persisted post-join scoped zero probe or delivery grant exists.
+// ExpiryRotationCandidateDeliveryStatus Pre-join candidates are never deliverable. Delivery requires a separately persisted post-join scoped zero observation.
 type ExpiryRotationCandidateDeliveryStatus string
 
 // ExpiryRotationCandidateProtectionStatus defines model for ExpiryRotationCandidate.ProtectionStatus.
@@ -2652,28 +2670,29 @@ type ExpiryRotationConfirmation struct {
 
 // ExpiryRotationPreview defines model for ExpiryRotationPreview.
 type ExpiryRotationPreview struct {
-	ActiveUntil            time.Time                  `json:"activeUntil"`
-	Assignments            []ExpiryRotationAssignment `json:"assignments"`
-	AuthorizationDigest    *string                    `json:"authorizationDigest,omitempty"`
-	Authorized             bool                       `json:"authorized"`
-	AuthorizedAt           *time.Time                 `json:"authorizedAt,omitempty"`
-	AuthorizedBy           *openapi_types.UUID        `json:"authorizedBy,omitempty"`
-	BatchId                openapi_types.UUID         `json:"batchId"`
-	BatchVersion           int64                      `json:"batchVersion"`
-	Candidates             []ExpiryRotationCandidate  `json:"candidates"`
-	DestinationId          openapi_types.UUID         `json:"destinationId"`
-	DestinationRevision    int64                      `json:"destinationRevision"`
-	Digest                 string                     `json:"digest"`
-	DraftId                openapi_types.UUID         `json:"draftId"`
-	DraftVersion           int64                      `json:"draftVersion"`
-	EvidenceFingerprint    string                     `json:"evidenceFingerprint"`
-	ExpiresAt              time.Time                  `json:"expiresAt"`
-	Id                     openapi_types.UUID         `json:"id"`
-	Invitations            []string                   `json:"invitations"`
-	Members                []string                   `json:"members"`
-	MotherAccountId        openapi_types.UUID         `json:"motherAccountId"`
-	ObservedAt             time.Time                  `json:"observedAt"`
-	PaidDefaultEntitlement *int                       `json:"paidDefaultEntitlement,omitempty"`
+	ActiveUntil            time.Time                                 `json:"activeUntil"`
+	Assignments            []ExpiryRotationAssignment                `json:"assignments"`
+	AuthorizationDigest    *string                                   `json:"authorizationDigest,omitempty"`
+	Authorized             bool                                      `json:"authorized"`
+	AuthorizedAt           *time.Time                                `json:"authorizedAt,omitempty"`
+	AuthorizedBy           *openapi_types.UUID                       `json:"authorizedBy,omitempty"`
+	BatchId                openapi_types.UUID                        `json:"batchId"`
+	BatchVersion           int64                                     `json:"batchVersion"`
+	Candidates             []ExpiryRotationCandidate                 `json:"candidates"`
+	DestinationId          openapi_types.UUID                        `json:"destinationId"`
+	DestinationRevision    int64                                     `json:"destinationRevision"`
+	Digest                 string                                    `json:"digest"`
+	DraftId                openapi_types.UUID                        `json:"draftId"`
+	DraftVersion           int64                                     `json:"draftVersion"`
+	EvidenceFingerprint    string                                    `json:"evidenceFingerprint"`
+	ExpiresAt              time.Time                                 `json:"expiresAt"`
+	Id                     openapi_types.UUID                        `json:"id"`
+	Invitations            []string                                  `json:"invitations"`
+	ManagementPermission   ExpiryRotationPreviewManagementPermission `json:"managementPermission"`
+	Members                []string                                  `json:"members"`
+	MotherAccountId        openapi_types.UUID                        `json:"motherAccountId"`
+	ObservedAt             time.Time                                 `json:"observedAt"`
+	PaidDefaultEntitlement *int                                      `json:"paidDefaultEntitlement,omitempty"`
 
 	// PolicyVersion Set on new immutable preview facts. Missing or non-current policy proof is display-only and requires re-preview before confirmation.
 	PolicyVersion   *int                        `json:"policyVersion,omitempty"`
@@ -2686,6 +2705,9 @@ type ExpiryRotationPreview struct {
 	VerificationId  int64                       `json:"verificationId"`
 	WorkspaceId     openapi_types.UUID          `json:"workspaceId"`
 }
+
+// ExpiryRotationPreviewManagementPermission defines model for ExpiryRotationPreview.ManagementPermission.
+type ExpiryRotationPreviewManagementPermission string
 
 // ExpiryRotationPreviewStatus defines model for ExpiryRotationPreview.Status.
 type ExpiryRotationPreviewStatus string

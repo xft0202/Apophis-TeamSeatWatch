@@ -54,7 +54,7 @@ type OwnerAuthHandler struct {
 	personalRefresh         platform.PersonalSessionRefresher
 	selectedWorkspaceReader platform.SelectedWorkspaceReader
 	workspaceTokenExchanger platform.WorkspaceTokenExchanger
-	rotationCapability      rotationCapability // mock-only; never configured by production constructor
+	rotationCapability      rotationCapability // read-only evidence adapter; never performs platform mutation
 	secureCookies           bool
 }
 
@@ -128,6 +128,9 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 		selectedWorkspaceReader: config.SelectedWorkspaceReader,
 		workspaceTokenExchanger: config.WorkspaceTokenExchanger,
 		secureCookies:           config.Origins.SecureCookies(),
+	}
+	if handler.selectedWorkspaceReader != nil {
+		handler.rotationCapability = officialRotationCapability{handler: handler}
 	}
 	mux := http.NewServeMux()
 	ownerHandler := ownerapi.HandlerWithOptions(handler, ownerapi.StdHTTPServerOptions{

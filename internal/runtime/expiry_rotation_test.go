@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 )
 
 func TestExpiryRotationUsageAndGlobalProtectionAreScopedAndSticky(t *testing.T) {
@@ -181,6 +182,37 @@ func TestExpiryRotationLegacyPreviewCannotResumeAsJoinEligible(t *testing.T) {
 	}
 }
 
+func TestOfficialRotationSnapshotABRequiresExactTypedFacts(t *testing.T) {
+	now := time.Now().UTC()
+	active := now.Add(-time.Hour)
+	paid, members, invites := 2, 1, 1
+	facts := platform.SelectedWorkspaceFacts{Permission: "read", Result: platform.Result{
+		Outcome: platform.OutcomeOperational, Completeness: platform.Complete, ObservedAt: now,
+		ActiveUntil: &active, SeatLimit: &paid, MemberCount: &members, PendingInviteCount: &invites,
+		SeatTypeCounts: map[string]int{"default": 0, "usage_based": 0, "automation": 0, "prolite": 1},
+		Members:        []platform.Member{{Kind: "member", PlatformMemberID: "member-1", Identifier: "old@example.test", Status: "listed", Role: "member", SeatType: "prolite"}, {Kind: "pending_invite", Identifier: "new@example.test", Status: "pending", SeatType: "prolite"}},
+	}}
+	if _, ok := compareOfficialRotationSnapshots(facts, facts); !ok {
+		t.Fatal("identical complete typed snapshots rejected")
+	}
+	changed := facts
+	changed.Result.Members = append([]platform.Member{}, facts.Result.Members...)
+	changed.Result.Members[1].SeatType = "default"
+	if _, ok := compareOfficialRotationSnapshots(facts, changed); ok {
+		t.Fatal("invitation seat-type drift accepted")
+	}
+	changed = facts
+	changed.Result.SeatTypeCounts = map[string]int{"default": 1, "usage_based": 0, "automation": 0, "prolite": 0}
+	if _, ok := compareOfficialRotationSnapshots(facts, changed); ok {
+		t.Fatal("typed occupancy drift accepted")
+	}
+	changed = facts
+	changed.Permission = "denied"
+	if _, ok := compareOfficialRotationSnapshots(facts, changed); ok {
+		t.Fatal("denied second read accepted")
+	}
+}
+
 func TestExpiryRotationDeadlineBoundary(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	if rotationExpired(now.Add(time.Nanosecond), now) || !rotationExpired(now, now) || !rotationExpired(now.Add(-time.Nanosecond), now) {
@@ -191,7 +223,7 @@ func TestExpiryRotationDeadlineBoundary(t *testing.T) {
 func TestExpiryRotationProofBoundaries(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	proof := rotationProof{Source: "mock_write_permission", EvidenceID: "permission-1", ObservedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Minute)}
-	if !validRotationProof(proof, "mock_write_permission", now) {
+	if !validRotationProof(proof, now, "mock_write_permission") {
 		t.Fatal("complete independent proof rejected")
 	}
 	for _, change := range []func(*rotationProof){
@@ -204,7 +236,7 @@ func TestExpiryRotationProofBoundaries(t *testing.T) {
 	} {
 		altered := proof
 		change(&altered)
-		if validRotationProof(altered, "mock_write_permission", now) {
+		if validRotationProof(altered, now, "mock_write_permission") {
 			t.Fatalf("accepted invalid proof %+v", altered)
 		}
 	}

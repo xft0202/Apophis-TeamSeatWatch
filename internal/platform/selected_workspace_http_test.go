@@ -59,13 +59,13 @@ func selectedOK(req *http.Request) (int, string, http.Header) {
 	case path == "/backend-api/accounts/canonical-space/users/seat_type_counts":
 		return 200, `{"seat_type_counts":{"default":2,"usage_based":0,"automation":0,"prolite":0}}`, nil
 	case path == "/backend-api/accounts/canonical-space/users" && query.Get("offset") == "0" && query.Get("limit") == "100" && query.Has("query"):
-		return 200, `{"total":2,"limit":100,"offset":0,"items":[{"id":"user-a","email":"a@example.test","role":"owner"}]}`, nil
+		return 200, `{"total":2,"limit":100,"offset":0,"items":[{"id":"user-a","email":"a@example.test","role":"owner","seat_type":"prolite"}]}`, nil
 	case path == "/backend-api/accounts/canonical-space/users" && query.Get("offset") == "1":
-		return 200, `{"total":2,"limit":100,"offset":1,"items":[{"id":"user-b","email":"b@example.test","role":"standard-user"}]}`, nil
+		return 200, `{"total":2,"limit":100,"offset":1,"items":[{"id":"user-b","email":"b@example.test","role":"standard-user","seat_type":"default"}]}`, nil
 	case path == "/backend-api/accounts/canonical-space/invites" && query.Get("offset") == "0" && query.Get("limit") == "100" && req.Header.Get("chatgpt-account-id") == "canonical-space":
 		return 200, `{"total":2,"limit":100,"offset":0,"items":[{"email_address":"c@example.test","seat_type":"default","status":2}]}`, nil
 	case path == "/backend-api/accounts/canonical-space/invites" && query.Get("offset") == "1":
-		return 200, `{"total":2,"limit":100,"offset":1,"items":[{"email":"d@example.test","status":"pending"}]}`, nil
+		return 200, `{"total":2,"limit":100,"offset":1,"items":[{"email":"d@example.test","status":"pending","seat_type":"prolite"}]}`, nil
 	default:
 		panic("unexpected endpoint: " + req.URL.String())
 	}
@@ -75,7 +75,8 @@ func TestOfficialSelectedWorkspaceReaderPagedFactsAndReadOnlyBoundary(t *testing
 	facts, err := readerFixture(transport).VerifySelectedWorkspace(context.Background(), selectedSession(), "mother-id", "canonical-space")
 	if err != nil || facts.Permission != "read" || facts.Result.Outcome != OutcomeOperational || facts.Result.Completeness != Complete ||
 		facts.Result.SeatLimit == nil || *facts.Result.SeatLimit != 3 || facts.Result.MemberCount == nil || *facts.Result.MemberCount != 2 ||
-		facts.Result.PendingInviteCount == nil || *facts.Result.PendingInviteCount != 2 || len(facts.Result.Members) != 4 || len(facts.Sources) != 4 {
+		facts.Result.PendingInviteCount == nil || *facts.Result.PendingInviteCount != 2 || len(facts.Result.Members) != 4 || len(facts.Sources) != 4 ||
+		facts.Result.SeatTypeCounts["default"] != 2 || facts.Result.SeatTypeCounts["prolite"] != 0 || facts.Result.Members[0].SeatType != "prolite" || facts.Result.Members[2].SeatType != "default" || facts.Result.Members[3].SeatType != "prolite" {
 		t.Fatalf("paired/paged fact result=%+v err=%v", facts, err)
 	}
 	for _, evidence := range facts.Sources {

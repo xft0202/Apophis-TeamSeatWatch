@@ -13,15 +13,17 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/audit"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/generated/ownerapi"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/writerfence"
 )
 
-// rotationCapability is deliberately absent from OwnerAuthConfig. Only disposable
-// integration fixtures install a mock directly on the handler. Production has no
-// independently sourced write, typed-seat or per-person protection capability.
+// rotationCapability performs the reference-compatible A/B read attestation.
+// It never performs a platform mutation; confirmation separately rechecks local
+// facts under the durable writer fence.
 type rotationCapability interface {
-	Evidence(context.Context, uuid.UUID, uuid.UUID, int64) (rotationEvidence, error)
+	Evidence(context.Context, uuid.UUID) (rotationEvidence, error)
 }
 type rotationProof struct {
 	Source     string    `json:"source"`
@@ -38,9 +40,9 @@ type rotationUsageProof struct {
 	Absence     *rotationUsageAbsenceProof `json:"absence,omitempty"`
 }
 
-// Only a complete negative mock ledger lookup may distinguish no first-use
-// record from a failed/partial probe. Neither this fixture nor preview history
-// constitutes an authoritative production ledger.
+// Only a complete negative ledger lookup may distinguish no first-use record
+// from a failed/partial probe. Production uses the durable usage ledger; the
+// content-addressed mock variant is restricted to disposable integration tests.
 type rotationUsageAbsenceProof struct {
 	rotationProof
 	WorkspaceID          uuid.UUID `json:"workspaceId"`
@@ -89,12 +91,13 @@ type rotationVerdict struct {
 	Reason     string                  `json:"reason"`
 }
 
-const rotationPreviewPolicyVersion = 1
+const rotationPreviewPolicyVersion = 2
 
 type rotationEvidence struct {
 	WorkspaceID            uuid.UUID                          `json:"workspaceId"`
 	MotherID               uuid.UUID                          `json:"motherId"`
 	VerificationID         int64                              `json:"verificationId"`
+	ActiveUntil            time.Time                          `json:"activeUntil"`
 	Permission             rotationProof                      `json:"permission"`
 	PermissionDecision     string                             `json:"permissionDecision"`
 	Counts                 rotationProof                      `json:"counts"`
@@ -108,7 +111,7 @@ type rotationEvidence struct {
 
 func rotationExpired(activeUntil, now time.Time) bool { return !activeUntil.After(now) }
 func validRotationUsage(u rotationUsageProof, workspaceID, accountID uuid.UUID, now time.Time) bool {
-	if !validRotationProof(u.rotationProof, "mock_workspace_usage", now) || u.WorkspaceID != workspaceID || u.AccountID != accountID {
+	if !validRotationProof(u.rotationProof, now, "mock_workspace_usage", "persisted_workspace_usage") || u.WorkspaceID != workspaceID || u.AccountID != accountID {
 		return false
 	}
 	return u.Absence == nil && (u.State == "used" && u.EverUsed || u.State == "never_used" && !u.EverUsed || u.State == "unknown")
@@ -118,15 +121,15 @@ func validRotationCandidateUsage(u rotationUsageProof, scope rotationCandidateSc
 		return validRotationUsage(u, scope.WorkspaceID, scope.AccountID, now)
 	}
 	a := u.Absence
-	return !u.EverUsed && validRotationProof(u.rotationProof, "mock_workspace_usage", now) && u.WorkspaceID == scope.WorkspaceID && u.AccountID == scope.AccountID && a != nil &&
-		validRotationProof(a.rotationProof, "mock_usage_ledger_lookup", now) && a.EvidenceID != u.EvidenceID && a.EvidenceID == rotationAbsenceEvidenceID(*a) &&
+	return !u.EverUsed && validRotationProof(u.rotationProof, now, "mock_workspace_usage", "persisted_workspace_usage") && u.WorkspaceID == scope.WorkspaceID && u.AccountID == scope.AccountID && a != nil &&
+		validRotationProof(a.rotationProof, now, "mock_usage_ledger_lookup", "persisted_usage_ledger_lookup") && a.EvidenceID != u.EvidenceID && a.EvidenceID == rotationAbsenceEvidenceID(*a) &&
 		a.WorkspaceID == scope.WorkspaceID && a.AccountID == scope.AccountID && a.MotherID == scope.MotherID &&
 		a.SessionGeneration == scope.SessionGeneration && a.VerificationID == scope.VerificationID &&
 		a.Identifier == scope.Identifier && a.AccountVersion == scope.AccountVersion && a.CredentialVersion == scope.CredentialVersion && a.MembershipVersion == scope.MembershipVersion &&
 		a.AccountVersion > 0 && a.CredentialVersion > 0 && a.MembershipVersion > 0 && a.LookupComplete && a.FirstUseRecordStatus == "absent"
 }
 func validRotationProtection(p rotationProtectionProof, accountID uuid.UUID, now time.Time) bool {
-	if !validRotationProof(p.rotationProof, "mock_global_protection", now) || p.AccountID != accountID {
+	if !validRotationProof(p.rotationProof, now, "mock_global_protection", "persisted_global_protection") || p.AccountID != accountID {
 		return false
 	}
 	switch p.Status {
@@ -139,8 +142,15 @@ func blockingRotationProtection(status string) bool {
 	return status == "sale_reserved" || status == "delivery_pending" || status == "suspected_sold" || status == "unknown"
 }
 
-func validRotationProof(p rotationProof, source string, now time.Time) bool {
-	return p.Source == source && p.EvidenceID != "" && !p.ObservedAt.After(now) && !p.ObservedAt.Before(now.Add(-5*time.Minute)) && p.ExpiresAt.After(now) && p.ExpiresAt.After(p.ObservedAt) && !p.ExpiresAt.After(p.ObservedAt.Add(5*time.Minute))
+func validRotationProof(p rotationProof, now time.Time, sources ...string) bool {
+	sourceOK := false
+	for _, source := range sources {
+		if p.Source == source {
+			sourceOK = true
+			break
+		}
+	}
+	return sourceOK && p.EvidenceID != "" && !p.ObservedAt.After(now) && !p.ObservedAt.Before(now.Add(-5*time.Minute)) && p.ExpiresAt.After(now) && p.ExpiresAt.After(p.ObservedAt) && !p.ExpiresAt.After(p.ObservedAt.Add(5*time.Minute))
 }
 func rotationHash(value any) string {
 	b, _ := json.Marshal(value)
@@ -148,8 +158,9 @@ func rotationHash(value any) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Content-address the COMPLETE mock lookup so an ID cannot be reused for a
-// different scope, result or observation time. This is not authentication.
+// Content-address the complete lookup so an ID cannot be reused for a different
+// scope, result or observation time. Production additionally rechecks the
+// durable row under target-account epochs; this digest alone is not authentication.
 func rotationAbsenceEvidenceID(a rotationUsageAbsenceProof) string {
 	a.EvidenceID = ""
 	a.ObservedAt = a.ObservedAt.UTC()
@@ -157,7 +168,7 @@ func rotationAbsenceEvidenceID(a rotationUsageAbsenceProof) string {
 	return rotationHash(struct {
 		Domain string                    `json:"domain"`
 		Proof  rotationUsageAbsenceProof `json:"proof"`
-	}{Domain: "tsw.mock_usage_ledger_absence.v1", Proof: a})
+	}{Domain: "tsw.rotation_usage_ledger_absence.v1", Proof: a})
 }
 func rotationDigest(p ownerapi.ExpiryRotationPreview) string {
 	p.Id = uuid.Nil
@@ -185,9 +196,38 @@ func rotationPreviouslyUsed(ctx context.Context, db rotationRow, accountID uuid.
 	return used, err
 }
 
-func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, owner uuid.UUID) (ownerapi.ExpiryRotationPreview, error) {
+func rotationPersistedVerdictMatches(ctx context.Context, db rotationRow, workspaceID uuid.UUID, verdict rotationVerdict) (bool, error) {
+	if verdict.Usage.Source != "persisted_workspace_usage" || verdict.Protection.Source != "persisted_global_protection" {
+		return true, nil
+	}
+	var state, evidenceID string
+	var everUsed bool
+	var observedAt, expiresAt time.Time
+	err := db.QueryRow(ctx, `SELECT usage_state,ever_used,evidence_id,observed_at,expires_at FROM public.tsw_rotation_usage_ledger WHERE target_account_id=$1 AND workspace_id=$2`, verdict.AccountID, workspaceID).Scan(&state, &everUsed, &evidenceID, &observedAt, &expiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return verdict.Usage.State == "unknown", nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if state != verdict.Usage.State || everUsed != verdict.Usage.EverUsed || evidenceID != verdict.Usage.EvidenceID || !observedAt.Equal(verdict.Usage.ObservedAt) || !expiresAt.Equal(verdict.Usage.ExpiresAt) {
+		return false, nil
+	}
+	var status, protectionID string
+	var protectionObserved time.Time
+	err = db.QueryRow(ctx, `SELECT status,evidence_id,observed_at FROM public.tsw_rotation_global_protections WHERE target_account_id=$1`, verdict.AccountID).Scan(&status, &protectionID, &protectionObserved)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return verdict.Protection.Status == "none", nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return status == verdict.Protection.Status && protectionID == verdict.Protection.EvidenceID && protectionObserved.Equal(verdict.Protection.ObservedAt), nil
+}
+
+func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, owner uuid.UUID, supplied *rotationEvidence) (ownerapi.ExpiryRotationPreview, error) {
 	version := rotationPreviewPolicyVersion
-	p := ownerapi.ExpiryRotationPreview{PolicyVersion: &version, Status: "facts_incomplete", Assignments: []ownerapi.ExpiryRotationAssignment{}, Slots: []ownerapi.ExpiryRotationSlot{}, Candidates: []ownerapi.ExpiryRotationCandidate{}, Members: []string{}, Invitations: []string{}, SeatTypeCounts: map[string]int{}, SourceRevisions: map[string]int64{}, Source: "selected_workspace_read"}
+	p := ownerapi.ExpiryRotationPreview{PolicyVersion: &version, Status: "facts_incomplete", ManagementPermission: "unknown", Assignments: []ownerapi.ExpiryRotationAssignment{}, Slots: []ownerapi.ExpiryRotationSlot{}, Candidates: []ownerapi.ExpiryRotationCandidate{}, Members: []string{}, Invitations: []string{}, SeatTypeCounts: map[string]int{}, SourceRevisions: map[string]int64{}, Source: "selected_workspace_read"}
 	var children []byte
 	var run, generation uuid.UUID
 	var revision int64
@@ -325,27 +365,38 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			p.Candidates = append(p.Candidates, ownerapi.ExpiryRotationCandidate{AccountId: c.id, Identifier: c.identifier, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "excluded", DeliveryStatus: "blocked", Reason: reason})
 		}
 	}
-	if h.rotationCapability == nil {
+	if supplied == nil {
 		pending()
 		if p.Status != "not_expired" {
 			p.Status = "pending_permission"
 		}
 		return p, nil
 	}
-	ev, evidenceErr := h.rotationCapability.Evidence(ctx, p.WorkspaceId, p.MotherAccountId, p.VerificationId)
-	if evidenceErr != nil {
-		pending()
-		return p, nil
-	} // a failed protection/permission lookup is never eligible
+	ev := *supplied
 	now := time.Now()
-	if ev.WorkspaceID != p.WorkspaceId || ev.MotherID != p.MotherAccountId || ev.VerificationID != p.VerificationId || !validRotationProof(ev.Permission, "mock_write_permission", now) || ev.PermissionDecision != "manage" {
+	if ev.WorkspaceID != p.WorkspaceId || ev.MotherID != p.MotherAccountId || ev.VerificationID != p.VerificationId ||
+		(ev.Permission.Source == "official_owner_ab" && !ev.ActiveUntil.Equal(p.ActiveUntil)) ||
+		!validRotationProof(ev.Permission, now, "mock_write_permission", "official_owner_ab") || ev.PermissionDecision != "manage" {
 		pending()
 		if p.Status != "not_expired" {
 			p.Status = "pending_permission"
 		}
 		return p, nil
 	}
-	if !validRotationProof(ev.Counts, "mock_seat_type_counts", now) || !validRotationProof(ev.PaidDefault, "mock_paid_default_entitlement", now) || ev.PaidDefaultEntitlement != seatLimit || len(ev.SeatTypeCounts) == 0 {
+	if ev.Permission.Source == "official_owner_ab" {
+		var currentRole string
+		if err = db.QueryRow(ctx, `SELECT workspace_role FROM public.tsw_mother_workspace_visibility WHERE mother_account_id=$1 AND workspace_id=$2 AND run_id=$3`, p.MotherAccountId, p.WorkspaceId, run).Scan(&currentRole); err != nil {
+			return p, err
+		}
+		if currentRole != "owner" {
+			pending()
+			if p.Status != "not_expired" {
+				p.Status = "pending_permission"
+			}
+			return p, nil
+		}
+	}
+	if !validRotationProof(ev.Counts, now, "mock_seat_type_counts", "official_seat_type_counts_ab") || !validRotationProof(ev.PaidDefault, now, "mock_paid_default_entitlement", "official_paid_default_ab") || ev.PaidDefaultEntitlement != seatLimit || len(ev.SeatTypeCounts) == 0 {
 		pending()
 		return p, nil
 	}
@@ -361,10 +412,24 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 		pending()
 		return p, nil
 	}
+	if len(ev.Slots) != memberCount || len(ev.Candidates) != len(found) || len(ev.Invitations) != inviteCount {
+		pending()
+		if p.Status != "not_expired" {
+			p.Status = "needs_verification"
+		}
+		return p, nil
+	}
 	p.SeatTypeCounts = ev.SeatTypeCounts
 	p.PaidDefaultEntitlement = &ev.PaidDefaultEntitlement
+	p.ManagementPermission = "manage"
 	p.Source = "mock_capability"
 	p.EvidenceFingerprint = rotationHash(ev)
+	if ev.Permission.Source == "official_owner_ab" {
+		p.Source = "official_owner_ab"
+		// Official A/B evidence IDs exclude volatile observation timestamps while
+		// binding token generation and all typed facts.
+		p.EvidenceFingerprint = ev.Permission.EvidenceID
+	}
 	ready := true
 	replaceable, eligible := 0, 0
 	observedSeatTypes := make(map[string]int)
@@ -374,13 +439,18 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 		verdict, ok := ev.Slots[e.id]
 		slot := ownerapi.ExpiryRotationSlot{Identifier: e.identifier, PlatformMemberId: e.id, AccountId: verdict.AccountID, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "needs_verification", Reason: "protection_proof_missing"}
 		var identityCount int
+		persistedOK := true
 		if ok && verdict.AccountID != uuid.Nil {
 			err = db.QueryRow(ctx, `SELECT count(*) FROM tsw_target_accounts WHERE id=$1 AND identifier=$2`, verdict.AccountID, e.identifier).Scan(&identityCount)
 			if err != nil {
 				return p, err
 			}
+			persistedOK, err = rotationPersistedVerdictMatches(ctx, db, p.WorkspaceId, verdict)
+			if err != nil {
+				return p, err
+			}
 		}
-		if ok && identityCount == 1 && verdict.SeatType == "prolite" && validRotationProof(verdict.rotationProof, "mock_member_protection", now) && validRotationUsage(verdict.Usage, p.WorkspaceId, verdict.AccountID, now) && validRotationProtection(verdict.Protection, verdict.AccountID, now) {
+		if ok && persistedOK && identityCount == 1 && verdict.SeatType == "prolite" && validRotationProof(verdict.rotationProof, now, "mock_member_protection", "official_member_ab") && validRotationUsage(verdict.Usage, p.WorkspaceId, verdict.AccountID, now) && validRotationProtection(verdict.Protection, verdict.AccountID, now) {
 			slot.SeatType = "prolite"
 			slot.UsageState = ownerapi.ExpiryRotationSlotUsageState(verdict.Usage.State)
 			slot.EverUsed = verdict.Usage.EverUsed
@@ -452,7 +522,14 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 		verdict, ok := ev.Candidates[c.id]
 		candidate := ownerapi.ExpiryRotationCandidate{AccountId: c.id, Identifier: c.identifier, UsageState: "unknown", ProtectionStatus: "unknown", Decision: "excluded", DeliveryStatus: "blocked", Reason: "eligibility_proof_missing"}
 		scope := rotationCandidateScope{WorkspaceID: p.WorkspaceId, AccountID: c.id, MotherID: p.MotherAccountId, SessionGeneration: generation, VerificationID: p.VerificationId, Identifier: c.identifier, AccountVersion: c.accountVersion, CredentialVersion: c.credentialVersion, MembershipVersion: p.SourceRevisions["membership:"+c.id.String()]}
-		if ok && verdict.AccountID == c.id && verdict.SeatType == "prolite" && validRotationProof(verdict.rotationProof, "mock_candidate_protection", now) && validRotationCandidateUsage(verdict.Usage, scope, now) && validRotationProtection(verdict.Protection, c.id, now) {
+		persistedOK := true
+		if ok {
+			persistedOK, err = rotationPersistedVerdictMatches(ctx, db, p.WorkspaceId, verdict)
+			if err != nil {
+				return p, err
+			}
+		}
+		if ok && persistedOK && verdict.AccountID == c.id && verdict.SeatType == "prolite" && validRotationProof(verdict.rotationProof, now, "mock_candidate_protection", "persisted_candidate_evidence") && validRotationCandidateUsage(verdict.Usage, scope, now) && validRotationProtection(verdict.Protection, c.id, now) {
 			candidate.SeatType = "prolite"
 			candidate.UsageState = ownerapi.ExpiryRotationCandidateUsageState(verdict.Usage.State)
 			candidate.EverUsed = verdict.Usage.EverUsed
@@ -487,7 +564,7 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 		} else {
 			// A correctly scoped everUsed assertion remains sticky even when its
 			// incompatible absence claim makes the candidate ineligible.
-			if verdict.AccountID == c.id && validRotationProof(verdict.Usage.rotationProof, "mock_workspace_usage", now) && verdict.Usage.WorkspaceID == p.WorkspaceId && verdict.Usage.AccountID == c.id && verdict.Usage.EverUsed {
+			if verdict.AccountID == c.id && validRotationProof(verdict.Usage.rotationProof, now, "mock_workspace_usage", "persisted_workspace_usage") && verdict.Usage.WorkspaceID == p.WorkspaceId && verdict.Usage.AccountID == c.id && verdict.Usage.EverUsed {
 				candidate.EverUsed = true
 				candidate.Reason = "sticky_usage_protected"
 			} else if verdict.Usage.State == "unobserved_prejoin" || verdict.Usage.State == "never_used" {
@@ -510,7 +587,7 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			candidate.Reason = "invitation_required"
 		} else {
 			invite, hasProof := ev.Invitations[inviteIdentifier]
-			if !hasProof || !validRotationProof(invite.rotationProof, "mock_invite_seat_type", now) || invite.WorkspaceID != p.WorkspaceId || invite.VerificationID != p.VerificationId || invite.Identifier != inviteIdentifier || invite.Status != "pending" || invite.SeatType != "prolite" || invite.SeatType != candidate.SeatType {
+			if !hasProof || !validRotationProof(invite.rotationProof, now, "mock_invite_seat_type", "official_invitation_ab") || invite.WorkspaceID != p.WorkspaceId || invite.VerificationID != p.VerificationId || invite.Identifier != inviteIdentifier || invite.Status != "pending" || invite.SeatType != "prolite" || invite.SeatType != candidate.SeatType {
 				candidate.Decision = "excluded"
 				candidate.Reason = "invitation_seat_type_unverified"
 				ready = false
@@ -591,13 +668,26 @@ func (h *OwnerAuthHandler) PreviewExpiryRotation(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
+	oid := uuid.MustParse(owner.OwnerID)
+	var supplied *rotationEvidence
+	evidenceFailed := false
+	if h.rotationCapability != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+		evidence, evidenceErr := h.rotationCapability.Evidence(ctx, oid)
+		cancel()
+		if evidenceErr == nil {
+			supplied = &evidence
+		} else {
+			evidenceFailed = true
+		}
+	}
 	tx, err := h.pool.BeginTx(r.Context(), pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		h.workspaceFailure(w, r, err)
 		return
 	}
 	defer tx.Rollback(r.Context())
-	p, err := h.rotationFacts(r.Context(), tx, uuid.MustParse(owner.OwnerID))
+	p, err := h.rotationFacts(r.Context(), tx, oid, supplied)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeProblem(w, r, 409, "draft_incomplete", "Incomplete", "Complete the selection wizard first", 0)
 		return
@@ -608,6 +698,13 @@ func (h *OwnerAuthHandler) PreviewExpiryRotation(w http.ResponseWriter, r *http.
 	}
 	if p.DraftId == uuid.Nil {
 		writeProblem(w, r, 409, "draft_incomplete", "Incomplete", "Complete the selection wizard first", 0)
+		return
+	}
+	if evidenceFailed && p.Status != "not_expired" {
+		p.Status = "facts_incomplete"
+	}
+	if err = rotationAttachEpochVersions(r.Context(), tx, oid, &p); err != nil {
+		h.workspaceFailure(w, r, err)
 		return
 	}
 	// A pending preview is visible but cannot be confirmed. Never default missing facts to zero.
@@ -764,6 +861,70 @@ func rotationAssignments(preview ownerapi.ExpiryRotationPreview, requested []own
 	return assignments, true
 }
 
+func rotationComparableDigest(p ownerapi.ExpiryRotationPreview) string {
+	p.ObservedAt = time.Time{}
+	p.ExpiresAt = time.Time{}
+	return rotationDigest(p)
+}
+
+func rotationAuthorizationKeys(owner uuid.UUID, p ownerapi.ExpiryRotationPreview) []writerfence.Key {
+	keys := map[writerfence.Key]bool{
+		{Kind: writerfence.Owner, ID: owner}:                                       true,
+		{Kind: writerfence.Workspace, ID: p.WorkspaceId}:                           true,
+		{Kind: writerfence.Mother, ID: p.MotherAccountId}:                          true,
+		{Kind: writerfence.StandbyBatch, ID: p.BatchId}:                            true,
+		{Kind: writerfence.Destination, ID: p.DestinationId}:                       true,
+		{Kind: writerfence.TargetIdentity, ID: writerfence.TargetIdentityID}:       true,
+		{Kind: writerfence.StandbyMembership, ID: writerfence.StandbyMembershipID}: true,
+	}
+	for _, slot := range p.Slots {
+		if slot.AccountId != uuid.Nil {
+			keys[writerfence.Key{Kind: writerfence.TargetAccount, ID: slot.AccountId}] = true
+		}
+	}
+	for _, candidate := range p.Candidates {
+		if candidate.AccountId != uuid.Nil {
+			keys[writerfence.Key{Kind: writerfence.TargetAccount, ID: candidate.AccountId}] = true
+		}
+	}
+	out := make([]writerfence.Key, 0, len(keys))
+	for key := range keys {
+		out = append(out, key)
+	}
+	return out
+}
+
+func rotationEpochVersions(versions []writerfence.Version) map[string]int64 {
+	out := make(map[string]int64, len(versions))
+	for _, version := range versions {
+		out[string(version.Key.Kind)+"/"+version.Key.ID.String()] = version.Version
+	}
+	return out
+}
+
+func rotationAttachKnownEpochVersions(p *ownerapi.ExpiryRotationPreview, versions []writerfence.Version) {
+	if p.SourceRevisions == nil {
+		p.SourceRevisions = map[string]int64{}
+	}
+	for key, version := range rotationEpochVersions(versions) {
+		p.SourceRevisions["epoch:"+key] = version
+	}
+}
+
+func rotationAttachEpochVersions(ctx context.Context, db rotationRow, owner uuid.UUID, p *ownerapi.ExpiryRotationPreview) error {
+	keys := rotationAuthorizationKeys(owner, *p)
+	versions := make([]writerfence.Version, 0, len(keys))
+	for _, key := range keys {
+		var version int64
+		if err := db.QueryRow(ctx, `SELECT version FROM public.tsw_rotation_epochs WHERE kind=$1 AND id=$2`, key.Kind, key.ID).Scan(&version); err != nil {
+			return err
+		}
+		versions = append(versions, writerfence.Version{Key: key, Version: version})
+	}
+	rotationAttachKnownEpochVersions(p, versions)
+	return nil
+}
+
 func (h *OwnerAuthHandler) ConfirmExpiryRotation(w http.ResponseWriter, r *http.Request, id uuid.UUID, _ ownerapi.ConfirmExpiryRotationParams) {
 	owner, ok := h.authenticated(w, r, true)
 	if !ok {
@@ -774,14 +935,14 @@ func (h *OwnerAuthHandler) ConfirmExpiryRotation(w http.ResponseWriter, r *http.
 		writeProblem(w, r, 422, "confirmation_required", "Confirmation Required", "Confirm the exact preview with a unique key", 0)
 		return
 	}
-	tx, err := h.pool.Begin(r.Context())
+	oid := uuid.MustParse(owner.OwnerID)
+	initialTx, err := h.pool.Begin(r.Context())
 	if err != nil {
 		h.workspaceFailure(w, r, err)
 		return
 	}
-	defer tx.Rollback(r.Context())
-	oid := uuid.MustParse(owner.OwnerID)
-	p, _, status, err := rotationStored(r.Context(), tx, oid, id)
+	p, replayKey, status, err := rotationStored(r.Context(), initialTx, oid, id)
+	_ = initialTx.Rollback(r.Context())
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeProblem(w, r, 404, "preview_not_found", "Not Found", "Preview not found", 0)
 		return
@@ -790,16 +951,20 @@ func (h *OwnerAuthHandler) ConfirmExpiryRotation(w http.ResponseWriter, r *http.
 		h.workspaceFailure(w, r, err)
 		return
 	}
-	// Historical authorizations cannot be replayed into this fail-closed slice.
 	if status == "authorized" {
-		writeProblem(w, r, 409, "pending_write_fence", "Write Fence Pending", "Authorization is disabled until all fact writers share a reviewed durable fence", 0)
+		assignments, valid := rotationAssignments(p, input.Assignments)
+		if replayKey == input.IdempotencyKey && p.Digest == input.Digest && valid && rotationHash(assignments) == rotationHash(p.Assignments) {
+			writeJSON(w, http.StatusOK, p)
+			return
+		}
+		writeProblem(w, r, 409, "idempotency_conflict", "Conflict", "The authorization already exists with different confirmation facts", 0)
 		return
 	}
 	if status != "ready" {
 		writeProblem(w, r, 409, string(p.Status), "Not Authorizable", "No executable authorization was created", 0)
 		return
 	}
-	_, valid := rotationAssignments(p, input.Assignments)
+	assignments, valid := rotationAssignments(p, input.Assignments)
 	if !valid {
 		writeProblem(w, r, 409, "assignment_incomplete", "Incomplete Mapping", "Choose one distinct eligible candidate per replaceable slot; revise the draft for excess or mismatched candidates", 0)
 		return
@@ -808,12 +973,88 @@ func (h *OwnerAuthHandler) ConfirmExpiryRotation(w http.ResponseWriter, r *http.
 		writeProblem(w, r, 409, "preview_stale", "Stale Preview", "Re-preview changed or expired facts", 0)
 		return
 	}
-	// Preview-level evidence is not a cross-writer authorization fence. A
-	// verification insert, destination update, standby/credential mutation, or
-	// delivery in another Workspace can commit after any read. No Owner request
-	// may turn this mock preview into executable authorization until a reviewed
-	// shared epoch/protection ledger coordinates every writer.
-	writeProblem(w, r, 409, "pending_write_fence", "Write Fence Pending", "Authorization is disabled until all fact writers share a reviewed durable fence", 0)
+	if h.rotationCapability == nil {
+		writeProblem(w, r, 409, "pending_permission", "Permission Pending", "No production rotation evidence adapter is configured", 0)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	evidence, evidenceErr := h.rotationCapability.Evidence(ctx, oid)
+	cancel()
+	if evidenceErr != nil {
+		writeProblem(w, r, 409, "facts_incomplete", "Evidence Incomplete", "Current management, seat, usage or protection evidence could not be reverified", 0)
+		return
+	}
+	tx, versions, err := writerfence.BeginLocked(r.Context(), h.pool, rotationAuthorizationKeys(oid, p))
+	if err != nil {
+		h.workspaceFailure(w, r, err)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	current, currentKey, currentStatus, err := rotationStored(r.Context(), tx, oid, id)
+	if err != nil {
+		h.workspaceFailure(w, r, err)
+		return
+	}
+	if currentStatus == "authorized" {
+		if currentKey == input.IdempotencyKey && current.Digest == input.Digest && rotationHash(current.Assignments) == rotationHash(assignments) {
+			writeJSON(w, http.StatusOK, current)
+			return
+		}
+		writeProblem(w, r, 409, "idempotency_conflict", "Conflict", "The authorization was committed by another request", 0)
+		return
+	}
+	if currentStatus != "ready" || current.Digest != input.Digest || !time.Now().Before(current.ExpiresAt) {
+		writeProblem(w, r, 409, "preview_stale", "Stale Preview", "Re-preview changed or expired facts", 0)
+		return
+	}
+	fresh, err := h.rotationFacts(r.Context(), tx, oid, &evidence)
+	if err != nil {
+		h.workspaceFailure(w, r, err)
+		return
+	}
+	rotationAttachKnownEpochVersions(&fresh, versions)
+	freshAssignments, valid := rotationAssignments(fresh, assignments)
+	if fresh.Status != "ready" || !valid || rotationHash(freshAssignments) != rotationHash(assignments) || rotationComparableDigest(fresh) != rotationComparableDigest(current) {
+		writeProblem(w, r, 409, "preview_stale", "Stale Preview", "Current facts no longer match the confirmed preview", 0)
+		return
+	}
+	epochs := rotationEpochVersions(versions)
+	epochJSON, err := json.Marshal(epochs)
+	if err != nil {
+		h.workspaceFailure(w, r, err)
+		return
+	}
+	authorizationDigest := rotationHash(struct {
+		PreviewDigest string                              `json:"previewDigest"`
+		FactDigest    string                              `json:"factDigest"`
+		Assignments   []ownerapi.ExpiryRotationAssignment `json:"assignments"`
+		Epochs        map[string]int64                    `json:"epochs"`
+	}{current.Digest, rotationComparableDigest(fresh), assignments, epochs})
+	assignmentsJSON, _ := json.Marshal(assignments)
+	var authorizedAt time.Time
+	err = tx.QueryRow(r.Context(), `UPDATE public.tsw_expiry_rotation_previews SET status='authorized',assignments=$2,authorization_digest=$3,idempotency_key=$4,authorized_by=$5,authorized_session=$6,authorized_at=now(),epoch_versions=$7 WHERE id=$1 AND status='ready' RETURNING authorized_at`, id, assignmentsJSON, authorizationDigest, input.IdempotencyKey, oid, owner.SessionID, epochJSON).Scan(&authorizedAt)
+	if err == nil {
+		_, err = audit.Write(r.Context(), tx, audit.Event{Type: audit.ExpiryRotationAuthorized, Actor: audit.ActorOwner, OwnerID: owner.OwnerID, RetentionScopeID: current.WorkspaceId.String(), EntityType: "expiry_rotation_preview", EntityID: id.String(), Outcome: audit.OutcomeSucceeded, CorrelationID: correlation(r), Details: audit.ExpiryRotationDetails{Digest: authorizationDigest, Action: "authorized"}, IdempotencyKey: id.String() + ":" + input.IdempotencyKey.String()})
+	}
+	if err == nil {
+		err = tx.Commit(r.Context())
+	}
+	if err != nil {
+		var conflict *pgconn.PgError
+		if errors.As(err, &conflict) && conflict.Code == "23505" {
+			writeProblem(w, r, 409, "idempotency_conflict", "Conflict", "The idempotency key already belongs to another authorization", 0)
+			return
+		}
+		h.workspaceFailure(w, r, err)
+		return
+	}
+	current.Status = "authorized"
+	current.Authorized = true
+	current.Assignments = assignments
+	current.AuthorizationDigest = &authorizationDigest
+	current.AuthorizedBy = &oid
+	current.AuthorizedAt = &authorizedAt
+	writeJSON(w, http.StatusOK, current)
 }
 func (h *OwnerAuthHandler) RevokeExpiryRotation(w http.ResponseWriter, r *http.Request, id uuid.UUID, _ ownerapi.RevokeExpiryRotationParams) {
 	owner, ok := h.authenticated(w, r, true)

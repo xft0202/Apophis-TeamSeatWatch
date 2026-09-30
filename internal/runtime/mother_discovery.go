@@ -159,7 +159,11 @@ func (h *OwnerAuthHandler) RunMotherDiscovery(w http.ResponseWriter, r *http.Req
 			_, err = tx.Exec(r.Context(), `INSERT INTO tsw_workspace_projections(workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING`, workspaceID)
 		}
 		if err == nil {
-			_, err = tx.Exec(r.Context(), `INSERT INTO tsw_mother_workspace_visibility(mother_account_id,workspace_id,run_id,access_status) VALUES ($1,$2,$3,$4)`, accountID, workspaceID, runID, item.Access)
+			role := item.Role
+			if role == "" {
+				role = "unknown"
+			}
+			_, err = tx.Exec(r.Context(), `INSERT INTO tsw_mother_workspace_visibility(mother_account_id,workspace_id,run_id,access_status,workspace_role) VALUES ($1,$2,$3,$4,$5)`, accountID, workspaceID, runID, item.Access, role)
 		}
 	}
 	if err != nil {

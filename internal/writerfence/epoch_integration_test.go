@@ -125,7 +125,7 @@ func TestEpochFactTransitionsIntegration(t *testing.T) {
 	if err = transfer.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if epochVersion(t, ctx, db, a) != 3 || epochVersion(t, ctx, db, b) != 2 || epochVersion(t, ctx, db, b2) != 2 {
+	if epochVersion(t, ctx, db, a) != 5 || epochVersion(t, ctx, db, b) != 4 || epochVersion(t, ctx, db, b2) != 3 {
 		t.Fatal("editor's old/new batch version mutations did not advance batch epochs")
 	}
 	tx, err := db.Begin(ctx)

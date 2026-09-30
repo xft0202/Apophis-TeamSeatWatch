@@ -16,12 +16,19 @@ import (
 type Kind string
 
 const (
-	Owner         Kind = "owner"
-	Workspace     Kind = "workspace"
-	Mother        Kind = "mother"
-	TargetAccount Kind = "target_account"
-	StandbyBatch  Kind = "standby_batch"
-	Destination   Kind = "destination"
+	Owner             Kind = "owner"
+	Workspace         Kind = "workspace"
+	Mother            Kind = "mother"
+	TargetAccount     Kind = "target_account"
+	StandbyBatch      Kind = "standby_batch"
+	Destination       Kind = "destination"
+	TargetIdentity    Kind = "target_identity"
+	StandbyMembership Kind = "standby_membership"
+)
+
+var (
+	TargetIdentityID    = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	StandbyMembershipID = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 )
 
 type Key struct {
@@ -51,7 +58,7 @@ func BeginLocked(ctx context.Context, pool *pgxpool.Pool, keys []Key) (pgx.Tx, [
 	})
 	for i, key := range ordered {
 		switch key.Kind {
-		case Owner, Workspace, Mother, TargetAccount, StandbyBatch, Destination:
+		case Owner, Workspace, Mother, TargetAccount, StandbyBatch, Destination, TargetIdentity, StandbyMembership:
 		default:
 			return nil, nil, fmt.Errorf("invalid rotation epoch kind %q", key.Kind)
 		}

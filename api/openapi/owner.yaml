@@ -245,13 +245,13 @@ paths:
               $ref: '#/components/schemas/ExpiryRotationConfirmation'
       responses:
         '200':
-          description: Reserved for a separately reviewed durable write fence
+          description: Frozen, writer-fenced authorization; no remote mutation is dispatched
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExpiryRotationPreview'
         '409':
-          description: Currently returns pending_write_fence for valid mapping
+          description: Preview, permission, evidence, assignment, or idempotency conflict
           content:
             application/problem+json:
               schema:
@@ -2390,8 +2390,8 @@ components:
         deliveryStatus:
           type: string
           description: >-
-            Mock preview only. Pre-join candidates are never deliverable;
-            no persisted post-join scoped zero probe or delivery grant exists.
+            Pre-join candidates are never deliverable. Delivery requires a
+            separately persisted post-join scoped zero observation.
           enum: [blocked, join_candidate_pending_first_probe, deliverable]
         reason:
           type: string
@@ -2418,6 +2418,7 @@ components:
         - slots
         - candidates
         - source
+        - managementPermission
         - evidenceFingerprint
         - sourceRevisions
         - assignments
@@ -2499,6 +2500,9 @@ components:
             $ref: '#/components/schemas/ExpiryRotationCandidate'
         source:
           type: string
+        managementPermission:
+          type: string
+          enum: [unknown, manage]
         evidenceFingerprint:
           type: string
         assignments:

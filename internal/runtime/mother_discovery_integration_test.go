@@ -86,7 +86,7 @@ func (f *sequencedDiscovery) Discover(ctx context.Context, _ platform.PersonalSe
 			return platform.DiscoveryResult{}, ctx.Err()
 		}
 	}
-	return platform.DiscoveryResult{Status: "discovered", Workspaces: []platform.DiscoveredWorkspace{{PlatformID: "team-one", Name: "One", Access: "readable"}}}, nil
+	return platform.DiscoveryResult{Status: "discovered", Workspaces: []platform.DiscoveredWorkspace{{PlatformID: "team-one", Name: "One", Access: "readable", Role: "owner"}}}, nil
 }
 
 func rotateMotherFixture(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, password string) error {
@@ -185,7 +185,7 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	}
 	origins, _ := auth.ParseOriginPolicy("https://owner.test")
 	refresh := &fixturePersonalRefresh{result: platform.PersonalRefreshResult{Status: "ready", Session: platform.PersonalSession{AccessToken: "personal-token", DeviceID: "device-one", Cookies: []platform.SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "cookie-secret"}}, ExpiresAt: time.Now().Add(time.Hour)}}}
-	adapter := &fixtureDiscovery{result: platform.DiscoveryResult{Status: "discovered", Workspaces: []platform.DiscoveredWorkspace{{PlatformID: "team-one", Name: "One", Access: "readable"}, {PlatformID: "team-two", Name: "Two", Access: "permission_denied"}}}}
+	adapter := &fixtureDiscovery{result: platform.DiscoveryResult{Status: "discovered", Workspaces: []platform.DiscoveredWorkspace{{PlatformID: "team-one", Name: "One", Access: "readable", Role: "owner"}, {PlatformID: "team-two", Name: "Two", Access: "permission_denied", Role: "member"}}}}
 	handler := &OwnerAuthHandler{pool: pool, keyRing: cardIntegrationKeyRing{}, origins: origins, personalRefresh: refresh, discovery: adapter}
 	serve := ownerapi.HandlerWithOptions(handler, ownerapi.StdHTTPServerOptions{ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 		if isCSRFBindingError(err) {
@@ -271,7 +271,7 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	if status, result := readDiscovery(http.MethodPost, firstID, true, true); status != 200 || result.Status != "discovered" || len(result.Workspaces) != 2 {
 		t.Fatalf("first discovery: %d %+v", status, result)
 	}
-	adapter.result.Workspaces = []platform.DiscoveredWorkspace{{PlatformID: "team-one", Name: "Renamed One", Access: "unknown"}}
+	adapter.result.Workspaces = []platform.DiscoveredWorkspace{{PlatformID: "team-one", Name: "Renamed One", Access: "unknown", Role: "unknown"}}
 	if status, result := readDiscovery(http.MethodPost, secondID, true, true); status != 200 || result.Status != "discovered" || len(result.Workspaces) != 1 {
 		t.Fatalf("second discovery: %d %+v", status, result)
 	}
@@ -283,6 +283,10 @@ func TestMotherDiscoveryPersistsPerMotherVisibilityWithoutBindingOrImplicitSelec
 	var spaces, relations, bindings int
 	if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM tsw_workspaces),(SELECT count(*) FROM tsw_mother_workspace_visibility),(SELECT count(*) FROM tsw_mother_workspace_bindings)`).Scan(&spaces, &relations, &bindings); err != nil || spaces != 2 || relations != 3 || bindings != 0 {
 		t.Fatalf("spaces=%d relations=%d bindings=%d err=%v", spaces, relations, bindings, err)
+	}
+	var ownerRoles int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM tsw_mother_workspace_visibility visibility JOIN tsw_workspaces workspace ON workspace.id=visibility.workspace_id WHERE workspace.platform_workspace_id='team-one' AND visibility.workspace_role='owner'`).Scan(&ownerRoles); err != nil || ownerRoles != 1 {
+		t.Fatalf("first-party Workspace owner role not persisted per mother: count=%d err=%v", ownerRoles, err)
 	}
 	// Fix a read-only snapshot, switch the current attempt, and verify status
 	// and rows still come from the same generation; a new GET sees the new one.

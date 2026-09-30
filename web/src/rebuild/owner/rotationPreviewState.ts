@@ -46,6 +46,7 @@ export function rotationStatus(item: ExpiryPreview): string {
     case 'needs_verification': return '原席位保护、候选资格或席位与合格候选数待核验；请修订草案后重新预览。不会整批清退，也不会临时发邀请。';
     case 'authorized': return '已记录冻结授权；本阶段不执行邀请、加入、清退或推送。';
     case 'revoked': return '授权已撤销；原确认不能再次使用。';
-    case 'ready': return '只读预览仅核对逐席受控加入候选；加入后首次目标空间零用量实测与持久化前不可交付。授权写入围栏待实现，本阶段不会建立可执行授权。';
+    case 'ready': return '只读预览已取得当前 Owner 角色、双快照、席位类型、用量与保护证据；可明确冻结逐席授权，但确认不会立即执行远端操作。';
+    default: return '未知换批状态；请重新读取，当前不可授权。';
   }
 }

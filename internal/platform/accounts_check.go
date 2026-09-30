@@ -81,18 +81,32 @@ func (a AccountsCheckDiscovery) Discover(ctx context.Context, session PersonalSe
 	return DiscoveryResult{Status: "discovered", Workspaces: workspaces}, nil
 }
 
+type accountsRoleFields struct {
+	WorkspaceRole      string `json:"workspace_role"`
+	WorkspaceRoleCamel string `json:"workspaceRole"`
+	AccountRole        string `json:"account_role"`
+	AccountRoleCamel   string `json:"accountRole"`
+	Role               string `json:"role"`
+}
+
+type accountsAccountFields struct {
+	ID        string `json:"account_id"`
+	Name      string `json:"name"`
+	Plan      string `json:"plan_type"`
+	Structure string `json:"structure"`
+	Kind      string `json:"kind"`
+	accountsRoleFields
+	Membership          *accountsRoleFields `json:"membership"`
+	WorkspaceMembership *accountsRoleFields `json:"workspace_membership"`
+	User                *accountsRoleFields `json:"user"`
+}
+
 // ParseAccountsCheckWorkspaces accepts the sourced accounts map, not HTML,
 // invitation candidates or a client-provided workspace ID. Missing facts fail closed.
 func ParseAccountsCheckWorkspaces(data []byte) ([]DiscoveredWorkspace, error) {
 	var payload struct {
 		Accounts map[string]struct {
-			Account *struct {
-				ID        string `json:"account_id"`
-				Name      string `json:"name"`
-				Plan      string `json:"plan_type"`
-				Structure string `json:"structure"`
-				Kind      string `json:"kind"`
-			} `json:"account"`
+			Account *accountsAccountFields `json:"account"`
 		} `json:"accounts"`
 	}
 	if err := json.Unmarshal(data, &payload); err != nil || payload.Accounts == nil {
@@ -131,9 +145,44 @@ func ParseAccountsCheckWorkspaces(data []byte) ([]DiscoveredWorkspace, error) {
 			return nil, errors.New("accounts check workspace identity incomplete")
 		}
 		if !seen[id] {
-			workspaces = append(workspaces, DiscoveredWorkspace{PlatformID: id, Name: name, Access: "readable"})
+			role := roleFromFields(&item.accountsRoleFields)
+			for _, nested := range []*accountsRoleFields{item.Membership, item.WorkspaceMembership, item.User} {
+				if role == "" {
+					role = roleFromFields(nested)
+				}
+			}
+			workspaces = append(workspaces, DiscoveredWorkspace{PlatformID: id, Name: name, Access: "readable", Role: normalizeWorkspaceRole(role)})
 			seen[id] = true
 		}
 	}
 	return workspaces, nil
+}
+
+func roleFromFields(fields *accountsRoleFields) string {
+	if fields == nil {
+		return ""
+	}
+	return firstNonEmpty(fields.WorkspaceRole, fields.WorkspaceRoleCamel, fields.AccountRole, fields.AccountRoleCamel, fields.Role)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func normalizeWorkspaceRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "owner", "workspace_owner", "workspace owner", "primary_owner", "primary owner", "account-owner":
+		return "owner"
+	case "admin", "administrator":
+		return "admin"
+	case "member", "user", "standard", "regular", "standard-user":
+		return "member"
+	default:
+		return "unknown"
+	}
 }

@@ -128,7 +128,7 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
       setRotation(next);
     } catch (error: unknown) {
       const problem=ownerProblem(error);
-      setNotice(problem.code === 'pending_write_fence' ? '授权写入围栏未就绪；匹配仅供预览，不会建立可执行授权。' : problem.status === 409 ? '草案或证据已变化，必须重新预览；本次未授权。' : '操作未保存，请刷新后重试。');
+      setNotice(problem.status === 409 ? '权限、草案或证据已变化，必须重新预览；本次未授权。' : '操作未保存，请刷新后重试。');
     } finally { setPending(false); }
   }
   async function previewBatch(batchId: string) {
@@ -199,7 +199,7 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
         <Button variant="light" disabled={Boolean(stale) || pending} loading={pending} onClick={() => void rotationAction('preview')}>重新预览到期换批（只读）</Button>
         {rotation ? <Paper withBorder p="md"><Stack gap="sm">
           <Alert color={rotation.status === 'authorized' ? 'green' : 'yellow'} role="status">{rotationStatus(rotation)}</Alert>
-          <Text size="sm">核验 #{rotation.verificationId} · 到期 {rotation.activeUntil} · 来源 {rotation.source} · 证据截止 {rotation.expiresAt}</Text>
+          <Text size="sm">核验 #{rotation.verificationId} · 到期 {rotation.activeUntil} · 管理权限 {rotation.managementPermission} · 来源 {rotation.source} · 证据截止 {rotation.expiresAt}</Text>
           <Text size="sm">目标空间 {rotation.workspaceId} · 母号 {rotation.motherAccountId} · 来源批次 {rotation.batchId}（修订 {rotation.batchVersion}） · 交付去向 {rotation.destinationId}（修订 {rotation.destinationRevision}）</Text>
           <Text size="sm">订阅付费 default 配额：{rotation.paidDefaultEntitlement ?? '待核验'}；独立席位类型占用：{Object.entries(rotation.seatTypeCounts).map(([kind, count]) => `${kind} ${count}`).join(' · ') || '待核验'}。付费配额不等于可替换席位数。</Text>
           <Text size="sm">成员快照（{rotation.members.length}）：{rotation.members.join('；') || '无'}</Text>
@@ -212,9 +212,9 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
           {rotation.status === 'authorized' ? <Button variant="light" color="red" loading={pending} onClick={() => void rotationAction('revoke')}>撤销授权（尚未执行）</Button> : null}
           {rotation.status === 'authorized' ? <Text size="sm">明确匹配：{rotation.assignments.map((mapping) => `${mapping.platformMemberId} → ${mapping.accountId}`).join('；')} · 授权指纹 {rotation.authorizationDigest}</Text> : null}
           {canConfirmRotation(rotation, draft.version, Date.now()) && !stale ? <Stack gap="xs">
-            <Text size="sm">逐席选择受控加入候选；不会按顺序自动配对。一个候选不能占用多个席位。匹配不是加入或交付授权；首次用量须加入后实测并落账。</Text>
+            <Text size="sm">逐席选择受控加入候选；不会按顺序自动配对。一个候选不能占用多个席位。确认只冻结后续逐席执行范围，不代表已经加入或可以交付；首次用量须加入后实测并落账。</Text>
             {rotation.slots.filter((slot) => slot.decision === 'replaceable').map((slot) => <Select key={slot.platformMemberId} label={`${slot.identifier} · ${slot.platformMemberId} · ${slot.seatType}`} placeholder="明确选择此席候选" data={rotation.candidates.filter((child) => child.decision === 'eligible' && child.seatType === slot.seatType).map((child) => ({ value: child.accountId, label: `${child.identifier} · ${child.accountId}`, disabled: Object.entries(rotationChoices).some(([selectedSlot, id]) => selectedSlot !== slot.platformMemberId && id === child.accountId) }))} value={rotationChoices[slot.platformMemberId] || null} onChange={(value) => setRotationChoices((current) => ({ ...current, [slot.platformMemberId]: value || '' }))} />)}
-            <Button disabled={!explicitRotationAssignments(rotation, rotationChoices)} loading={pending} onClick={() => void rotationAction('confirm')}>提交逐席匹配核对（写入围栏未就绪时拒绝授权）</Button>
+            <Button disabled={!explicitRotationAssignments(rotation, rotationChoices)} loading={pending} onClick={() => void rotationAction('confirm')}>提交逐席匹配并冻结授权</Button>
           </Stack> : null}
         </Stack></Paper> : null}</Stack> : null}
       {step !== 'mother' ? <Group gap="xs"><Text size="sm" c="dimmed">返回修改：</Text>{(['mother','workspace','children','destination'] as const).filter((item) => ['mother','workspace','children','destination','complete'].indexOf(item) < ['mother','workspace','children','destination','complete'].indexOf(draft.step)).map((item) => <Button key={item} size="xs" variant="subtle" disabled={pending} onClick={() => void save({ choice: 'back', backTo: item })}>{stepNames[item]}</Button>)}</Group> : null}

@@ -21,19 +21,19 @@ func TestAccountsCheckDiscoveryUsesOnlySavedPersonalSessionAndReadOnlyEndpoint(t
 		if req.Method != http.MethodGet || req.URL.String() != accountsCheckURL || req.Header.Get("Authorization") != "Bearer personal-at" || req.Header.Get("oai-device-id") != "device-1" || !strings.Contains(req.Header.Get("Cookie"), "__Secure-next-auth.session-token=saved-cookie") {
 			t.Fatalf("incorrect scoped GET: %v %v", req.URL, req.Header)
 		}
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"accounts":{"personal":{"account":{"account_id":"personal","name":"Private","plan_type":"personal","structure":"personal"}},"one":{"account":{"account_id":"team-1","name":"First","plan_type":"team","structure":"workspace"}},"duplicate":{"account":{"account_id":"team-1","name":"Alias","plan_type":"team","structure":"workspace"}},"two":{"account":{"account_id":"team-2","name":"Second","plan_type":"business","structure":"workspace"}}}}`)), Request: req}, nil
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"accounts":{"personal":{"account":{"account_id":"personal","name":"Private","plan_type":"personal","structure":"personal"}},"one":{"account":{"account_id":"team-1","name":"First","plan_type":"team","structure":"workspace","workspace_role":"owner"}},"duplicate":{"account":{"account_id":"team-1","name":"Alias","plan_type":"team","structure":"workspace","workspace_role":"owner"}},"two":{"account":{"account_id":"team-2","name":"Second","plan_type":"business","structure":"workspace","workspace_membership":{"accountRole":"admin"}}}}}`)), Request: req}, nil
 	}), Timeout: time.Second}
 	adapter := AccountsCheckDiscovery{Client: func(context.Context) (*http.Client, func(), error) { return client, func() { releases++ }, nil }}
 	session := PersonalSession{AccessToken: "personal-at", DeviceID: "device-1", Cookies: []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "saved-cookie"}}, ExpiresAt: time.Now().Add(time.Hour)}
 	result, err := adapter.Discover(t.Context(), session)
-	if err != nil || result.Status != "discovered" || len(result.Workspaces) != 2 || result.Workspaces[0].PlatformID != "team-1" || result.Workspaces[1].PlatformID != "team-2" || result.Workspaces[0].Access != "readable" || calls != 1 || releases != 1 {
+	if err != nil || result.Status != "discovered" || len(result.Workspaces) != 2 || result.Workspaces[0].PlatformID != "team-1" || result.Workspaces[1].PlatformID != "team-2" || result.Workspaces[0].Access != "readable" || result.Workspaces[0].Role != "owner" || result.Workspaces[1].Role != "admin" || calls != 1 || releases != 1 {
 		t.Fatalf("result=%+v err=%v calls=%d releases=%d", result, err, calls, releases)
 	}
 }
 
 func TestParseAccountsCheckWorkspacesFailsClosedOnPersonalAndUnknownPlans(t *testing.T) {
-	workspaces, err := ParseAccountsCheckWorkspaces([]byte(`{"accounts":{"personal-key":{"account":{"account_id":"PERSONAL","name":"Private","plan_type":"Team","structure":"Workspace"}},"free-key":{"account":{"account_id":"team-free","name":"Private","plan_type":"Free","structure":"workspace"}},"default-key":{"account":{"account_id":"team-default","name":"Private","plan_type":"team","kind":"DEFAULT","structure":"workspace"}},"real":{"account":{"account_id":"team-1","name":"One","plan_type":"Business","kind":"Workspace","structure":"Workspace"}}}}`))
-	if err != nil || len(workspaces) != 1 || workspaces[0].PlatformID != "team-1" || workspaces[0].Access != "readable" {
+	workspaces, err := ParseAccountsCheckWorkspaces([]byte(`{"accounts":{"personal-key":{"account":{"account_id":"PERSONAL","name":"Private","plan_type":"Team","structure":"Workspace"}},"free-key":{"account":{"account_id":"team-free","name":"Private","plan_type":"Free","structure":"workspace"}},"default-key":{"account":{"account_id":"team-default","name":"Private","plan_type":"team","kind":"DEFAULT","structure":"workspace"}},"real":{"account":{"account_id":"team-1","name":"One","plan_type":"Business","kind":"Workspace","structure":"Workspace","account_role":"primary_owner"}}}}`))
+	if err != nil || len(workspaces) != 1 || workspaces[0].PlatformID != "team-1" || workspaces[0].Access != "readable" || workspaces[0].Role != "owner" {
 		t.Fatalf("case-insensitive exclusion/Team admission: %+v %v", workspaces, err)
 	}
 	for _, tt := range []struct{ name, body string }{

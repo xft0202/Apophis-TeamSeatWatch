@@ -204,8 +204,19 @@ func (h *OwnerAuthHandler) finishSelectedWorkspace(ctx context.Context, workspac
 	if err != nil {
 		return err
 	}
-	updated, err := tx.Exec(ctx, `UPDATE tsw_workspace_verifications SET outcome=$2,permission=$3,completeness=$4,observed_at=$5,expires_at=$5::timestamptz+interval '7 days',active_until=$6,seat_limit=$7,member_count=$8,pending_invite_count=$9,sources=$10
-		WHERE id=$1 AND outcome='verifying' AND id=(SELECT max(id) FROM tsw_workspace_verifications WHERE workspace_id=$11 AND mother_account_id=$12 AND discovery_run_id=$13 AND session_generation=$14 AND secret_revision=$15 AND token_attempt=$16 AND token_exchange_id=$17)`, attempt.id, status, permission, completeness, observedAt, until, seats, members, invites, encoded, workspaceID, motherID, attempt.run, attempt.generation, attempt.revision, attempt.tokenAttempt, attempt.tokenExchangeID)
+	seatTypes := facts.Result.SeatTypeCounts
+	if seatTypes == nil {
+		seatTypes = map[string]int{}
+	}
+	if !validSelectedSeatTypeCounts(seatTypes) {
+		return errors.New("workspace seat type counts invalid")
+	}
+	encodedSeatTypes, err := json.Marshal(seatTypes)
+	if err != nil {
+		return err
+	}
+	updated, err := tx.Exec(ctx, `UPDATE tsw_workspace_verifications SET outcome=$2,permission=$3,completeness=$4,observed_at=$5,expires_at=$5::timestamptz+interval '7 days',active_until=$6,seat_limit=$7,member_count=$8,pending_invite_count=$9,sources=$10,seat_type_counts=$11
+		WHERE id=$1 AND outcome='verifying' AND id=(SELECT max(id) FROM tsw_workspace_verifications WHERE workspace_id=$12 AND mother_account_id=$13 AND discovery_run_id=$14 AND session_generation=$15 AND secret_revision=$16 AND token_attempt=$17 AND token_exchange_id=$18)`, attempt.id, status, permission, completeness, observedAt, until, seats, members, invites, encoded, encodedSeatTypes, workspaceID, motherID, attempt.run, attempt.generation, attempt.revision, attempt.tokenAttempt, attempt.tokenExchangeID)
 	if err != nil {
 		return err
 	}
@@ -225,7 +236,11 @@ func (h *OwnerAuthHandler) finishSelectedWorkspace(ctx context.Context, workspac
 			if member.Role != "" {
 				role = &member.Role
 			}
-			_, err = tx.Exec(ctx, `INSERT INTO tsw_workspace_verification_entries(verification_id,kind,identifier,identifier_hmac,identifier_key_version,status,role,platform_member_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, attempt.id, member.Kind, normalized, fingerprint[:], version, member.Status, role, platformMemberID)
+			var seatType *string
+			if member.SeatType != "" {
+				seatType = &member.SeatType
+			}
+			_, err = tx.Exec(ctx, `INSERT INTO tsw_workspace_verification_entries(verification_id,kind,identifier,identifier_hmac,identifier_key_version,status,role,platform_member_id,seat_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, attempt.id, member.Kind, normalized, fingerprint[:], version, member.Status, role, platformMemberID, seatType)
 			if err != nil {
 				return err
 			}
@@ -339,6 +354,18 @@ func (h *OwnerAuthHandler) selectedWorkspaceError(w http.ResponseWriter, r *http
 		h.workspaceFailure(w, r, err)
 	}
 	return false
+}
+
+func validSelectedSeatTypeCounts(counts map[string]int) bool {
+	if len(counts) > 4 {
+		return false
+	}
+	for seatType, count := range counts {
+		if count < 0 || (seatType != "default" && seatType != "usage_based" && seatType != "automation" && seatType != "prolite") {
+			return false
+		}
+	}
+	return true
 }
 
 func validSelectedEntries(members []platform.Member, memberCount, invitationCount int) bool {
