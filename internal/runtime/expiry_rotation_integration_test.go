@@ -140,6 +140,7 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	eligibleChild := rotationVerdict{rotationProof: proof("mock_candidate_protection", "candidate-1"), AccountID: child, SeatType: "prolite", Usage: usage(child, "unobserved_prejoin", false), Protection: protection(child, "none"), Decision: "eligible", Reason: "join_candidate_pending_first_probe"}
 	eligibleChild.Usage.Absence = &rotationUsageAbsenceProof{rotationProof: proof("mock_usage_ledger_lookup", "complete-absence-1"), WorkspaceID: space, AccountID: child, MotherID: mother, SessionGeneration: generation, VerificationID: verification, Identifier: "child@rotate.test", AccountVersion: 1, CredentialVersion: 1, MembershipVersion: 1, LookupComplete: true, FirstUseRecordStatus: "absent"}
 	eligibleChild.Usage.Absence.ExpiresAt = now.Add(2 * time.Minute)
+	eligibleChild.Usage.Absence.EvidenceID = rotationAbsenceEvidenceID(*eligibleChild.Usage.Absence)
 	mock := &mockRotation{evidence: rotationEvidence{WorkspaceID: space, MotherID: mother, VerificationID: verification, Permission: proof("mock_write_permission", "write-1"), PermissionDecision: "manage", Counts: proof("mock_seat_type_counts", "seats-1"), PaidDefault: proof("mock_paid_default_entitlement", "paid-1"), PaidDefaultEntitlement: 2, SeatTypeCounts: map[string]int{"default": 0, "prolite": 1}, Invitations: map[string]rotationInvitationProof{"child@rotate.test": {rotationProof: proof("mock_invite_seat_type", "invite-1"), WorkspaceID: space, VerificationID: verification, Identifier: "child@rotate.test", Status: "pending", SeatType: "prolite"}}, Slots: map[string]rotationVerdict{"member-1": usedSlot}, Candidates: map[uuid.UUID]rotationVerdict{child: eligibleChild}}}
 	h.rotationCapability = mock
 	mock.evidence.PermissionDecision = "read"
@@ -283,8 +284,13 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	prejoinZero := eligibleChild
 	prejoinZero.Usage = usage(child, "never_used", false)
 	mock.evidence.Candidates[child] = prejoinZero
+	if p := preview(); p.Status == "ready" || p.Candidates[0].Decision != "excluded" || p.Candidates[0].DeliveryStatus != "blocked" {
+		t.Fatalf("legacy never_used without complete absence lookup accepted: %+v", p)
+	}
+	prejoinZero.Usage.Absence = eligibleChild.Usage.Absence
+	mock.evidence.Candidates[child] = prejoinZero
 	if p := preview(); p.Status != "ready" || p.Candidates[0].DeliveryStatus != "join_candidate_pending_first_probe" {
-		t.Fatalf("pre-join zero falsely marked deliverable: %+v", p)
+		t.Fatalf("complete absence lookup with legacy state rejected or marked deliverable: %+v", p)
 	}
 	mock.evidence.Candidates[child] = eligibleChild
 	ready := preview()
@@ -309,6 +315,59 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	resumed := rotationResult(t, rotationRequest(h, session, csrf, "GET", path+"/latest", nil), 200)
 	if resumed.Id != ready.Id || resumed.Authorized || resumed.Status != "ready" {
 		t.Fatalf("blocked preview mutated: %+v", resumed)
+	}
+	// Pre-upgrade facts have no deliveryStatus. GET/latest may display them
+	// only as blocked and stale; neither GET nor confirm rewrites frozen JSON.
+	legacy := ready
+	legacy.Id = uuid.Nil
+	legacy.Candidates = append([]ownerapi.ExpiryRotationCandidate{}, ready.Candidates...)
+	legacy.Candidates[0].UsageState = "never_used"
+	legacy.Candidates[0].DeliveryStatus = ""
+	legacy.Digest = ""
+	legacyRaw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacyFacts map[string]any
+	if err = json.Unmarshal(legacyRaw, &legacyFacts); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacyFacts["candidates"].([]any)[0].(map[string]any), "deliveryStatus")
+	legacy.Digest = rotationHash(legacyFacts)
+	legacyFacts["digest"] = legacy.Digest
+	if legacyRaw, err = json.Marshal(legacyFacts); err != nil {
+		t.Fatal(err)
+	}
+	var legacyID uuid.UUID
+	if err = pool.QueryRow(ctx, `INSERT INTO tsw_expiry_rotation_previews(owner_id,draft_id,draft_version,workspace_id,verification_id,facts,digest,status,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,'ready',$8) RETURNING id`, owner, draft, legacy.DraftVersion, space, verification, legacyRaw, legacy.Digest, legacy.ExpiresAt).Scan(&legacyID); err != nil {
+		t.Fatal(err)
+	}
+	var beforeFacts []byte
+	var beforeDigest, beforeStatus string
+	if err = pool.QueryRow(ctx, `SELECT facts,digest,status FROM tsw_expiry_rotation_previews WHERE id=$1`, legacyID).Scan(&beforeFacts, &beforeDigest, &beforeStatus); err != nil {
+		t.Fatal(err)
+	}
+	legacyLatest := rotationResult(t, rotationRequest(h, session, csrf, "GET", path+"/latest", nil), 200)
+	if legacyLatest.Id != legacyID || legacyLatest.Status != "needs_verification" || legacyLatest.Digest != legacy.Digest || legacyLatest.Candidates[0].DeliveryStatus != "blocked" || legacyLatest.Candidates[0].Decision != "excluded" || legacyLatest.Candidates[0].Reason != "legacy_preview_requires_repreview" {
+		t.Fatalf("legacy latest silently joinable: %+v", legacyLatest)
+	}
+	legacyGET := httptest.NewRequest("GET", path+"/"+legacyID.String(), nil)
+	legacyGET.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: session})
+	legacyResponse := httptest.NewRecorder()
+	h.GetExpiryRotationPreview(legacyResponse, legacyGET, legacyID)
+	if p := rotationResult(t, legacyResponse, 200); p.Status != "needs_verification" || p.Candidates[0].Decision != "excluded" || p.Digest != legacy.Digest {
+		t.Fatalf("legacy GET silently joinable: %+v", p)
+	}
+	if w := rotationRequest(h, session, csrf, "POST", path+"/"+legacyID.String()+"/confirm", map[string]any{"confirmed": true, "digest": legacy.Digest, "idempotencyKey": uuid.New(), "assignments": assignments}); w.Code != 409 || !bytes.Contains(w.Body.Bytes(), []byte("needs_verification")) {
+		t.Fatalf("legacy confirmation accepted: %d %s", w.Code, w.Body.String())
+	}
+	var afterFacts []byte
+	var afterDigest, afterStatus string
+	if err = pool.QueryRow(ctx, `SELECT facts,digest,status FROM tsw_expiry_rotation_previews WHERE id=$1`, legacyID).Scan(&afterFacts, &afterDigest, &afterStatus); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(beforeFacts, afterFacts) || beforeDigest != afterDigest || afterDigest != legacy.Digest || beforeStatus != "ready" || afterStatus != "ready" {
+		t.Fatal("legacy GET or confirm rewrote frozen facts, digest or status")
 	}
 	for n := 0; n < 2; n++ {
 		if w := rotationRequest(h, session, csrf, "POST", confirmPath, confirmation); w.Code != 409 || !bytes.Contains(w.Body.Bytes(), []byte("pending_write_fence")) {
@@ -365,7 +424,13 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	absent.VerificationID = futureVerification
 	eligibleChild.Usage.Absence = &absent
 	mock.evidence.Candidates[child] = eligibleChild
-	if p := preview(); p.Status != "not_expired" {
+	if p := preview(); p.Candidates[0].Decision != "excluded" || p.Candidates[0].DeliveryStatus != "blocked" {
+		t.Fatalf("reused lookup ID on changed verification accepted: %+v", p)
+	}
+	absent.EvidenceID = rotationAbsenceEvidenceID(absent)
+	eligibleChild.Usage.Absence = &absent
+	mock.evidence.Candidates[child] = eligibleChild
+	if p := preview(); p.Status != "not_expired" || p.Candidates[0].Decision != "eligible" {
 		t.Fatalf("future expiry accepted: %s", p.Status)
 	}
 	// Retained mock history for the exact account in another Workspace is

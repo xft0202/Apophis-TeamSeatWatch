@@ -111,12 +111,12 @@ func validRotationUsage(u rotationUsageProof, workspaceID, accountID uuid.UUID, 
 	return u.Absence == nil && (u.State == "used" && u.EverUsed || u.State == "never_used" && !u.EverUsed || u.State == "unknown")
 }
 func validRotationCandidateUsage(u rotationUsageProof, scope rotationCandidateScope, now time.Time) bool {
-	if u.State != "unobserved_prejoin" {
+	if u.State != "unobserved_prejoin" && u.State != "never_used" {
 		return validRotationUsage(u, scope.WorkspaceID, scope.AccountID, now)
 	}
 	a := u.Absence
 	return !u.EverUsed && validRotationProof(u.rotationProof, "mock_workspace_usage", now) && u.WorkspaceID == scope.WorkspaceID && u.AccountID == scope.AccountID && a != nil &&
-		validRotationProof(a.rotationProof, "mock_usage_ledger_lookup", now) && a.EvidenceID != u.EvidenceID &&
+		validRotationProof(a.rotationProof, "mock_usage_ledger_lookup", now) && a.EvidenceID != u.EvidenceID && a.EvidenceID == rotationAbsenceEvidenceID(*a) &&
 		a.WorkspaceID == scope.WorkspaceID && a.AccountID == scope.AccountID && a.MotherID == scope.MotherID &&
 		a.SessionGeneration == scope.SessionGeneration && a.VerificationID == scope.VerificationID &&
 		a.Identifier == scope.Identifier && a.AccountVersion == scope.AccountVersion && a.CredentialVersion == scope.CredentialVersion && a.MembershipVersion == scope.MembershipVersion &&
@@ -143,6 +143,18 @@ func rotationHash(value any) string {
 	b, _ := json.Marshal(value)
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+// Content-address the COMPLETE mock lookup so an ID cannot be reused for a
+// different scope, result or observation time. This is not authentication.
+func rotationAbsenceEvidenceID(a rotationUsageAbsenceProof) string {
+	a.EvidenceID = ""
+	a.ObservedAt = a.ObservedAt.UTC()
+	a.ExpiresAt = a.ExpiresAt.UTC()
+	return rotationHash(struct {
+		Domain string                    `json:"domain"`
+		Proof  rotationUsageAbsenceProof `json:"proof"`
+	}{Domain: "tsw.mock_usage_ledger_absence.v1", Proof: a})
 }
 func rotationDigest(p ownerapi.ExpiryRotationPreview) string {
 	p.Id = uuid.Nil
@@ -474,7 +486,7 @@ func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, ow
 			if verdict.AccountID == c.id && validRotationProof(verdict.Usage.rotationProof, "mock_workspace_usage", now) && verdict.Usage.WorkspaceID == p.WorkspaceId && verdict.Usage.AccountID == c.id && verdict.Usage.EverUsed {
 				candidate.EverUsed = true
 				candidate.Reason = "sticky_usage_protected"
-			} else if verdict.Usage.State == "unobserved_prejoin" {
+			} else if verdict.Usage.State == "unobserved_prejoin" || verdict.Usage.State == "never_used" {
 				candidate.Reason = "usage_absence_unverified"
 			}
 			ready = false
@@ -610,6 +622,36 @@ func (h *OwnerAuthHandler) PreviewExpiryRotation(w http.ResponseWriter, r *http.
 	}
 	writeJSON(w, 200, p)
 }
+
+// Historical frozen facts lack deliveryStatus. Normalize the response and
+// reject legacy ready confirmations without changing stored facts or digest.
+func rotationNormalizeHistoricalPreview(p ownerapi.ExpiryRotationPreview, status string) (ownerapi.ExpiryRotationPreview, string) {
+	legacy := false
+	for _, c := range p.Candidates {
+		if (c.DeliveryStatus != "blocked" && c.DeliveryStatus != "join_candidate_pending_first_probe") ||
+			(c.Decision == "eligible" && c.DeliveryStatus != "join_candidate_pending_first_probe") ||
+			(c.Decision != "eligible" && c.DeliveryStatus == "join_candidate_pending_first_probe") {
+			legacy = true
+			break
+		}
+	}
+	if legacy {
+		p.Candidates = append([]ownerapi.ExpiryRotationCandidate{}, p.Candidates...)
+		for i := range p.Candidates {
+			c := &p.Candidates[i]
+			c.DeliveryStatus = "blocked"
+			if c.Decision == "eligible" {
+				c.Decision = "excluded"
+				c.Reason = "legacy_preview_requires_repreview"
+			}
+		}
+		if status == "ready" {
+			status = "needs_verification"
+		}
+	}
+	p.Status = ownerapi.ExpiryRotationPreviewStatus(status)
+	return p, status
+}
 func rotationStored(ctx context.Context, tx pgx.Tx, owner uuid.UUID, id uuid.UUID) (ownerapi.ExpiryRotationPreview, uuid.UUID, string, error) {
 	var p ownerapi.ExpiryRotationPreview
 	var raw []byte
@@ -634,6 +676,7 @@ func rotationStored(ctx context.Context, tx pgx.Tx, owner uuid.UUID, id uuid.UUI
 		return p, uuid.Nil, "", err
 	}
 	p.Authorized = authorizedAt != nil && revokedAt == nil
+	p, status = rotationNormalizeHistoricalPreview(p, status)
 	if key != nil {
 		return p, *key, status, nil
 	}
@@ -693,6 +736,9 @@ func rotationAssignments(preview ownerapi.ExpiryRotationPreview, requested []own
 	}
 	for _, c := range preview.Candidates {
 		if c.Decision == "eligible" {
+			if c.DeliveryStatus != "join_candidate_pending_first_probe" {
+				return nil, false
+			}
 			candidates[c.AccountId] = c.SeatType
 		}
 	}

@@ -3,7 +3,7 @@ import type { ExpiryAssignment, ExpiryPreview } from './expiryRotation';
 export function explicitRotationAssignments(item: ExpiryPreview, chosen: Record<string, string>): ExpiryAssignment[] | null {
   const slots = item.slots.filter((slot) => slot.decision === 'replaceable');
   const eligible = item.candidates.filter((candidate) => candidate.decision === 'eligible');
-  if (!slots.length || eligible.length !== slots.length || Object.keys(chosen).length !== slots.length) return null;
+  if (!slots.length || eligible.length !== slots.length || eligible.some((candidate) => candidate.deliveryStatus !== 'join_candidate_pending_first_probe') || Object.keys(chosen).length !== slots.length) return null;
   const unique = new Set<string>();
   const mapped: ExpiryAssignment[] = [];
   for (const slot of slots) {
@@ -16,13 +16,18 @@ export function explicitRotationAssignments(item: ExpiryPreview, chosen: Record<
 }
 
 export function canConfirmRotation(item: ExpiryPreview, draftVersion: number, now: number): boolean {
+  const eligible = item.candidates.filter((candidate) => candidate.decision === 'eligible');
   return item.status === 'ready' && !item.authorized && item.draftVersion === draftVersion &&
     new Date(item.expiresAt).getTime() > now && item.slots.some((slot) => slot.decision === 'replaceable') &&
-    item.candidates.filter((candidate) => candidate.decision === 'eligible').length === item.slots.filter((slot) => slot.decision === 'replaceable').length;
+    eligible.length === item.slots.filter((slot) => slot.decision === 'replaceable').length &&
+    eligible.every((candidate) => candidate.deliveryStatus === 'join_candidate_pending_first_probe');
 }
 export function rotationCandidateStatus(candidate: ExpiryPreview['candidates'][number]): string {
   if (candidate.deliveryStatus === 'join_candidate_pending_first_probe') {
     return '仅可作为受控加入候选；加入后须实测目标空间零用量并成功落账，当前不可交付。';
+  }
+  if (candidate.reason === 'legacy_preview_requires_repreview') {
+    return '旧预览缺少候选交付状态；请重新预览核验，不可沿用旧候选。';
   }
   if (candidate.reason === 'usage_absence_unverified' || candidate.reason === 'usage_unknown') {
     return '未取得完整的加入前无首次用量记录证明；探测失败或未知不能当作无记录。';
