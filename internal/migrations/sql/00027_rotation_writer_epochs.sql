@@ -12,9 +12,9 @@ REVOKE ALL ON public.tsw_rotation_epochs FROM PUBLIC;
 -- +goose StatementBegin
 CREATE FUNCTION public.tsw_rotation_epoch_advance(scope_kind text, scope_id uuid) RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
- -- Keep the existing invoker privileges; reject direct calls without requiring
- -- SECURITY DEFINER or a hard-coded deployment role grant.
- IF pg_trigger_depth() = 0 THEN RAISE EXCEPTION 'rotation epoch advance requires a fact trigger'; END IF;
+ -- Keep invoker privileges and reject top-level direct calls. Trigger depth is
+ -- not proof of which trigger called us and is not an authorization boundary.
+ IF pg_trigger_depth() = 0 THEN RAISE EXCEPTION 'rotation epoch advance requires trigger context'; END IF;
  IF scope_id IS NULL THEN RETURN; END IF;
  UPDATE public.tsw_rotation_epochs SET version=version+1 WHERE kind=scope_kind AND id=scope_id;
  IF NOT FOUND THEN RAISE EXCEPTION 'missing rotation epoch: % %',scope_kind,scope_id; END IF;
