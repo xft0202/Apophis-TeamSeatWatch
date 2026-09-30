@@ -294,8 +294,19 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 	}
 	mock.evidence.Candidates[child] = eligibleChild
 	ready := preview()
-	if ready.Status != "ready" || len(ready.Slots) != 1 || len(ready.Candidates) != 1 || ready.Candidates[0].Decision != "eligible" || ready.Candidates[0].DeliveryStatus != "join_candidate_pending_first_probe" || ready.Candidates[0].UsageState != "unobserved_prejoin" || ready.ExpiresAt.After(eligibleChild.Usage.Absence.ExpiresAt) {
+	if ready.Status != "ready" || ready.PolicyVersion == nil || *ready.PolicyVersion != rotationPreviewPolicyVersion || len(ready.Slots) != 1 || len(ready.Candidates) != 1 || ready.Candidates[0].Decision != "eligible" || ready.Candidates[0].DeliveryStatus != "join_candidate_pending_first_probe" || ready.Candidates[0].UsageState != "unobserved_prejoin" || ready.ExpiresAt.After(eligibleChild.Usage.Absence.ExpiresAt) {
 		t.Fatalf("ready evidence rejected: %+v", ready)
+	}
+	var readyFacts []byte
+	if err = pool.QueryRow(ctx, `SELECT facts FROM tsw_expiry_rotation_previews WHERE id=$1`, ready.Id).Scan(&readyFacts); err != nil {
+		t.Fatal(err)
+	}
+	var readyJSON map[string]any
+	if err = json.Unmarshal(readyFacts, &readyJSON); err != nil {
+		t.Fatal(err)
+	}
+	if readyJSON["policyVersion"] != float64(1) || readyJSON["digest"] != ready.Digest {
+		t.Fatalf("new ready preview did not persist current policy and digest: %s", readyFacts)
 	}
 	confirmPath := path + "/" + ready.Id.String() + "/confirm"
 	key := uuid.New()
@@ -313,8 +324,73 @@ func TestExpiryRotationAuthorizationMockOnlyIntegration(t *testing.T) {
 		t.Fatalf("mock confirmation created authorization: %d %s", blocked.Code, blocked.Body.String())
 	}
 	resumed := rotationResult(t, rotationRequest(h, session, csrf, "GET", path+"/latest", nil), 200)
-	if resumed.Id != ready.Id || resumed.Authorized || resumed.Status != "ready" {
+	if resumed.Id != ready.Id || resumed.Authorized || resumed.Status != "ready" || resumed.PolicyVersion == nil || *resumed.PolicyVersion != rotationPreviewPolicyVersion {
 		t.Fatalf("blocked preview mutated: %+v", resumed)
+	}
+	// The prior ready format already had join_candidate_pending_first_probe,
+	// but did not persist the complete-negative lookup policy version. Its
+	// delivery status alone must not make frozen facts join-eligible again.
+	for _, oldVersion := range []struct {
+		name    string
+		version any
+	}{
+		{name: "missing_policy_version"},
+		{name: "old_policy_version", version: float64(0)},
+	} {
+		t.Run(oldVersion.name, func(t *testing.T) {
+			var facts map[string]any
+			if err := json.Unmarshal(readyFacts, &facts); err != nil {
+				t.Fatal(err)
+			}
+			facts["id"] = uuid.Nil.String()
+			facts["digest"] = ""
+			if oldVersion.version == nil {
+				delete(facts, "policyVersion")
+			} else {
+				facts["policyVersion"] = oldVersion.version
+			}
+			candidateFacts := facts["candidates"].([]any)[0].(map[string]any)
+			if facts["status"] != "ready" || candidateFacts["deliveryStatus"] != "join_candidate_pending_first_probe" || candidateFacts["absence"] != nil || candidateFacts["lookupComplete"] != nil {
+				t.Fatalf("seed is not old ready JSON with pending-first-probe but no complete-negative lookup: %+v", facts)
+			}
+			oldDigest := rotationHash(facts)
+			facts["digest"] = oldDigest
+			oldRaw, err := json.Marshal(facts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var oldID uuid.UUID
+			if err = pool.QueryRow(ctx, `INSERT INTO tsw_expiry_rotation_previews(owner_id,draft_id,draft_version,workspace_id,verification_id,facts,digest,status,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,'ready',$8) RETURNING id`, owner, draft, ready.DraftVersion, space, verification, oldRaw, oldDigest, ready.ExpiresAt).Scan(&oldID); err != nil {
+				t.Fatal(err)
+			}
+			var before []byte
+			if err = pool.QueryRow(ctx, `SELECT facts FROM tsw_expiry_rotation_previews WHERE id=$1`, oldID).Scan(&before); err != nil {
+				t.Fatal(err)
+			}
+			assertBlocked := func(label string, p ownerapi.ExpiryRotationPreview) {
+				t.Helper()
+				if p.Id != oldID || p.Status != "needs_verification" || p.Digest != oldDigest || len(p.Candidates) != 1 || p.Candidates[0].Decision != "excluded" || p.Candidates[0].DeliveryStatus != "blocked" || p.Candidates[0].Reason != "legacy_preview_requires_repreview" {
+					t.Fatalf("%s resumed pre-policy ready facts: %+v", label, p)
+				}
+			}
+			assertBlocked("latest", rotationResult(t, rotationRequest(h, session, csrf, "GET", path+"/latest", nil), 200))
+			get := httptest.NewRequest("GET", path+"/"+oldID.String(), nil)
+			get.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: session})
+			response := httptest.NewRecorder()
+			h.GetExpiryRotationPreview(response, get, oldID)
+			assertBlocked("by ID", rotationResult(t, response, 200))
+			if w := rotationRequest(h, session, csrf, "POST", path+"/"+oldID.String()+"/confirm", map[string]any{"confirmed": true, "digest": oldDigest, "idempotencyKey": uuid.New(), "assignments": assignments}); w.Code != 409 || !bytes.Contains(w.Body.Bytes(), []byte("needs_verification")) {
+				t.Fatalf("old policy confirmation accepted: %d %s", w.Code, w.Body.String())
+			}
+			var stored []byte
+			var digest, status string
+			if err = pool.QueryRow(ctx, `SELECT facts,digest,status FROM tsw_expiry_rotation_previews WHERE id=$1`, oldID).Scan(&stored, &digest, &status); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(stored, before) || digest != oldDigest || status != "ready" {
+				t.Fatal("GET or confirm changed immutable old-policy facts, digest or status")
+			}
+		})
 	}
 	// Pre-upgrade facts have no deliveryStatus. GET/latest may display them
 	// only as blocked and stale; neither GET nor confirm rewrites frozen JSON.

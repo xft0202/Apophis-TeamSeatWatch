@@ -163,13 +163,21 @@ func TestExpiryRotationAbsenceIDBindsCompleteCanonicalPayload(t *testing.T) {
 }
 
 func TestExpiryRotationLegacyPreviewCannotResumeAsJoinEligible(t *testing.T) {
-	original := ownerapi.ExpiryRotationPreview{Status: "ready", Digest: "old-frozen-digest", Candidates: []ownerapi.ExpiryRotationCandidate{{AccountId: uuid.New(), Decision: "eligible", UsageState: "never_used"}}}
-	p, status := rotationNormalizeHistoricalPreview(original, "ready")
-	if status != "needs_verification" || p.Status != "needs_verification" || p.Candidates[0].Decision != "excluded" || p.Candidates[0].DeliveryStatus != "blocked" || p.Candidates[0].Reason != "legacy_preview_requires_repreview" || p.Digest != original.Digest {
-		t.Fatalf("legacy ready preview remained usable: %+v %s", p, status)
+	for _, version := range []*int{nil, new(int)} {
+		original := ownerapi.ExpiryRotationPreview{PolicyVersion: version, Status: "ready", Digest: "old-frozen-digest", Candidates: []ownerapi.ExpiryRotationCandidate{{AccountId: uuid.New(), Decision: "eligible", UsageState: "never_used", DeliveryStatus: "join_candidate_pending_first_probe"}}}
+		p, status := rotationNormalizeHistoricalPreview(original, "ready")
+		if status != "needs_verification" || p.Status != "needs_verification" || p.Candidates[0].Decision != "excluded" || p.Candidates[0].DeliveryStatus != "blocked" || p.Candidates[0].Reason != "legacy_preview_requires_repreview" || p.Digest != original.Digest {
+			t.Fatalf("old policy ready preview remained usable: %+v %s", p, status)
+		}
+		if original.Candidates[0].Decision != "eligible" || original.Candidates[0].DeliveryStatus != "join_candidate_pending_first_probe" {
+			t.Fatal("normalization modified frozen input")
+		}
 	}
-	if original.Candidates[0].Decision != "eligible" || original.Candidates[0].DeliveryStatus != "" {
-		t.Fatal("normalization modified frozen input")
+	version := rotationPreviewPolicyVersion
+	current := ownerapi.ExpiryRotationPreview{PolicyVersion: &version, Status: "ready", Candidates: []ownerapi.ExpiryRotationCandidate{{Decision: "eligible", DeliveryStatus: "join_candidate_pending_first_probe"}}}
+	p, status := rotationNormalizeHistoricalPreview(current, "ready")
+	if status != "ready" || p.Candidates[0].Decision != "eligible" || p.Candidates[0].DeliveryStatus != "join_candidate_pending_first_probe" {
+		t.Fatal("current version join candidate was blocked")
 	}
 }
 
@@ -232,8 +240,14 @@ func TestExpiryRotationRequiresExplicitCompatibleAssignments(t *testing.T) {
 }
 
 func TestExpiryRotationDigestBindsExactScope(t *testing.T) {
-	p := ownerapi.ExpiryRotationPreview{DraftId: uuid.New(), DraftVersion: 1, WorkspaceId: uuid.New(), SourceRevisions: map[string]int64{"account": 1}, Members: []string{"old@example.test · id-1"}, Invitations: []string{"new@example.test · pending"}, Slots: []ownerapi.ExpiryRotationSlot{{Identifier: "old@example.test", PlatformMemberId: "id-1", SeatType: "default", Decision: "replaceable", Reason: "mock-unprotected"}}, Candidates: []ownerapi.ExpiryRotationCandidate{{AccountId: uuid.New(), Decision: "eligible", Reason: "invited", SeatType: "default"}}}
+	version := rotationPreviewPolicyVersion
+	p := ownerapi.ExpiryRotationPreview{PolicyVersion: &version, DraftId: uuid.New(), DraftVersion: 1, WorkspaceId: uuid.New(), SourceRevisions: map[string]int64{"account": 1}, Members: []string{"old@example.test · id-1"}, Invitations: []string{"new@example.test · pending"}, Slots: []ownerapi.ExpiryRotationSlot{{Identifier: "old@example.test", PlatformMemberId: "id-1", SeatType: "default", Decision: "replaceable", Reason: "mock-unprotected"}}, Candidates: []ownerapi.ExpiryRotationCandidate{{AccountId: uuid.New(), Decision: "eligible", Reason: "invited", SeatType: "default"}}}
 	digest := rotationDigest(p)
+	p.PolicyVersion = nil
+	if rotationDigest(p) == digest {
+		t.Fatal("policy change reused preview digest")
+	}
+	p.PolicyVersion = &version
 	p.Id = uuid.New()
 	p.Authorized = true
 	now := time.Now()

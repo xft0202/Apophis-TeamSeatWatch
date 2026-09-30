@@ -2438,6 +2438,11 @@ components:
             - needs_verification
             - authorized
             - revoked
+        policyVersion:
+          type: integer
+          description: >-
+            Set on new immutable preview facts. Missing or older versions are
+            display-only and require re-preview before confirmation.
         digest:
           type: string
         draftId:

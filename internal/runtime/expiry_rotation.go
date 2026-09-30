@@ -88,6 +88,9 @@ type rotationVerdict struct {
 	Decision   string                  `json:"decision"`
 	Reason     string                  `json:"reason"`
 }
+
+const rotationPreviewPolicyVersion = 1
+
 type rotationEvidence struct {
 	WorkspaceID            uuid.UUID                          `json:"workspaceId"`
 	MotherID               uuid.UUID                          `json:"motherId"`
@@ -183,7 +186,8 @@ func rotationPreviouslyUsed(ctx context.Context, db rotationRow, accountID uuid.
 }
 
 func (h *OwnerAuthHandler) rotationFacts(ctx context.Context, db rotationRow, owner uuid.UUID) (ownerapi.ExpiryRotationPreview, error) {
-	p := ownerapi.ExpiryRotationPreview{Status: "facts_incomplete", Assignments: []ownerapi.ExpiryRotationAssignment{}, Slots: []ownerapi.ExpiryRotationSlot{}, Candidates: []ownerapi.ExpiryRotationCandidate{}, Members: []string{}, Invitations: []string{}, SeatTypeCounts: map[string]int{}, SourceRevisions: map[string]int64{}, Source: "selected_workspace_read"}
+	version := rotationPreviewPolicyVersion
+	p := ownerapi.ExpiryRotationPreview{PolicyVersion: &version, Status: "facts_incomplete", Assignments: []ownerapi.ExpiryRotationAssignment{}, Slots: []ownerapi.ExpiryRotationSlot{}, Candidates: []ownerapi.ExpiryRotationCandidate{}, Members: []string{}, Invitations: []string{}, SeatTypeCounts: map[string]int{}, SourceRevisions: map[string]int64{}, Source: "selected_workspace_read"}
 	var children []byte
 	var run, generation uuid.UUID
 	var revision int64
@@ -623,10 +627,11 @@ func (h *OwnerAuthHandler) PreviewExpiryRotation(w http.ResponseWriter, r *http.
 	writeJSON(w, 200, p)
 }
 
-// Historical frozen facts lack deliveryStatus. Normalize the response and
-// reject legacy ready confirmations without changing stored facts or digest.
+// Old policy facts cannot prove the complete-negative lookup, even when they
+// already say join_candidate_pending_first_probe. Normalize only the response;
+// frozen facts, digest and database status remain unchanged.
 func rotationNormalizeHistoricalPreview(p ownerapi.ExpiryRotationPreview, status string) (ownerapi.ExpiryRotationPreview, string) {
-	legacy := false
+	legacy := p.PolicyVersion == nil || *p.PolicyVersion != rotationPreviewPolicyVersion
 	for _, c := range p.Candidates {
 		if (c.DeliveryStatus != "blocked" && c.DeliveryStatus != "join_candidate_pending_first_probe") ||
 			(c.Decision == "eligible" && c.DeliveryStatus != "join_candidate_pending_first_probe") ||
@@ -645,9 +650,7 @@ func rotationNormalizeHistoricalPreview(p ownerapi.ExpiryRotationPreview, status
 				c.Reason = "legacy_preview_requires_repreview"
 			}
 		}
-		if status == "ready" {
-			status = "needs_verification"
-		}
+		status = "needs_verification"
 	}
 	p.Status = ownerapi.ExpiryRotationPreviewStatus(status)
 	return p, status
