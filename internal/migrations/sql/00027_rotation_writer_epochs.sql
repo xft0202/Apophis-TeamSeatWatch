@@ -2,33 +2,36 @@
 -- FOUNDATION ONLY. No confirmation/action authorization consumes these versions yet.
 -- Rows are created with their stable parent and retained if the parent is removed;
 -- never manufacture a missing epoch while reading facts.
-CREATE TABLE tsw_rotation_epochs (
+CREATE TABLE public.tsw_rotation_epochs (
  kind text NOT NULL CHECK (kind IN ('owner','workspace','mother','target_account','standby_batch','destination')),
  id uuid NOT NULL,
  version bigint NOT NULL DEFAULT 1 CHECK (version > 0),
  PRIMARY KEY (kind,id)
 );
-REVOKE ALL ON tsw_rotation_epochs FROM PUBLIC;
+REVOKE ALL ON public.tsw_rotation_epochs FROM PUBLIC;
 -- +goose StatementBegin
-CREATE FUNCTION tsw_rotation_epoch_advance(scope_kind text, scope_id uuid) RETURNS void LANGUAGE plpgsql AS $$
+CREATE FUNCTION public.tsw_rotation_epoch_advance(scope_kind text, scope_id uuid) RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
+ -- Keep the existing invoker privileges; reject direct calls without requiring
+ -- SECURITY DEFINER or a hard-coded deployment role grant.
+ IF pg_trigger_depth() = 0 THEN RAISE EXCEPTION 'rotation epoch advance requires a fact trigger'; END IF;
  IF scope_id IS NULL THEN RETURN; END IF;
- UPDATE tsw_rotation_epochs SET version=version+1 WHERE kind=scope_kind AND id=scope_id;
+ UPDATE public.tsw_rotation_epochs SET version=version+1 WHERE kind=scope_kind AND id=scope_id;
  IF NOT FOUND THEN RAISE EXCEPTION 'missing rotation epoch: % %',scope_kind,scope_id; END IF;
 END;
 $$;
 -- +goose StatementEnd
 -- +goose StatementBegin
-CREATE FUNCTION tsw_rotation_epoch_parent() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION public.tsw_rotation_epoch_parent() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE scope_kind text := TG_ARGV[0]; old_id uuid; new_id uuid;
 BEGIN
  IF TG_OP <> 'INSERT' THEN old_id := (to_jsonb(OLD)->>'id')::uuid; END IF;
  IF TG_OP <> 'DELETE' THEN new_id := (to_jsonb(NEW)->>'id')::uuid; END IF;
  IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND old_id IS DISTINCT FROM new_id) THEN
-   INSERT INTO tsw_rotation_epochs(kind,id) VALUES(scope_kind,new_id);
+   INSERT INTO public.tsw_rotation_epochs(kind,id) VALUES(scope_kind,new_id);
  END IF;
- IF TG_OP <> 'INSERT' THEN PERFORM tsw_rotation_epoch_advance(scope_kind,old_id); END IF;
- IF TG_OP = 'UPDATE' AND new_id IS DISTINCT FROM old_id THEN PERFORM tsw_rotation_epoch_advance(scope_kind,new_id); END IF;
+ IF TG_OP <> 'INSERT' THEN PERFORM public.tsw_rotation_epoch_advance(scope_kind,old_id); END IF;
+ IF TG_OP = 'UPDATE' AND new_id IS DISTINCT FROM old_id THEN PERFORM public.tsw_rotation_epoch_advance(scope_kind,new_id); END IF;
  RETURN NULL;
 END;
 $$;
@@ -44,7 +47,7 @@ CREATE TRIGGER tsw_rotation_epoch_parent AFTER INSERT OR UPDATE OR DELETE ON tsw
 -- Each fact mutation advances its stable scope, including both keys when a
 -- covered FK is reassigned. Sorting does not order pre-existing multi-row locks.
 -- +goose StatementBegin
-CREATE FUNCTION tsw_rotation_epoch_fact() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION public.tsw_rotation_epoch_fact() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE old_id uuid; new_id uuid; scope_kind text := TG_ARGV[0]; scope_column text := TG_ARGV[1]; key record;
 BEGIN
  IF TG_OP <> 'INSERT' THEN
@@ -54,7 +57,7 @@ BEGIN
    new_id := (to_jsonb(NEW)->>scope_column)::uuid;
  END IF;
  FOR key IN SELECT DISTINCT id FROM (VALUES (old_id),(new_id)) AS affected(id) WHERE id IS NOT NULL ORDER BY id LOOP
-   PERFORM tsw_rotation_epoch_advance(scope_kind,key.id);
+   PERFORM public.tsw_rotation_epoch_advance(scope_kind,key.id);
  END LOOP;
  RETURN NULL;
 END;
@@ -79,21 +82,21 @@ CREATE TRIGGER tsw_rotation_epoch_fact AFTER INSERT OR UPDATE OR DELETE ON tsw_e
 -- These two relationship hops also handle first-ever delivery in *another*
 -- Workspace. The account key is not derived from an existing delivery row.
 -- +goose StatementBegin
-CREATE FUNCTION tsw_rotation_epoch_relation() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION public.tsw_rotation_epoch_relation() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE old_id uuid; new_id uuid; key record;
 BEGIN
  IF TG_TABLE_NAME = 'tsw_workspace_verification_entries' THEN
-   IF TG_OP <> 'INSERT' THEN SELECT workspace_id INTO STRICT old_id FROM tsw_workspace_verifications WHERE id=OLD.verification_id; END IF;
-   IF TG_OP <> 'DELETE' THEN SELECT workspace_id INTO STRICT new_id FROM tsw_workspace_verifications WHERE id=NEW.verification_id; END IF;
+   IF TG_OP <> 'INSERT' THEN SELECT workspace_id INTO STRICT old_id FROM public.tsw_workspace_verifications WHERE id=OLD.verification_id; END IF;
+   IF TG_OP <> 'DELETE' THEN SELECT workspace_id INTO STRICT new_id FROM public.tsw_workspace_verifications WHERE id=NEW.verification_id; END IF;
  ELSIF TG_TABLE_NAME = 'tsw_oauth_assets' THEN
-   IF TG_OP <> 'INSERT' THEN SELECT target_account_id INTO STRICT old_id FROM tsw_batch_memberships WHERE id=OLD.membership_id; END IF;
-   IF TG_OP <> 'DELETE' THEN SELECT target_account_id INTO STRICT new_id FROM tsw_batch_memberships WHERE id=NEW.membership_id; END IF;
+   IF TG_OP <> 'INSERT' THEN SELECT target_account_id INTO STRICT old_id FROM public.tsw_batch_memberships WHERE id=OLD.membership_id; END IF;
+   IF TG_OP <> 'DELETE' THEN SELECT target_account_id INTO STRICT new_id FROM public.tsw_batch_memberships WHERE id=NEW.membership_id; END IF;
  ELSE
-   IF TG_OP <> 'INSERT' THEN SELECT m.target_account_id INTO STRICT old_id FROM tsw_oauth_assets a JOIN tsw_batch_memberships m ON m.id=a.membership_id WHERE a.id=OLD.oauth_asset_id; END IF;
-   IF TG_OP <> 'DELETE' THEN SELECT m.target_account_id INTO STRICT new_id FROM tsw_oauth_assets a JOIN tsw_batch_memberships m ON m.id=a.membership_id WHERE a.id=NEW.oauth_asset_id; END IF;
+   IF TG_OP <> 'INSERT' THEN SELECT m.target_account_id INTO STRICT old_id FROM public.tsw_oauth_assets a JOIN public.tsw_batch_memberships m ON m.id=a.membership_id WHERE a.id=OLD.oauth_asset_id; END IF;
+   IF TG_OP <> 'DELETE' THEN SELECT m.target_account_id INTO STRICT new_id FROM public.tsw_oauth_assets a JOIN public.tsw_batch_memberships m ON m.id=a.membership_id WHERE a.id=NEW.oauth_asset_id; END IF;
  END IF;
  FOR key IN SELECT DISTINCT id FROM (VALUES (old_id),(new_id)) AS affected(id) WHERE id IS NOT NULL ORDER BY id LOOP
-   PERFORM tsw_rotation_epoch_advance(TG_ARGV[0],key.id);
+   PERFORM public.tsw_rotation_epoch_advance(TG_ARGV[0],key.id);
  END LOOP;
  RETURN NULL;
 END;
@@ -109,7 +112,7 @@ CREATE TRIGGER tsw_rotation_epoch_relation AFTER INSERT ON tsw_delivery_versions
 -- compound IF was evaluated against the entry row. Separate trigger branches
 -- so expired entries can be deleted before their parent verification.
 -- +goose StatementBegin
-CREATE OR REPLACE FUNCTION tsw_workspace_verification_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.tsw_workspace_verification_immutable() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
  IF TG_OP = 'UPDATE' THEN
    IF TG_TABLE_NAME = 'tsw_workspace_verifications' THEN
@@ -121,7 +124,7 @@ BEGIN
    IF TG_TABLE_NAME = 'tsw_workspace_verifications' THEN
      IF OLD.expires_at <= now() THEN RETURN OLD; END IF;
    ELSIF TG_TABLE_NAME = 'tsw_workspace_verification_entries' THEN
-     IF EXISTS (SELECT 1 FROM tsw_workspace_verifications WHERE id=OLD.verification_id AND expires_at <= now()) THEN RETURN OLD; END IF;
+     IF EXISTS (SELECT 1 FROM public.tsw_workspace_verifications WHERE id=OLD.verification_id AND expires_at <= now()) THEN RETURN OLD; END IF;
    END IF;
  END IF;
  RAISE EXCEPTION 'workspace verification is append-only until expiry';
@@ -130,18 +133,18 @@ $$;
 -- +goose StatementEnd
 -- Goose runs this migration transactionally. Install all hooks first, then
 -- backfill immediately before commit; concurrent DML sees both at once.
-INSERT INTO tsw_rotation_epochs(kind,id)
- SELECT 'owner',id FROM tsw_owners UNION ALL
- SELECT 'workspace',id FROM tsw_workspaces UNION ALL
- SELECT 'mother',id FROM tsw_mother_accounts UNION ALL
- SELECT 'target_account',id FROM tsw_target_accounts UNION ALL
- SELECT 'standby_batch',id FROM tsw_standby_child_batches UNION ALL
- SELECT 'destination',id FROM tsw_delivery_destinations;
+INSERT INTO public.tsw_rotation_epochs(kind,id)
+ SELECT 'owner',id FROM public.tsw_owners UNION ALL
+ SELECT 'workspace',id FROM public.tsw_workspaces UNION ALL
+ SELECT 'mother',id FROM public.tsw_mother_accounts UNION ALL
+ SELECT 'target_account',id FROM public.tsw_target_accounts UNION ALL
+ SELECT 'standby_batch',id FROM public.tsw_standby_child_batches UNION ALL
+ SELECT 'destination',id FROM public.tsw_delivery_destinations;
 
 -- +goose Down
--- Restore the original 00022 guard on downgrade.
+-- Restore the original 00022 guard behavior on downgrade; retain pinned lookup.
 -- +goose StatementBegin
-CREATE OR REPLACE FUNCTION tsw_workspace_verification_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION public.tsw_workspace_verification_immutable() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
     IF TG_OP = 'UPDATE' AND TG_TABLE_NAME = 'tsw_workspace_verifications' AND OLD.outcome = 'verifying' AND
        NEW.outcome IN ('verified','partial','failed','permission_denied') AND
@@ -149,7 +152,7 @@ BEGIN
        (OLD.id,OLD.workspace_id,OLD.mother_account_id,OLD.discovery_run_id,OLD.session_generation,OLD.secret_revision,OLD.token_attempt,OLD.token_exchange_id,OLD.source) THEN RETURN NEW; END IF;
     IF TG_OP = 'DELETE' AND TG_TABLE_NAME = 'tsw_workspace_verifications' AND OLD.expires_at <= now() THEN RETURN OLD; END IF;
     IF TG_OP = 'DELETE' AND TG_TABLE_NAME = 'tsw_workspace_verification_entries' AND
-       EXISTS (SELECT 1 FROM tsw_workspace_verifications WHERE id = OLD.verification_id AND expires_at <= now()) THEN RETURN OLD; END IF;
+       EXISTS (SELECT 1 FROM public.tsw_workspace_verifications WHERE id = OLD.verification_id AND expires_at <= now()) THEN RETURN OLD; END IF;
     RAISE EXCEPTION 'workspace verification is append-only until expiry';
 END;
 $$;

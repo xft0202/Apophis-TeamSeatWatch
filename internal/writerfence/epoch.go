@@ -66,7 +66,7 @@ func BeginLocked(ctx context.Context, pool *pgxpool.Pool, keys []Key) (pgx.Tx, [
 	versions := make([]Version, 0, len(ordered))
 	for _, key := range ordered {
 		var version int64
-		if err = tx.QueryRow(ctx, `SELECT version FROM tsw_rotation_epochs WHERE kind=$1 AND id=$2 FOR UPDATE`, key.Kind, key.ID).Scan(&version); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT version FROM public.tsw_rotation_epochs WHERE kind=$1 AND id=$2 FOR UPDATE`, key.Kind, key.ID).Scan(&version); err != nil {
 			_ = tx.Rollback(ctx)
 			return nil, nil, fmt.Errorf("lock rotation epoch %s/%s: %w", key.Kind, key.ID, err)
 		}

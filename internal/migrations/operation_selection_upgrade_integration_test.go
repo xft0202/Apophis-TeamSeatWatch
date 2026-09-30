@@ -72,7 +72,7 @@ func TestOperationSelectionUpgradeFrom24Integration(t *testing.T) {
 		t.Fatalf("before 25 -> 26 upgrade: version=%d err=%v", version, err)
 	}
 	var id uuid.UUID
-	if err := db.QueryRowContext(ctx, `INSERT INTO tsw_operation_selection_drafts(owner_id,mother_account_id,mother_revision,workspace_id,visibility_run_id,session_generation,verification_id,batch_id,batch_version,destination_id,destination_revision) VALUES($1,$2,1,$3,$4,$5,$6,$7,1,$8,1) RETURNING id`, owner, mother, workspace, run, generation, verification, batch, destination).Scan(&id); err != nil {
+	if err := db.QueryRowContext(ctx, `INSERT INTO tsw_operation_selection_drafts(owner_id,step,mother_account_id,mother_revision,workspace_id,visibility_run_id,session_generation,verification_id,batch_id,batch_version,destination_id,destination_revision) VALUES($1,'complete',$2,1,$3,$4,$5,$6,$7,1,$8,1) RETURNING id`, owner, mother, workspace, run, generation, verification, batch, destination).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := provider.UpTo(ctx, 26); err != nil {
@@ -96,7 +96,7 @@ func TestOperationSelectionUpgradeFrom24Integration(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='tsw_expiry_rotation_previews'`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("migration 26 preview table missing: count=%d err=%v", count, err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_operation_selection_drafts WHERE id=$1 AND owner_id=$2 AND mother_account_id=$3 AND workspace_id=$4 AND batch_id=$5 AND destination_id=$6`, id, owner, mother, workspace, batch, destination).Scan(&count); err != nil || count != 1 {
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_operation_selection_drafts WHERE id=$1 AND owner_id=$2 AND mother_account_id=$3 AND workspace_id=$4 AND batch_id=$5 AND destination_id=$6 AND step='complete'`, id, owner, mother, workspace, batch, destination).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("idempotent upgrade lost selection dependencies: count=%d err=%v", count, err)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_expiry_rotation_previews WHERE id=$1 AND draft_id=$2 AND facts->>'source'='upgrade'`, preview, id).Scan(&count); err != nil || count != 1 {
