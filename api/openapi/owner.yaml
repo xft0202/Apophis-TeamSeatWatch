@@ -280,6 +280,152 @@ paths:
                 $ref: '#/components/schemas/ExpiryRotationPreview'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/removals:
+    get:
+      operationId: listRotationRemovals
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: Persisted owner removal history; no remote action
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotationRemovalHistory'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal:
+    post:
+      operationId: startRotationRemoval
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotationRemovalStart'
+      responses:
+        '200':
+          description: Persisted per-slot removal progress; a receipt is never vacancy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotationRemoval'
+        default:
+          $ref: '#/components/responses/Problem'
+    get:
+      operationId: getRotationRemoval
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Durable progress, including unresolved sent requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotationRemoval'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/run:
+    post:
+      operationId: runRotationRemovalSlot
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slotId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotationRemovalAction'
+      responses:
+        '200':
+          description: Persisted per-slot removal progress; a receipt is never vacancy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotationRemoval'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/verify:
+    post:
+      operationId: verifyRotationRemovalSlot
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slotId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotationRemovalAction'
+      responses:
+        '200':
+          description: Persisted per-slot removal progress; a receipt is never vacancy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotationRemoval'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal/stop:
+    post:
+      operationId: stopRotationRemoval
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotationRemovalAction'
+      responses:
+        '200':
+          description: Persisted per-slot removal progress; a receipt is never vacancy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RotationRemoval'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/mother-accounts:
     get:
       operationId: listMotherAccounts
@@ -2276,6 +2422,77 @@ components:
         membershipVersion:
           type: integer
           format: int64
+    RotationRemovalAction:
+      type: object
+      additionalProperties: false
+      required: [confirmed]
+      properties:
+        confirmed: {type: boolean}
+    RotationRemovalStart:
+      type: object
+      additionalProperties: false
+      required: [confirmed, authorizationDigest, idempotencyKey]
+      properties:
+        confirmed: {type: boolean}
+        authorizationDigest: {type: string, pattern: '^[a-f0-9]{64}$'}
+        idempotencyKey: {type: string, format: uuid}
+    RotationRemoval:
+      type: object
+      additionalProperties: false
+      required: [previewId, workspaceId, workspaceName, createdAt, authorizationDigest, stopped, writeAllowed, slots]
+      properties:
+        previewId: {type: string, format: uuid}
+        workspaceId: {type: string, format: uuid}
+        workspaceName: {type: string}
+        createdAt: {type: string, format: date-time}
+        authorizationDigest: {type: string}
+        stopped: {type: boolean}
+        writeAllowed: {type: boolean}
+        slots:
+          type: array
+          items: {$ref: '#/components/schemas/RotationRemovalSlot'}
+    RotationRemovalHistory:
+      type: object
+      additionalProperties: false
+      required: [items, page, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RotationRemovalHistoryItem'}
+        page: {type: integer}
+        total: {type: integer}
+    RotationRemovalHistoryItem:
+      type: object
+      additionalProperties: false
+      required: [previewId, workspaceName, createdAt, stopped]
+      properties:
+        previewId: {type: string, format: uuid}
+        workspaceName: {type: string}
+        createdAt: {type: string, format: date-time}
+        stopped: {type: boolean}
+    RotationRemovalSlot:
+      type: object
+      additionalProperties: false
+      required: [id, platformMemberId, originalAccountId, candidateAccountId, identifier, seatType, state, attemptCount, leaseEpoch, uncertainObligation, lastErrorCode, updatedAt, candidateReady]
+      properties:
+        id: {type: string, format: uuid}
+        platformMemberId: {type: string}
+        originalAccountId: {type: string, format: uuid}
+        candidateAccountId: {type: string, format: uuid}
+        identifier: {type: string}
+        seatType: {type: string}
+        state:
+          type: string
+          enum: [pending, lease_acquired, remove_requested, remote_result_uncertain, absent_verification_pending, absent_verified, blocked, stopped]
+        attemptCount: {type: integer}
+        leaseEpoch: {type: integer, format: int64}
+        leaseExpiresAt: {type: string, format: date-time}
+        remoteRequestId: {type: string, format: uuid}
+        verificationId: {type: string, format: uuid}
+        uncertainObligation: {type: boolean}
+        lastErrorCode: {type: string}
+        updatedAt: {type: string, format: date-time}
+        candidateReady: {type: boolean}
     ExpiryRotationAssignment:
       type: object
       additionalProperties: false

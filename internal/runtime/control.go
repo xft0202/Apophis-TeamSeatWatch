@@ -85,6 +85,7 @@ func NewControlHandlers(config ControlConfig) (ControlHandlers, error) {
 		PersonalRefresh:         platform.PersonalWebRefresher{Client: leaseClient},
 		SelectedWorkspaceReader: platform.OfficialSelectedWorkspaceReader{Client: leaseClient},
 		WorkspaceTokenExchanger: platform.OfficialWorkspaceTokenExchanger{Client: leaseClient},
+		WorkspaceMemberRemover:  platform.OfficialWorkspaceMemberRemover{Client: leaseClient},
 	})
 	if err != nil {
 		closeHealth()

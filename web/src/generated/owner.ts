@@ -231,6 +231,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/expiry-rotation/removals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listRotationRemovals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getRotationRemoval"];
+        put?: never;
+        post: operations["startRotationRemoval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["runRotationRemovalSlot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["verifyRotationRemovalSlot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["stopRotationRemoval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/mother-accounts": {
         parameters: {
             query?: never;
@@ -1237,6 +1317,68 @@ export interface components {
             accountId: string;
             /** Format: int64 */
             membershipVersion: number;
+        };
+        RotationRemovalAction: {
+            confirmed: boolean;
+        };
+        RotationRemovalStart: {
+            confirmed: boolean;
+            authorizationDigest: string;
+            /** Format: uuid */
+            idempotencyKey: string;
+        };
+        RotationRemoval: {
+            /** Format: uuid */
+            previewId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            workspaceName: string;
+            /** Format: date-time */
+            createdAt: string;
+            authorizationDigest: string;
+            stopped: boolean;
+            writeAllowed: boolean;
+            slots: components["schemas"]["RotationRemovalSlot"][];
+        };
+        RotationRemovalHistory: {
+            items: components["schemas"]["RotationRemovalHistoryItem"][];
+            page: number;
+            total: number;
+        };
+        RotationRemovalHistoryItem: {
+            /** Format: uuid */
+            previewId: string;
+            workspaceName: string;
+            /** Format: date-time */
+            createdAt: string;
+            stopped: boolean;
+        };
+        RotationRemovalSlot: {
+            /** Format: uuid */
+            id: string;
+            platformMemberId: string;
+            /** Format: uuid */
+            originalAccountId: string;
+            /** Format: uuid */
+            candidateAccountId: string;
+            identifier: string;
+            seatType: string;
+            /** @enum {string} */
+            state: "pending" | "lease_acquired" | "remove_requested" | "remote_result_uncertain" | "absent_verification_pending" | "absent_verified" | "blocked" | "stopped";
+            attemptCount: number;
+            /** Format: int64 */
+            leaseEpoch: number;
+            /** Format: date-time */
+            leaseExpiresAt?: string;
+            /** Format: uuid */
+            remoteRequestId?: string;
+            /** Format: uuid */
+            verificationId?: string;
+            uncertainObligation: boolean;
+            lastErrorCode: string;
+            /** Format: date-time */
+            updatedAt: string;
+            candidateReady: boolean;
         };
         ExpiryRotationAssignment: {
             platformMemberId: string;
@@ -2884,6 +3026,170 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExpiryRotationPreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listRotationRemovals: {
+        parameters: {
+            query?: {
+                page?: components["parameters"]["Page"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted owner removal history; no remote action */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationRemovalHistory"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRotationRemoval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Durable progress, including unresolved sent requests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationRemoval"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    startRotationRemoval: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationRemovalStart"];
+            };
+        };
+        responses: {
+            /** @description Persisted per-slot removal progress; a receipt is never vacancy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationRemoval"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    runRotationRemovalSlot: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+                slotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationRemovalAction"];
+            };
+        };
+        responses: {
+            /** @description Persisted per-slot removal progress; a receipt is never vacancy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationRemoval"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    verifyRotationRemovalSlot: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+                slotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationRemovalAction"];
+            };
+        };
+        responses: {
+            /** @description Persisted per-slot removal progress; a receipt is never vacancy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationRemoval"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    stopRotationRemoval: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationRemovalAction"];
+            };
+        };
+        responses: {
+            /** @description Persisted per-slot removal progress; a receipt is never vacancy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationRemoval"];
                 };
             };
             default: components["responses"]["Problem"];

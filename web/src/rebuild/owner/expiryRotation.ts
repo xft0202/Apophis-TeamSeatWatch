@@ -10,6 +10,7 @@ function result<T>(response: { data?: T; error?: unknown; response: Response }):
   return response.data;
 }
 export const expiryRotationApi = {
+  get: async (previewId: string) => result(await api.GET('/api/owner/v1/expiry-rotation/previews/{previewId}', { params: { path: { previewId } } })),
   latest: async () => result(await api.GET('/api/owner/v1/expiry-rotation/previews/latest')),
   preview: async () => result(await api.POST('/api/owner/v1/expiry-rotation/previews', { params: { header: await mutationHeaders() } })),
   confirm: async (item: ExpiryPreview, idempotencyKey: string, assignments: ExpiryAssignment[]) => result(await api.POST('/api/owner/v1/expiry-rotation/previews/{previewId}/confirm', {

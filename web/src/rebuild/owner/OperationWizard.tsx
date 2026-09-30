@@ -5,6 +5,7 @@ import { getMotherDiscovery, getSelectedWorkspaceAccess, getSelectedWorkspaceVer
 import { destinationApi, type Destination } from './deliveryDestination';
 import { operationDraftApi, type Draft, type DraftChange, type DraftChild } from './operationDraft';
 import { expiryRotationApi, type ExpiryPreview } from './expiryRotation';
+import RotationRemovalPanel from './RotationRemovalPanel';
 import { canConfirmRotation, explicitRotationAssignments, rotationCandidateStatus, rotationStatus } from './rotationPreviewState';
 import { canChooseDestination, draftStatus } from './operationWizardState';
 import { createOperationWizardRequests } from './operationWizardRequests';
@@ -153,7 +154,7 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
   const repair = (tab: RepairTab) => onRepair(tab);
 
   return <section aria-label="开始操作"><Stack gap="lg">
-    <div><Text size="xs" c="dimmed" tt="uppercase">仅选择范围 · 不执行平台操作</Text><Title order={2} mt="xs">开始操作</Title></div>
+    <div><Text size="xs" c="dimmed" tt="uppercase">选择范围 · 核验授权 · 逐席清退</Text><Title order={2} mt="xs">开始操作</Title></div>
     {notice ? <Alert color="red" role="alert">{notice}</Alert> : null}
     {loading ? <Text role="status">正在读取草案…</Text> : null}
     {!loading && !draft ? <Paper withBorder radius={12} p="xl"><Stack gap="sm"><Text>本轮还没有草案。先保存选择，以便刷新或重启后继续。</Text><Button loading={pending} onClick={() => void save()}>开始选择母号</Button></Stack></Paper> : null}
@@ -195,7 +196,7 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
       {step === 'complete' ? <Stack gap="sm"><Alert color={stale ? 'yellow' : 'green'}>{stale || '本轮选择已保存。这里只是范围草案，不是加入资格、席位预览、写入授权或交付完成。'}</Alert>
         <Text size="sm">母号 {draft.motherAccountId} · 修订 {draft.motherRevision}</Text><Text size="sm">空间 {draft.workspaceId} · 核验 #{draft.verificationId}</Text>
         <Text size="sm">批次 {draft.batchId} · 修订 {draft.batchVersion} · 已冻结 {draft.children.length} 个精确子号</Text>
-        <Text size="sm">去向 {draft.destinationId} · 修订 {draft.destinationRevision}</Text><Text size="sm">不会邀请、加入、清退、推送或切换生产路由。</Text>
+        <Text size="sm">去向 {draft.destinationId} · 修订 {draft.destinationRevision}</Text><Text size="sm">本轮选择与授权不执行平台写入；清退须在下方逐席明确发起。</Text>
         <Button variant="light" disabled={Boolean(stale) || pending} loading={pending} onClick={() => void rotationAction('preview')}>重新预览到期换批（只读）</Button>
         {rotation ? <Paper withBorder p="md"><Stack gap="sm">
           <Alert color={rotation.status === 'authorized' ? 'green' : 'yellow'} role="status">{rotationStatus(rotation)}</Alert>
@@ -209,7 +210,7 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
           <Title order={4}>候选与排除原因</Title>
           {rotation.candidates.map((child) => <Text size="sm" key={child.accountId}>{child.identifier} · {child.accountId} · {child.seatType || '类型待核验'} · 使用 {child.usageState}{child.everUsed ? '（曾使用）' : ''} · 全局保护 {child.protectionStatus} · {child.decision} · {rotationCandidateStatus(child)}</Text>)}
           <Text size="xs">预览指纹：{rotation.digest}。缺少邀请的候选仅标记“需邀请”；任何新邀请是独立的明确准备步骤，本阶段不会发出邀请。</Text>
-          {rotation.status === 'authorized' ? <Button variant="light" color="red" loading={pending} onClick={() => void rotationAction('revoke')}>撤销授权（尚未执行）</Button> : null}
+          {rotation.status === 'authorized' ? <Button variant="light" color="red" loading={pending} onClick={() => void rotationAction('revoke')}>撤销后续授权（保留已发请求）</Button> : null}
           {rotation.status === 'authorized' ? <Text size="sm">明确匹配：{rotation.assignments.map((mapping) => `${mapping.platformMemberId} → ${mapping.accountId}`).join('；')} · 授权指纹 {rotation.authorizationDigest}</Text> : null}
           {canConfirmRotation(rotation, draft.version, Date.now()) && !stale ? <Stack gap="xs">
             <Text size="sm">逐席选择受控加入候选；不会按顺序自动配对。一个候选不能占用多个席位。确认只冻结后续逐席执行范围，不代表已经加入或可以交付；首次用量须加入后实测并落账。</Text>
@@ -219,6 +220,7 @@ export default function OperationWizard({ onRepair }: { onRepair: (tab: RepairTa
         </Stack></Paper> : null}</Stack> : null}
       {step !== 'mother' ? <Group gap="xs"><Text size="sm" c="dimmed">返回修改：</Text>{(['mother','workspace','children','destination'] as const).filter((item) => ['mother','workspace','children','destination','complete'].indexOf(item) < ['mother','workspace','children','destination','complete'].indexOf(draft.step)).map((item) => <Button key={item} size="xs" variant="subtle" disabled={pending} onClick={() => void save({ choice: 'back', backTo: item })}>{stepNames[item]}</Button>)}</Group> : null}
     </Stack></Paper> : null}
+    <RotationRemovalPanel preview={rotation} />
     <Group><Button variant="subtle" onClick={() => void reload()} disabled={pending}>刷新当前步骤</Button></Group>
   </Stack></section>;
 }

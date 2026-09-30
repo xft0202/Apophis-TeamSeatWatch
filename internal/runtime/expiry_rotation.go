@@ -1061,6 +1061,14 @@ func (h *OwnerAuthHandler) RevokeExpiryRotation(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
+	// Serialize with Ticket 11 dispatch. Revocation does not claim that an
+	// already issued remote request was undone.
+	gate, err := h.rotationWorkspaceGate(r.Context(), uuid.MustParse(owner.OwnerID), id)
+	if err != nil {
+		h.removalError(w, r, err)
+		return
+	}
+	defer gate.close()
 	tx, err := h.pool.Begin(r.Context())
 	if err != nil {
 		h.workspaceFailure(w, r, err)
@@ -1086,6 +1094,12 @@ func (h *OwnerAuthHandler) RevokeExpiryRotation(w http.ResponseWriter, r *http.R
 		return
 	}
 	err = tx.QueryRow(r.Context(), `UPDATE tsw_expiry_rotation_previews SET status='revoked',revoked_by=$2,revoked_at=now() WHERE id=$1 RETURNING revoked_at`, id, oid).Scan(&p.RevokedAt)
+	if err == nil {
+		_, err = tx.Exec(r.Context(), `UPDATE public.tsw_rotation_removals SET stopped_at=clock_timestamp() WHERE preview_id=$1 AND stopped_at IS NULL`, id)
+	}
+	if err == nil {
+		_, err = tx.Exec(r.Context(), `UPDATE public.tsw_rotation_removal_slots SET state='stopped',lease_epoch=lease_epoch+1,lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL,last_error_code='authorization_revoked',last_error='Authorization revoked; sent request obligations retained' WHERE preview_id=$1 AND state<>'stopped'`, id)
+	}
 	if err == nil {
 		_, err = audit.Write(r.Context(), tx, audit.Event{Type: audit.ExpiryRotationRevoked, Actor: audit.ActorOwner, OwnerID: owner.OwnerID, RetentionScopeID: p.WorkspaceId.String(), EntityType: "expiry_rotation_preview", EntityID: id.String(), Outcome: audit.OutcomeSucceeded, CorrelationID: correlation(r), Details: audit.ExpiryRotationDetails{Digest: *p.AuthorizationDigest, Action: "revoked"}, IdempotencyKey: id.String() + ":revoked"})
 	}

@@ -57,12 +57,13 @@ type Result struct {
 }
 
 type Member struct {
-	Kind             string `json:"kind"`
-	PlatformMemberID string `json:"platform_member_id"`
-	Identifier       string `json:"identifier"`
-	Status           string `json:"status"`
-	Role             string `json:"role"`
-	SeatType         string `json:"seat_type"`
+	Kind                  string `json:"kind"`
+	PlatformMemberID      string `json:"platform_member_id"`
+	PlatformAccountUserID string `json:"platform_account_user_id,omitempty"`
+	Identifier            string `json:"identifier"`
+	Status                string `json:"status"`
+	Role                  string `json:"role"`
+	SeatType              string `json:"seat_type"`
 }
 
 // Reader is intentionally split by capability so fixtures can control each

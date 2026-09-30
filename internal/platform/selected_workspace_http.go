@@ -264,10 +264,19 @@ func fetchSelectedPages[T any](ctx context.Context, r selectedHTTPRead, endpoint
 		}
 		for _, raw := range page.Items {
 			member, ok := convert(raw)
-			if !ok || seen[member.Kind+":"+strings.ToLower(member.Identifier)] {
+			identityKey := member.Kind + ":identifier:" + strings.ToLower(member.Identifier)
+			memberKey := member.Kind + ":member_id:" + strings.ToLower(strings.TrimSpace(member.PlatformMemberID))
+			accountUserKey := member.Kind + ":account_user_id:" + strings.ToLower(strings.TrimSpace(member.PlatformAccountUserID))
+			if !ok || seen[identityKey] || member.PlatformMemberID != "" && seen[memberKey] || member.PlatformAccountUserID != "" && seen[accountUserKey] {
 				return nil, OutcomeIncomplete
 			}
-			seen[member.Kind+":"+strings.ToLower(member.Identifier)] = true
+			seen[identityKey] = true
+			if member.PlatformMemberID != "" {
+				seen[memberKey] = true
+			}
+			if member.PlatformAccountUserID != "" {
+				seen[accountUserKey] = true
+			}
 			entries = append(entries, member)
 		}
 		offset += len(page.Items)
@@ -292,11 +301,12 @@ func (r selectedHTTPRead) members(ctx context.Context, facts *SelectedWorkspaceF
 	entries, outcome := fetchSelectedPages[item](ctx, r, "workspace_members", func(raw item) (Member, bool) {
 		identifier := strings.ToLower(strings.TrimSpace(raw.Email))
 		id := strings.TrimSpace(raw.ID)
+		accountUserID := strings.TrimSpace(raw.AccountUserID)
 		if id == "" {
-			id = strings.TrimSpace(raw.AccountUserID)
+			id = accountUserID
 		}
 		seatType, seatOK := selectedSeatType(raw.SeatType)
-		return Member{Kind: "member", PlatformMemberID: id, Identifier: identifier, Status: "listed", Role: raw.Role, SeatType: seatType}, id != "" && identifier != "" && len(identifier) <= 254 && len(raw.Role) <= 64 && seatOK
+		return Member{Kind: "member", PlatformMemberID: id, PlatformAccountUserID: accountUserID, Identifier: identifier, Status: "listed", Role: raw.Role, SeatType: seatType}, id != "" && identifier != "" && len(identifier) <= 254 && len(raw.Role) <= 64 && seatOK
 	})
 	appendReadSource(facts, "workspace_members", observed, outcome)
 	return entries, outcome == OutcomeOperational

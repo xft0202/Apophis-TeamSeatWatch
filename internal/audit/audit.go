@@ -55,6 +55,10 @@ const (
 	JoinTargetUnknown              EventType = "join.target_unknown"
 	JoinReconciliationQueued       EventType = "join.reconciliation_queued"
 	JoinReconciliationDone         EventType = "join.reconciliation_done"
+	RotationRemovalStarted         EventType = "rotation_removal.started"
+	RotationRemovalRequested       EventType = "rotation_removal.requested"
+	RotationRemovalVerified        EventType = "rotation_removal.verified"
+	RotationRemovalStopped         EventType = "rotation_removal.stopped"
 	ExpiryRotationAuthorized       EventType = "expiry_rotation.authorized"
 	ExpiryRotationRevoked          EventType = "expiry_rotation.revoked"
 	RemoveOperationAuthorized      EventType = "remove.operation_authorized"
@@ -224,6 +228,14 @@ type ExpiryRotationDetails struct {
 
 func (ExpiryRotationDetails) auditDetails() {}
 
+type RotationRemovalDetails struct {
+	Digest     string `json:"digest"`
+	LeaseEpoch int64  `json:"lease_epoch"`
+	Absent     bool   `json:"absent"`
+}
+
+func (RotationRemovalDetails) auditDetails() {}
+
 type CardRevocationDetails struct {
 	Action            string `json:"action"`
 	Result            string `json:"result"`
@@ -343,6 +355,10 @@ var registry = map[EventType]spec{
 	JoinTargetUnknown:              {ActorSystem, "operation_target", []Outcome{OutcomeFailed}, "join_target", "workspace"},
 	JoinReconciliationQueued:       {ActorSystem, "task", []Outcome{OutcomeSucceeded}, "task", "workspace"},
 	JoinReconciliationDone:         {ActorSystem, "task", []Outcome{OutcomeSucceeded, OutcomeFailed}, "task", "workspace"},
+	RotationRemovalStarted:         {ActorOwner, "rotation_removal", []Outcome{OutcomeSucceeded}, "rotation_removal", "workspace"},
+	RotationRemovalRequested:       {ActorOwner, "rotation_slot", []Outcome{OutcomeSucceeded}, "rotation_removal", "workspace"},
+	RotationRemovalVerified:        {ActorOwner, "rotation_slot", []Outcome{OutcomeSucceeded}, "rotation_removal", "workspace"},
+	RotationRemovalStopped:         {ActorOwner, "rotation_removal", []Outcome{OutcomeSucceeded}, "rotation_removal", "workspace"},
 	ExpiryRotationAuthorized:       {ActorOwner, "expiry_rotation_preview", []Outcome{OutcomeSucceeded}, "expiry_rotation", "workspace"},
 	ExpiryRotationRevoked:          {ActorOwner, "expiry_rotation_preview", []Outcome{OutcomeSucceeded}, "expiry_rotation", "workspace"},
 	RemoveOperationAuthorized:      {ActorOwner, "operation", []Outcome{OutcomeSucceeded}, "operation", "workspace"},
@@ -494,6 +510,9 @@ func validate(event Event) ([]byte, spec, error) {
 	case "card":
 		value, ok := event.Details.(CardDetails)
 		validDetails = ok && value.Result == "activated" && value.KeyVersion > 0 && len(value.DisplaySuffix) >= 4 && len(value.DisplaySuffix) <= 12
+	case "rotation_removal":
+		value, ok := event.Details.(RotationRemovalDetails)
+		validDetails = ok && len(value.Digest) == 64 && value.LeaseEpoch >= 0
 	case "expiry_rotation":
 		value, ok := event.Details.(ExpiryRotationDetails)
 		validDetails = ok && len(value.Digest) == 64 && (event.Type == ExpiryRotationAuthorized && value.Action == "authorized" || event.Type == ExpiryRotationRevoked && value.Action == "revoked")

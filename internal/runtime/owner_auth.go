@@ -38,6 +38,7 @@ type OwnerAuthConfig struct {
 	PersonalRefresh         platform.PersonalSessionRefresher
 	SelectedWorkspaceReader platform.SelectedWorkspaceReader
 	WorkspaceTokenExchanger platform.WorkspaceTokenExchanger
+	WorkspaceMemberRemover  platform.WorkspaceMemberRemoval
 }
 
 // OwnerAuthHandler owns the HTTP boundary for the Ticket 03 Owner security API.
@@ -55,6 +56,7 @@ type OwnerAuthHandler struct {
 	selectedWorkspaceReader platform.SelectedWorkspaceReader
 	workspaceTokenExchanger platform.WorkspaceTokenExchanger
 	rotationCapability      rotationCapability // read-only evidence adapter; never performs platform mutation
+	workspaceMemberRemover  platform.WorkspaceMemberRemoval
 	secureCookies           bool
 }
 
@@ -127,6 +129,7 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 		personalRefresh:         config.PersonalRefresh,
 		selectedWorkspaceReader: config.SelectedWorkspaceReader,
 		workspaceTokenExchanger: config.WorkspaceTokenExchanger,
+		workspaceMemberRemover:  config.WorkspaceMemberRemover,
 		secureCookies:           config.Origins.SecureCookies(),
 	}
 	if handler.selectedWorkspaceReader != nil {

@@ -1299,6 +1299,42 @@ func (e RevokeDeliveryCardResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for RotationRemovalSlotState.
+const (
+	RotationRemovalSlotStateAbsentVerificationPending RotationRemovalSlotState = "absent_verification_pending"
+	RotationRemovalSlotStateAbsentVerified            RotationRemovalSlotState = "absent_verified"
+	RotationRemovalSlotStateBlocked                   RotationRemovalSlotState = "blocked"
+	RotationRemovalSlotStateLeaseAcquired             RotationRemovalSlotState = "lease_acquired"
+	RotationRemovalSlotStatePending                   RotationRemovalSlotState = "pending"
+	RotationRemovalSlotStateRemoteResultUncertain     RotationRemovalSlotState = "remote_result_uncertain"
+	RotationRemovalSlotStateRemoveRequested           RotationRemovalSlotState = "remove_requested"
+	RotationRemovalSlotStateStopped                   RotationRemovalSlotState = "stopped"
+)
+
+// Valid indicates whether the value is a known member of the RotationRemovalSlotState enum.
+func (e RotationRemovalSlotState) Valid() bool {
+	switch e {
+	case RotationRemovalSlotStateAbsentVerificationPending:
+		return true
+	case RotationRemovalSlotStateAbsentVerified:
+		return true
+	case RotationRemovalSlotStateBlocked:
+		return true
+	case RotationRemovalSlotStateLeaseAcquired:
+		return true
+	case RotationRemovalSlotStatePending:
+		return true
+	case RotationRemovalSlotStateRemoteResultUncertain:
+		return true
+	case RotationRemovalSlotStateRemoveRequested:
+		return true
+	case RotationRemovalSlotStateStopped:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SelectedWorkspaceAccessStatusStatus.
 const (
 	SelectedWorkspaceAccessStatusStatusExchanging       SelectedWorkspaceAccessStatusStatus = "exchanging"
@@ -3199,6 +3235,68 @@ type RevokeDeliveryCardResponse struct {
 // RevokeDeliveryCardResponseStatus defines model for RevokeDeliveryCardResponse.Status.
 type RevokeDeliveryCardResponseStatus string
 
+// RotationRemoval defines model for RotationRemoval.
+type RotationRemoval struct {
+	AuthorizationDigest string                `json:"authorizationDigest"`
+	CreatedAt           time.Time             `json:"createdAt"`
+	PreviewId           openapi_types.UUID    `json:"previewId"`
+	Slots               []RotationRemovalSlot `json:"slots"`
+	Stopped             bool                  `json:"stopped"`
+	WorkspaceId         openapi_types.UUID    `json:"workspaceId"`
+	WorkspaceName       string                `json:"workspaceName"`
+	WriteAllowed        bool                  `json:"writeAllowed"`
+}
+
+// RotationRemovalAction defines model for RotationRemovalAction.
+type RotationRemovalAction struct {
+	Confirmed bool `json:"confirmed"`
+}
+
+// RotationRemovalHistory defines model for RotationRemovalHistory.
+type RotationRemovalHistory struct {
+	Items []RotationRemovalHistoryItem `json:"items"`
+	Page  int                          `json:"page"`
+	Total int                          `json:"total"`
+}
+
+// RotationRemovalHistoryItem defines model for RotationRemovalHistoryItem.
+type RotationRemovalHistoryItem struct {
+	CreatedAt     time.Time          `json:"createdAt"`
+	PreviewId     openapi_types.UUID `json:"previewId"`
+	Stopped       bool               `json:"stopped"`
+	WorkspaceName string             `json:"workspaceName"`
+}
+
+// RotationRemovalSlot defines model for RotationRemovalSlot.
+type RotationRemovalSlot struct {
+	AttemptCount        int                      `json:"attemptCount"`
+	CandidateAccountId  openapi_types.UUID       `json:"candidateAccountId"`
+	CandidateReady      bool                     `json:"candidateReady"`
+	Id                  openapi_types.UUID       `json:"id"`
+	Identifier          string                   `json:"identifier"`
+	LastErrorCode       string                   `json:"lastErrorCode"`
+	LeaseEpoch          int64                    `json:"leaseEpoch"`
+	LeaseExpiresAt      *time.Time               `json:"leaseExpiresAt,omitempty"`
+	OriginalAccountId   openapi_types.UUID       `json:"originalAccountId"`
+	PlatformMemberId    string                   `json:"platformMemberId"`
+	RemoteRequestId     *openapi_types.UUID      `json:"remoteRequestId,omitempty"`
+	SeatType            string                   `json:"seatType"`
+	State               RotationRemovalSlotState `json:"state"`
+	UncertainObligation bool                     `json:"uncertainObligation"`
+	UpdatedAt           time.Time                `json:"updatedAt"`
+	VerificationId      *openapi_types.UUID      `json:"verificationId,omitempty"`
+}
+
+// RotationRemovalSlotState defines model for RotationRemovalSlot.State.
+type RotationRemovalSlotState string
+
+// RotationRemovalStart defines model for RotationRemovalStart.
+type RotationRemovalStart struct {
+	AuthorizationDigest string             `json:"authorizationDigest"`
+	Confirmed           bool               `json:"confirmed"`
+	IdempotencyKey      openapi_types.UUID `json:"idempotencyKey"`
+}
+
 // SaveBatch defines model for SaveBatch.
 type SaveBatch struct {
 	BindingId        openapi_types.UUID   `json:"bindingId"`
@@ -3897,9 +3995,34 @@ type ConfirmExpiryRotationParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// StartRotationRemovalParams defines parameters for StartRotationRemoval.
+type StartRotationRemovalParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// RunRotationRemovalSlotParams defines parameters for RunRotationRemovalSlot.
+type RunRotationRemovalSlotParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// VerifyRotationRemovalSlotParams defines parameters for VerifyRotationRemovalSlot.
+type VerifyRotationRemovalSlotParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// StopRotationRemovalParams defines parameters for StopRotationRemoval.
+type StopRotationRemovalParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // RevokeExpiryRotationParams defines parameters for RevokeExpiryRotation.
 type RevokeExpiryRotationParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// ListRotationRemovalsParams defines parameters for ListRotationRemovals.
+type ListRotationRemovalsParams struct {
+	Page *Page `form:"page,omitempty" json:"page,omitempty"`
 }
 
 // ListJoinOperationsNeedingAttentionParams defines parameters for ListJoinOperationsNeedingAttention.
@@ -4198,6 +4321,18 @@ type UpdateDeliveryDestinationJSONRequestBody = UpdateDeliveryDestination
 // ConfirmExpiryRotationJSONRequestBody defines body for ConfirmExpiryRotation for application/json ContentType.
 type ConfirmExpiryRotationJSONRequestBody = ExpiryRotationConfirmation
 
+// StartRotationRemovalJSONRequestBody defines body for StartRotationRemoval for application/json ContentType.
+type StartRotationRemovalJSONRequestBody = RotationRemovalStart
+
+// RunRotationRemovalSlotJSONRequestBody defines body for RunRotationRemovalSlot for application/json ContentType.
+type RunRotationRemovalSlotJSONRequestBody = RotationRemovalAction
+
+// VerifyRotationRemovalSlotJSONRequestBody defines body for VerifyRotationRemovalSlot for application/json ContentType.
+type VerifyRotationRemovalSlotJSONRequestBody = RotationRemovalAction
+
+// StopRotationRemovalJSONRequestBody defines body for StopRotationRemoval for application/json ContentType.
+type StopRotationRemovalJSONRequestBody = RotationRemovalAction
+
 // LoginOwnerJSONRequestBody defines body for LoginOwner for application/json ContentType.
 type LoginOwnerJSONRequestBody = LoginRequest
 
@@ -4387,8 +4522,26 @@ type ServerInterface interface {
 	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/confirm)
 	ConfirmExpiryRotation(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params ConfirmExpiryRotationParams)
 
+	// (GET /api/owner/v1/expiry-rotation/previews/{previewId}/removal)
+	GetRotationRemoval(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/removal)
+	StartRotationRemoval(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params StartRotationRemovalParams)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/run)
+	RunRotationRemovalSlot(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, slotId openapi_types.UUID, params RunRotationRemovalSlotParams)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/verify)
+	VerifyRotationRemovalSlot(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, slotId openapi_types.UUID, params VerifyRotationRemovalSlotParams)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/removal/stop)
+	StopRotationRemoval(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params StopRotationRemovalParams)
+
 	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/revoke)
 	RevokeExpiryRotation(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params RevokeExpiryRotationParams)
+
+	// (GET /api/owner/v1/expiry-rotation/removals)
+	ListRotationRemovals(w http.ResponseWriter, r *http.Request, params ListRotationRemovalsParams)
 
 	// (GET /api/owner/v1/join-operations/needs-attention)
 	ListJoinOperationsNeedingAttention(w http.ResponseWriter, r *http.Request, params ListJoinOperationsNeedingAttentionParams)
@@ -6462,6 +6615,266 @@ func (siw *ServerInterfaceWrapper) ConfirmExpiryRotation(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// GetRotationRemoval operation middleware
+func (siw *ServerInterfaceWrapper) GetRotationRemoval(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRotationRemoval(w, r, previewId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartRotationRemoval operation middleware
+func (siw *ServerInterfaceWrapper) StartRotationRemoval(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StartRotationRemovalParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartRotationRemoval(w, r, previewId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunRotationRemovalSlot operation middleware
+func (siw *ServerInterfaceWrapper) RunRotationRemovalSlot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "slotId" -------------
+	var slotId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slotId", r.PathValue("slotId"), &slotId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slotId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RunRotationRemovalSlotParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunRotationRemovalSlot(w, r, previewId, slotId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyRotationRemovalSlot operation middleware
+func (siw *ServerInterfaceWrapper) VerifyRotationRemovalSlot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "slotId" -------------
+	var slotId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slotId", r.PathValue("slotId"), &slotId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slotId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params VerifyRotationRemovalSlotParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyRotationRemovalSlot(w, r, previewId, slotId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StopRotationRemoval operation middleware
+func (siw *ServerInterfaceWrapper) StopRotationRemoval(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StopRotationRemovalParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StopRotationRemoval(w, r, previewId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RevokeExpiryRotation operation middleware
 func (siw *ServerInterfaceWrapper) RevokeExpiryRotation(w http.ResponseWriter, r *http.Request) {
 
@@ -6507,6 +6920,39 @@ func (siw *ServerInterfaceWrapper) RevokeExpiryRotation(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeExpiryRotation(w, r, previewId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRotationRemovals operation middleware
+func (siw *ServerInterfaceWrapper) ListRotationRemovals(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListRotationRemovalsParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRotationRemovals(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9133,6 +9579,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}", wrapper.GetExpiryRotationPreview)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/confirm", wrapper.ConfirmExpiryRotation)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/revoke", wrapper.RevokeExpiryRotation)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/removals", wrapper.ListRotationRemovals)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal", wrapper.GetRotationRemoval)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal", wrapper.StartRotationRemoval)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/run", wrapper.RunRotationRemovalSlot)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/verify", wrapper.VerifyRotationRemovalSlot)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/stop", wrapper.StopRotationRemoval)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/mother-accounts", wrapper.ListMotherAccounts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts", wrapper.CreateMotherAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts/import", wrapper.ImportMotherAccounts)

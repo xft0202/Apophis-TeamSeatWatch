@@ -179,8 +179,10 @@ func TestChildMaterialsOwnerContractIntegration(t *testing.T) {
 	if got := invoke("POST", "/api/owner/v1/child-materials/export", map[string]any{"scope": "filtered", "search": alias, "expectedCount": 1, "confirmed": true}, rotated, true); got.Code != 200 || !strings.Contains(got.Body.String(), "existing@example.com----pw-existing----") {
 		t.Fatalf("alias export=%d %s", got.Code, got.Body.String())
 	}
-	// The competing insertion is invisible to the import's duplicate read;
-	// its unique-key conflict must only mark this line duplicate.
+	// The competing insertion is invisible to the duplicate read. Depending on
+	// the active migration, the contender waits at the unique index or the
+	// earlier rotation action fence; either must serialize this line and retain
+	// the same duplicate result without rolling back the following valid line.
 	competing, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -194,7 +196,7 @@ func TestChildMaterialsOwnerContractIntegration(t *testing.T) {
 	}()
 	waiting := false
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		if err = pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event='transactionid' AND query LIKE 'INSERT INTO tsw_target_accounts%')`).Scan(&waiting); err != nil {
+		if err = pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event IN ('transactionid','advisory') AND query LIKE 'INSERT INTO tsw_target_accounts%')`).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
 		if waiting {
@@ -205,7 +207,7 @@ func TestChildMaterialsOwnerContractIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !waiting {
-		t.Fatal("competing import never reached the unique-key conflict")
+		t.Fatal("competing import never reached the insertion serialization boundary")
 	}
 	raced := <-importDone
 	var raceResult ownerapi.ChildMaterialsImportResult
