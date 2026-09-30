@@ -1289,7 +1289,7 @@ export interface components {
             id: string;
             /** @enum {string} */
             status: "ready" | "pending_permission" | "facts_incomplete" | "not_expired" | "needs_verification" | "authorized" | "revoked";
-            /** @description Set on new immutable preview facts. Missing or older versions are display-only and require re-preview before confirmation. */
+            /** @description Set on new immutable preview facts. Missing or non-current policy proof is display-only and requires re-preview before confirmation. */
             policyVersion?: number;
             digest: string;
             /** Format: uuid */

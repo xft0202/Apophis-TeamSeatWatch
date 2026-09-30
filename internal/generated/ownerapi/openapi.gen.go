@@ -2675,7 +2675,7 @@ type ExpiryRotationPreview struct {
 	ObservedAt             time.Time                  `json:"observedAt"`
 	PaidDefaultEntitlement *int                       `json:"paidDefaultEntitlement,omitempty"`
 
-	// PolicyVersion Set on new immutable preview facts. Missing or older versions are display-only and require re-preview before confirmation.
+	// PolicyVersion Set on new immutable preview facts. Missing or non-current policy proof is display-only and requires re-preview before confirmation.
 	PolicyVersion   *int                        `json:"policyVersion,omitempty"`
 	RevokedAt       *time.Time                  `json:"revokedAt,omitempty"`
 	SeatTypeCounts  map[string]int              `json:"seatTypeCounts"`

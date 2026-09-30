@@ -2441,8 +2441,8 @@ components:
         policyVersion:
           type: integer
           description: >-
-            Set on new immutable preview facts. Missing or older versions are
-            display-only and require re-preview before confirmation.
+            Set on new immutable preview facts. Missing or non-current policy
+            proof is display-only and requires re-preview before confirmation.
         digest:
           type: string
         draftId:

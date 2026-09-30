@@ -27,7 +27,7 @@ export function rotationCandidateStatus(candidate: ExpiryPreview['candidates'][n
     return '仅可作为受控加入候选；加入后须实测目标空间零用量并成功落账，当前不可交付。';
   }
   if (candidate.reason === 'legacy_preview_requires_repreview') {
-    return '旧预览缺少候选交付状态；请重新预览核验，不可沿用旧候选。';
+    return '旧预览缺少当前策略证明或策略版本不匹配；请重新预览核验，不可沿用旧候选。';
   }
   if (candidate.reason === 'usage_absence_unverified' || candidate.reason === 'usage_unknown') {
     return '未取得完整的加入前无首次用量记录证明；探测失败或未知不能当作无记录。';
