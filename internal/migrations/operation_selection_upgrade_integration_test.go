@@ -14,7 +14,7 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// Rehearse the embedded 24 -> 25 -> 26 migrations with existing selection dependencies.
+// Rehearse 24 -> 25 -> 26 -> 27 while preserving a completed selection and preview.
 func TestOperationSelectionUpgradeFrom24Integration(t *testing.T) {
 	dsn := os.Getenv("TSW_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -75,6 +75,13 @@ func TestOperationSelectionUpgradeFrom24Integration(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `INSERT INTO tsw_operation_selection_drafts(owner_id,mother_account_id,mother_revision,workspace_id,visibility_run_id,session_generation,verification_id,batch_id,batch_version,destination_id,destination_revision) VALUES($1,$2,1,$3,$4,$5,$6,$7,1,$8,1) RETURNING id`, owner, mother, workspace, run, generation, verification, batch, destination).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := provider.UpTo(ctx, 26); err != nil {
+		t.Fatal(err)
+	}
+	var preview uuid.UUID
+	if err := db.QueryRowContext(ctx, `INSERT INTO tsw_expiry_rotation_previews(owner_id,draft_id,draft_version,workspace_id,verification_id,facts,digest,status,expires_at) VALUES($1,$2,1,$3,$4,'{"source":"upgrade"}',repeat('a',64),'facts_incomplete',now()+interval '1 hour') RETURNING id`, owner, id, workspace, verification).Scan(&preview); err != nil {
+		t.Fatal(err)
+	}
 	if err := Apply(ctx, db); err != nil {
 		t.Fatal(err)
 	}
@@ -91,5 +98,16 @@ func TestOperationSelectionUpgradeFrom24Integration(t *testing.T) {
 	}
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_operation_selection_drafts WHERE id=$1 AND owner_id=$2 AND mother_account_id=$3 AND workspace_id=$4 AND batch_id=$5 AND destination_id=$6`, id, owner, mother, workspace, batch, destination).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("idempotent upgrade lost selection dependencies: count=%d err=%v", count, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_expiry_rotation_previews WHERE id=$1 AND draft_id=$2 AND facts->>'source'='upgrade'`, preview, id).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("26 -> 27 upgrade lost preview: count=%d err=%v", count, err)
+	}
+	for _, key := range []struct {
+		kind string
+		id   uuid.UUID
+	}{{"workspace", workspace}, {"mother", mother}, {"standby_batch", batch}, {"destination", destination}} {
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tsw_rotation_epochs WHERE kind=$1 AND id=$2`, key.kind, key.id).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("missing backfilled epoch %s/%s: count=%d err=%v", key.kind, key.id, count, err)
+		}
 	}
 }
