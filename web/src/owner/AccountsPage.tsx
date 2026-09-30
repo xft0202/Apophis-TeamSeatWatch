@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, Input, Modal, Spin, Table } from 'antd';
+import { App, Button, Input, Spin, Table } from 'antd';
 import { useState } from 'react';
 import type { components } from '../generated/owner';
 import { mutationHeaders, ownerApi } from './api';
@@ -157,6 +157,9 @@ export default function AccountsPage() {
   ];
 
   const preview = importPreview.data;
+  const importLineCount = importText
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0 && !line.trim().startsWith('#')).length;
 
   return (
     <OwnerShell>
@@ -175,15 +178,27 @@ export default function AccountsPage() {
           <Button
             size="small"
             type={kind === 'mother' ? 'primary' : 'default'}
-            onClick={() => setKind('mother')}
+            onClick={() => {
+              setKind('mother');
+              setImportOpen(false);
+              importPreview.reset();
+            }}
           >
             母号
           </Button>
           <span style={{ flex: 1 }} />
           {kind === 'member' ? (
             <>
-              <Button size="small" onClick={() => setImportOpen(true)}>
-                导入账号
+              <Button
+                size="small"
+                aria-controls="account-import-panel"
+                aria-expanded={importOpen}
+                onClick={() => {
+                  setImportOpen((open) => !open);
+                  importPreview.reset();
+                }}
+              >
+                {importOpen ? '收起导入' : '导入账号'}
               </Button>
               <Button
                 size="small"
@@ -196,6 +211,122 @@ export default function AccountsPage() {
             </>
           ) : null}
         </div>
+
+        {kind === 'member' && importOpen ? (
+          <section id="account-import-panel" className="account-import-panel" aria-label="导入账号">
+            <div className="account-import-panel__head">
+              <div>
+                <h2 className="account-import-panel__title">导入账号</h2>
+                <p className="quietnote account-import-panel__description">
+                  一行一个账号，格式：账号----密码----验证密钥。空行和 # 开头的行会跳过。
+                </p>
+              </div>
+              <Button
+                size="small"
+                onClick={() => {
+                  setImportOpen(false);
+                  importPreview.reset();
+                }}
+              >
+                收起
+              </Button>
+            </div>
+
+            <label className="account-import-panel__label" htmlFor="import-text">
+              粘贴账号素材
+            </label>
+            <Input.TextArea
+              autoFocus
+              id="import-text"
+              name="import-text"
+              rows={7}
+              value={importText}
+              onChange={(e) => {
+                setImportText(e.target.value);
+                importPreview.reset();
+              }}
+              placeholder={
+                'member@example.test----example-password----JBSWY3DPEHPK3PXP'
+              }
+            />
+
+            <div className="account-import-panel__actions">
+              <span className="quietnote">已识别 {importLineCount} 行待预览素材</span>
+              <span className="account-import-panel__action-buttons">
+                <Button
+                  onClick={() => {
+                    setImportOpen(false);
+                    importPreview.reset();
+                  }}
+                >
+                  取消
+                </Button>
+                {preview ? (
+                  <Button type="primary" loading={doImport.isPending} onClick={() => doImport.mutate()}>
+                    确认导入
+                  </Button>
+                ) : (
+                  <Button
+                    type="primary"
+                    disabled={importText.trim().length === 0}
+                    loading={importPreview.isPending}
+                    onClick={() => importPreview.mutate()}
+                  >
+                    预览导入
+                  </Button>
+                )}
+              </span>
+            </div>
+
+            {preview ? (
+              <div className="account-import-panel__preview">
+                <div className="quietnote">
+                  共 <span className="num">{preview.total}</span> 行 · 新建{' '}
+                  <span className="num">{preview.newCount}</span> · 已存在{' '}
+                  <span className="num">{preview.existingCount}</span>（确认导入后覆盖）
+                </div>
+                <Table<TargetAccountImportRow>
+                  size="small"
+                  rowKey="line"
+                  pagination={false}
+                  style={{ marginTop: 8 }}
+                  dataSource={preview.items}
+                  columns={[
+                    {
+                      title: '账号',
+                      dataIndex: 'displayLabel',
+                      key: 'label',
+                      ellipsis: true,
+                      render: (v: string) => <span className="mono">{v}</span>,
+                    },
+                    {
+                      title: '密码',
+                      dataIndex: 'hasPassword',
+                      key: 'password',
+                      width: 80,
+                      render: (v: boolean) => (v ? '有' : '缺'),
+                    },
+                    {
+                      title: '验证密钥',
+                      dataIndex: 'hasTotp',
+                      key: 'totp',
+                      width: 90,
+                      render: (v: boolean) => (v ? '有' : '缺'),
+                    },
+                    {
+                      title: '重复',
+                      dataIndex: 'existing',
+                      key: 'existing',
+                      width: 90,
+                      render: (v: boolean) =>
+                        v ? <span className="pill pill--amber">已存在</span> : <span className="pill pill--ok">新建</span>,
+                    },
+                  ]}
+                />
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {kind === 'member' ? (
           targets.isLoading ? (
@@ -227,107 +358,6 @@ export default function AccountsPage() {
           <Table size="small" rowKey="id" pagination={false} columns={motherColumns} dataSource={mothers.data?.items ?? []} />
         )}
       </main>
-
-      <Modal
-        title="导入账号"
-        open={importOpen}
-        onCancel={() => {
-          setImportOpen(false);
-          importPreview.reset();
-        }}
-        footer={
-          <>
-            <Button
-              onClick={() => {
-                setImportOpen(false);
-                importPreview.reset();
-              }}
-            >
-              取消
-            </Button>
-            {preview ? (
-              <Button type="primary" loading={doImport.isPending} onClick={() => doImport.mutate()}>
-                确认导入
-              </Button>
-            ) : (
-              <Button
-                type="primary"
-                disabled={importText.trim().length === 0}
-                loading={importPreview.isPending}
-                onClick={() => importPreview.mutate()}
-              >
-                预览导入
-              </Button>
-            )}
-          </>
-        }
-      >
-        <p className="quietnote" style={{ marginTop: 0 }}>
-          一行一个账号，格式：账号----密码----验证密钥
-          <br />
-          空行和 # 开头的行会跳过。
-        </p>
-        <Input.TextArea
-          id="import-text"
-          name="import-text"
-          rows={7}
-          value={importText}
-          onChange={(e) => {
-            setImportText(e.target.value);
-            importPreview.reset();
-          }}
-          placeholder={
-            'doles_verve_1b@icloud.com----doles_verve_1b----KTELQCCJV7KMDCKE4A4ZEITJFEUAPPLO'
-          }
-        />
-        {preview ? (
-          <div style={{ marginTop: 14 }}>
-            <div className="quietnote">
-              共 <span className="num">{preview.total}</span> 行 · 新建{' '}
-              <span className="num">{preview.newCount}</span> · 已存在{' '}
-              <span className="num">{preview.existingCount}</span>（确认导入后覆盖）
-            </div>
-            <Table<TargetAccountImportRow>
-              size="small"
-              rowKey="line"
-              pagination={false}
-              style={{ marginTop: 8 }}
-              dataSource={preview.items}
-              columns={[
-                {
-                  title: '账号',
-                  dataIndex: 'displayLabel',
-                  key: 'label',
-                  ellipsis: true,
-                  render: (v: string) => <span className="mono">{v}</span>,
-                },
-                {
-                  title: '密码',
-                  dataIndex: 'hasPassword',
-                  key: 'password',
-                  width: 80,
-                  render: (v: boolean) => (v ? '有' : '缺'),
-                },
-                {
-                  title: '验证密钥',
-                  dataIndex: 'hasTotp',
-                  key: 'totp',
-                  width: 90,
-                  render: (v: boolean) => (v ? '有' : '缺'),
-                },
-                {
-                  title: '重复',
-                  dataIndex: 'existing',
-                  key: 'existing',
-                  width: 90,
-                  render: (v: boolean) =>
-                    v ? <span className="pill pill--amber">已存在</span> : <span className="pill pill--ok">新建</span>,
-                },
-              ]}
-            />
-          </div>
-        ) : null}
-      </Modal>
     </OwnerShell>
   );
 }

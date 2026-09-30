@@ -254,6 +254,64 @@ body {
 /* 工具栏：动作放右，不抢标题 */
 .toolbar { display: flex; align-items: center; gap: 8px; }
 
+/* 账号导入：桌面端内嵌面板，不阻塞页面其他操作 */
+.account-import-panel {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  box-shadow: var(--elev-rest);
+}
+
+.account-import-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.account-import-panel__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.account-import-panel__description { margin-top: 6px; }
+
+.account-import-panel__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.account-import-panel .ant-input {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.account-import-panel__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.account-import-panel__action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-import-panel__preview {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
 /* ── 6. 工作台三栏布局 ─────────────────────────────────────────────────────── */
 
 /* 左栏机队排期 / 中栏当前批生命线 / 右栏运行。 */
