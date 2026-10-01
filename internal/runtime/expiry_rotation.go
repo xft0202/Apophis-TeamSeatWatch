@@ -196,6 +196,35 @@ func rotationPreviouslyUsed(ctx context.Context, db rotationRow, accountID uuid.
 	return used, err
 }
 
+// Read every retained account-ledger row before asserting complete absence in
+// the selected Workspace. Unknown/conflicting or ever-used history blocks a
+// candidate globally; membership in another Workspace is not a blocking fact.
+// Scan and terminal query errors never become a negative lookup result.
+func rotationCandidateLedgerLookup(ctx context.Context, db rotationRow, accountID, workspaceID uuid.UUID) (absent, clear bool, err error) {
+	rows, err := db.Query(ctx, `SELECT workspace_id,usage_state,ever_used,evidence_id,observed_at,expires_at FROM public.tsw_rotation_usage_ledger WHERE target_account_id=$1`, accountID)
+	if err != nil {
+		return false, false, err
+	}
+	defer rows.Close()
+	absent, clear = true, true
+	for rows.Next() {
+		var row rotationUsageProof
+		if err = rows.Scan(&row.WorkspaceID, &row.State, &row.EverUsed, &row.EvidenceID, &row.ObservedAt, &row.ExpiresAt); err != nil {
+			return false, false, err
+		}
+		if row.WorkspaceID == workspaceID {
+			absent = false
+		}
+		if row.State != "never_used" || row.EverUsed {
+			clear = false
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return false, false, err
+	}
+	return absent, clear, nil
+}
+
 func rotationPersistedVerdictMatches(ctx context.Context, db rotationRow, workspaceID uuid.UUID, verdict rotationVerdict) (bool, error) {
 	if verdict.Usage.Source != "persisted_workspace_usage" || verdict.Protection.Source != "persisted_global_protection" {
 		return true, nil
@@ -205,14 +234,28 @@ func rotationPersistedVerdictMatches(ctx context.Context, db rotationRow, worksp
 	var observedAt, expiresAt time.Time
 	err := db.QueryRow(ctx, `SELECT usage_state,ever_used,evidence_id,observed_at,expires_at FROM public.tsw_rotation_usage_ledger WHERE target_account_id=$1 AND workspace_id=$2`, verdict.AccountID, workspaceID).Scan(&state, &everUsed, &evidenceID, &observedAt, &expiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return verdict.Usage.State == "unknown", nil
-	}
-	if err != nil {
+		if verdict.Usage.State != "unknown" && verdict.Usage.State != "unobserved_prejoin" {
+			return false, nil
+		}
+	} else if err != nil {
 		return false, err
-	}
-	if state != verdict.Usage.State || everUsed != verdict.Usage.EverUsed || evidenceID != verdict.Usage.EvidenceID || !observedAt.Equal(verdict.Usage.ObservedAt) || !expiresAt.Equal(verdict.Usage.ExpiresAt) {
+	} else if state != verdict.Usage.State || everUsed != verdict.Usage.EverUsed || evidenceID != verdict.Usage.EvidenceID || !observedAt.Equal(verdict.Usage.ObservedAt) || !expiresAt.Equal(verdict.Usage.ExpiresAt) {
 		return false, nil
 	}
+	if verdict.Usage.State == "unobserved_prejoin" || verdict.Usage.Absence != nil {
+		a := verdict.Usage.Absence
+		if a == nil || a.Source != "persisted_usage_ledger_lookup" {
+			return false, nil
+		}
+		absent, clear, lookupErr := rotationCandidateLedgerLookup(ctx, db, verdict.AccountID, workspaceID)
+		if lookupErr != nil {
+			return false, lookupErr
+		}
+		if !clear || absent != (verdict.Usage.State == "unobserved_prejoin") {
+			return false, nil
+		}
+	}
+	// Missing usage must not skip revalidation of global protection under the fence.
 	var status, protectionID string
 	var protectionObserved time.Time
 	err = db.QueryRow(ctx, `SELECT status,evidence_id,observed_at FROM public.tsw_rotation_global_protections WHERE target_account_id=$1`, verdict.AccountID).Scan(&status, &protectionID, &protectionObserved)

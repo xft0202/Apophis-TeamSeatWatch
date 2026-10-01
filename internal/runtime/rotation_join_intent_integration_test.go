@@ -281,57 +281,17 @@ func TestRotationJoinIntentEveryFrozenEpoch(t *testing.T) {
 	}
 }
 
-// This deliberately test-local capability preserves the genuine fixture AB,
-// owner and invitation evidence, but supplies the existing Ticket10 mock
-// complete-absence proof. Production official capability currently excludes
-// missing ledger rows; this test does not fix or certify that upstream gap.
-type joinAbsenceCapability struct {
-	h         *OwnerAuthHandler
-	candidate uuid.UUID
-}
-
-func (c joinAbsenceCapability) Evidence(ctx context.Context, owner uuid.UUID) (rotationEvidence, error) {
-	e, err := (officialRotationCapability{handler: c.h}).Evidence(ctx, owner)
-	if err != nil {
-		return e, err
-	}
-	v := e.Candidates[c.candidate]
-	var generation uuid.UUID
-	var identifier string
-	var accountVersion, credentialVersion, membershipVersion int64
-	var absent bool
-	err = c.h.pool.QueryRow(ctx, `SELECT d.session_generation,a.identifier,a.version,creds.version,m.version,NOT EXISTS(SELECT 1 FROM tsw_rotation_usage_ledger u WHERE u.target_account_id=a.id) FROM tsw_operation_selection_drafts d JOIN tsw_standby_child_memberships m ON m.batch_id=d.batch_id JOIN tsw_target_accounts a ON a.id=m.target_account_id JOIN tsw_target_credentials creds ON creds.target_account_id=a.id WHERE d.owner_id=$1 AND d.step='complete' AND d.workspace_id=$2 AND d.mother_account_id=$3 AND d.verification_id=$4 AND a.id=$5`, owner, e.WorkspaceID, e.MotherID, e.VerificationID, c.candidate).Scan(&generation, &identifier, &accountVersion, &credentialVersion, &membershipVersion, &absent)
-	if err != nil {
-		return e, err
-	}
-	if !absent {
-		return e, errors.New("complete lookup found usage")
-	}
-	proof := rotationProof{Source: "mock_usage_ledger_lookup", ObservedAt: e.Permission.ObservedAt, ExpiresAt: e.Permission.ExpiresAt}
-	absence := rotationUsageAbsenceProof{rotationProof: proof, WorkspaceID: e.WorkspaceID, AccountID: c.candidate, MotherID: e.MotherID, SessionGeneration: generation, VerificationID: e.VerificationID, Identifier: identifier, AccountVersion: accountVersion, CredentialVersion: credentialVersion, MembershipVersion: membershipVersion, LookupComplete: true, FirstUseRecordStatus: "absent"}
-	absence.EvidenceID = rotationAbsenceEvidenceID(absence)
-	v.Usage = rotationUsageProof{rotationProof: rotationProof{Source: "mock_workspace_usage", EvidenceID: rotationHash(struct {
-		Domain  string
-		Account uuid.UUID
-	}{"test-local-missing-usage", c.candidate}), ObservedAt: proof.ObservedAt, ExpiresAt: proof.ExpiresAt}, WorkspaceID: e.WorkspaceID, AccountID: c.candidate, State: "unobserved_prejoin", Absence: &absence}
-	v.Decision = "eligible"
-	v.Reason = "join_candidate_pending_first_probe"
-	e.Candidates[c.candidate] = v
-	return e, nil
-}
-
 func TestRotationJoinIntentMissingUsageDoesNotWriteZero(t *testing.T) {
 	f := newJoinFixture(t, 1)
 	oldPreview := f.preview
+	var oldFrozen string
+	if err := f.pool.QueryRow(context.Background(), `SELECT to_jsonb(p)::text FROM tsw_expiry_rotation_previews p WHERE id=$1`, oldPreview.Id).Scan(&oldFrozen); err != nil {
+		t.Fatal(err)
+	}
 	c := oldPreview.Candidates[0].AccountId
 	// Omission happens before originating the new immutable preview and confirmation.
 	f.exec(t, `DELETE FROM tsw_rotation_usage_ledger WHERE target_account_id=$1`, c)
 	path := "/api/owner/v1/expiry-rotation/previews"
-	negative := rotationResult(t, rotationRequest(f.h, f.session, f.csrf, "POST", path, nil), 200)
-	if negative.Status == "ready" || negative.Candidates[0].Decision == "eligible" {
-		t.Fatal("negative control: official capability unexpectedly admits missing ledger")
-	}
-	f.h.rotationCapability = joinAbsenceCapability{h: f.h, candidate: c}
 	fresh := rotationResult(t, rotationRequest(f.h, f.session, f.csrf, "POST", path, nil), 200)
 	if fresh.Status != "ready" || fresh.Source != "official_owner_ab" || fresh.Candidates[0].UsageState != "unobserved_prejoin" || fresh.Id == oldPreview.Id {
 		t.Fatalf("new scoped absence preview not ready: %+v", fresh)
@@ -356,8 +316,12 @@ func TestRotationJoinIntentMissingUsageDoesNotWriteZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if old.digest != *oldPreview.AuthorizationDigest || old.preview.Digest != oldPreview.Digest {
-		t.Fatal("old preview changed")
+	var oldAfter string
+	if err = f.pool.QueryRow(context.Background(), `SELECT to_jsonb(p)::text FROM tsw_expiry_rotation_previews p WHERE id=$1`, oldPreview.Id).Scan(&oldAfter); err != nil {
+		t.Fatal(err)
+	}
+	if old.digest != *oldPreview.AuthorizationDigest || old.preview.Digest != oldPreview.Digest || oldAfter != oldFrozen {
+		t.Fatal("old preview, authorization or frozen epochs changed")
 	}
 }
 

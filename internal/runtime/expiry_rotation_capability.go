@@ -223,21 +223,37 @@ func (h *OwnerAuthHandler) rotationEvidenceFromSnapshot(ctx context.Context, own
 	for _, child := range children {
 		var identifier string
 		var accountVersion, credentialVersion int64
-		if err := h.pool.QueryRow(ctx, `SELECT account.identifier,account.version,credential.version FROM public.tsw_standby_child_memberships membership JOIN public.tsw_target_accounts account ON account.id=membership.target_account_id JOIN public.tsw_target_credentials credential ON credential.target_account_id=account.id WHERE membership.target_account_id=$1 AND membership.version=$2 AND membership.batch_id=$3`, child.AccountId, child.MembershipVersion, batchID).Scan(&identifier, &accountVersion, &credentialVersion); err != nil {
+		var complete, delivered bool
+		var identityCount int
+		if err := h.pool.QueryRow(ctx, `SELECT account.identifier,account.version,credential.version,
+			(account.status='active' AND credential.material_status='complete' AND credential.materials_sealed),
+			(SELECT count(*) FROM public.tsw_target_accounts same WHERE same.identifier=account.identifier),
+			EXISTS(SELECT 1 FROM public.tsw_batch_memberships m JOIN public.tsw_oauth_assets asset ON asset.membership_id=m.id JOIN public.tsw_delivery_versions delivery ON delivery.oauth_asset_id=asset.id WHERE m.target_account_id=account.id)
+			FROM public.tsw_standby_child_memberships membership JOIN public.tsw_target_accounts account ON account.id=membership.target_account_id JOIN public.tsw_target_credentials credential ON credential.target_account_id=account.id WHERE membership.target_account_id=$1 AND membership.version=$2 AND membership.batch_id=$3`, child.AccountId, child.MembershipVersion, batchID).Scan(&identifier, &accountVersion, &credentialVersion, &complete, &identityCount, &delivered); err != nil {
 			return evidence, err
 		}
 		usage, protection, err := h.persistedRotationEvidence(ctx, child.AccountId, workspaceID, snapshot.ObservedAt, expires)
 		if err != nil {
 			return evidence, err
 		}
+		absent, clear, err := rotationCandidateLedgerLookup(ctx, h.pool, child.AccountId, workspaceID)
+		if err != nil {
+			return evidence, err
+		}
+		invite := inviteByIdentifier[strings.ToLower(identifier)]
+		_, alreadyMember := memberByIdentifier[strings.ToLower(identifier)]
 		decision, reason := "excluded", "usage_evidence_missing"
-		if usage.State == "never_used" && !usage.EverUsed && protection.Status == "none" {
+		if clear && (absent || usage.State == "never_used" && !usage.EverUsed) && protection.Status == "none" && complete && !delivered && identityCount == 1 && !alreadyMember && invite.SeatType == "prolite" {
+			if absent {
+				// No observed first-use fact is not an observed zero. Only this
+				// candidate-specific complete lookup can produce pre-join absence.
+				usage.State = "unobserved_prejoin"
+			}
 			decision, reason = "eligible", "join_candidate_pending_first_probe"
 			scope := rotationUsageAbsenceProof{rotationProof: rotationProof{Source: "persisted_usage_ledger_lookup", ObservedAt: usage.ObservedAt, ExpiresAt: usage.ExpiresAt}, WorkspaceID: workspaceID, AccountID: child.AccountId, MotherID: motherID, SessionGeneration: generation, VerificationID: verificationID, Identifier: identifier, AccountVersion: accountVersion, CredentialVersion: credentialVersion, MembershipVersion: child.MembershipVersion, LookupComplete: true, FirstUseRecordStatus: "absent"}
 			scope.EvidenceID = rotationAbsenceEvidenceID(scope)
 			usage.Absence = &scope
 		}
-		invite := inviteByIdentifier[strings.ToLower(identifier)]
 		seatType := invite.SeatType
 		if seatType == "" {
 			decision, reason = "excluded", "invitation_seat_type_unverified"
