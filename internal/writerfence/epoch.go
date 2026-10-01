@@ -46,6 +46,21 @@ type Version struct {
 // this transaction AFTER the locks. Never perform network I/O while holding it.
 // A higher layer must verify that its key set covers all facts before enabling use.
 func BeginLocked(ctx context.Context, pool *pgxpool.Pool, keys []Key) (pgx.Tx, []Version, error) {
+	return beginLocked(ctx, pool, keys)
+}
+
+// BeginLockedOnConn borrows the caller's connection without acquiring another
+// pool slot. The caller owns its connection and must commit/roll back the
+// returned transaction before releasing any session action gates.
+func BeginLockedOnConn(ctx context.Context, conn *pgxpool.Conn, keys []Key) (pgx.Tx, []Version, error) {
+	return beginLocked(ctx, conn, keys)
+}
+
+type epochBeginner interface {
+	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
+}
+
+func beginLocked(ctx context.Context, db epochBeginner, keys []Key) (pgx.Tx, []Version, error) {
 	if len(keys) == 0 {
 		return nil, nil, errors.New("rotation epoch keys are required")
 	}
@@ -66,7 +81,7 @@ func BeginLocked(ctx context.Context, pool *pgxpool.Pool, keys []Key) (pgx.Tx, [
 			return nil, nil, fmt.Errorf("invalid or duplicate rotation epoch key %s/%s", key.Kind, key.ID)
 		}
 	}
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	tx, err := db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
 		return nil, nil, err
 	}
