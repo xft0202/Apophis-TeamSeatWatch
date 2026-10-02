@@ -245,13 +245,15 @@ paths:
               $ref: '#/components/schemas/ExpiryRotationConfirmation'
       responses:
         '200':
-          description: Frozen, writer-fenced authorization; no remote mutation is dispatched
+          description: Frozen, writer-fenced authorization; no remote
+            mutation is dispatched
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExpiryRotationPreview'
         '409':
-          description: Preview, permission, evidence, assignment, or idempotency conflict
+          description: Preview, permission, evidence, assignment, or
+            idempotency conflict
           content:
             application/problem+json:
               schema:
@@ -315,7 +317,8 @@ paths:
               $ref: '#/components/schemas/RotationRemovalStart'
       responses:
         '200':
-          description: Persisted per-slot removal progress; a receipt is never vacancy
+          description: Persisted per-slot removal progress; a receipt is
+            never vacancy
           content:
             application/json:
               schema:
@@ -363,7 +366,8 @@ paths:
               $ref: '#/components/schemas/RotationRemovalAction'
       responses:
         '200':
-          description: Persisted per-slot removal progress; a receipt is never vacancy
+          description: Persisted per-slot removal progress; a receipt is
+            never vacancy
           content:
             application/json:
               schema:
@@ -393,11 +397,146 @@ paths:
               $ref: '#/components/schemas/RotationRemovalAction'
       responses:
         '200':
-          description: Persisted per-slot removal progress; a receipt is never vacancy
+          description: Persisted per-slot removal progress; a receipt is
+            never vacancy
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RotationRemoval'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join:
+    get:
+      operationId: getRotationJoinStatus
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slotId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Redacted original-intent join and credential status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RotationJoinStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/run:
+    post:
+      operationId: runRotationJoin
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slotId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RotationJoinAction'}
+      responses:
+        '200':
+          description: Durable redacted original-intent status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RotationJoinStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/verify:
+    post:
+      operationId: verifyRotationJoin
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slotId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RotationJoinAction'}
+      responses:
+        '200':
+          description: Durable redacted original-intent status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RotationJoinStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/save:
+    post:
+      operationId: saveRotationJoinCredentials
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slotId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RotationJoinAction'}
+      responses:
+        '200':
+          description: Durable redacted original-intent status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RotationJoinStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/repair:
+    post:
+      operationId: repairRotationJoinCredentials
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slotId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RotationJoinAction'}
+      responses:
+        '200':
+          description: Durable redacted original-intent status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RotationJoinStatus'}
         default:
           $ref: '#/components/responses/Problem'
   /api/owner/v1/expiry-rotation/previews/{previewId}/removal/stop:
@@ -419,7 +558,8 @@ paths:
               $ref: '#/components/schemas/RotationRemovalAction'
       responses:
         '200':
-          description: Persisted per-slot removal progress; a receipt is never vacancy
+          description: Persisted per-slot removal progress; a receipt is
+            never vacancy
           content:
             application/json:
               schema:
@@ -2439,7 +2579,15 @@ components:
     RotationRemoval:
       type: object
       additionalProperties: false
-      required: [previewId, workspaceId, workspaceName, createdAt, authorizationDigest, stopped, writeAllowed, slots]
+      required:
+        - previewId
+        - workspaceId
+        - workspaceName
+        - createdAt
+        - authorizationDigest
+        - stopped
+        - writeAllowed
+        - slots
       properties:
         previewId: {type: string, format: uuid}
         workspaceId: {type: string, format: uuid}
@@ -2473,7 +2621,20 @@ components:
     RotationRemovalSlot:
       type: object
       additionalProperties: false
-      required: [id, platformMemberId, originalAccountId, candidateAccountId, identifier, seatType, state, attemptCount, leaseEpoch, uncertainObligation, lastErrorCode, updatedAt, candidateReady]
+      required:
+        - id
+        - platformMemberId
+        - originalAccountId
+        - candidateAccountId
+        - identifier
+        - seatType
+        - state
+        - attemptCount
+        - leaseEpoch
+        - uncertainObligation
+        - lastErrorCode
+        - updatedAt
+        - candidateReady
       properties:
         id: {type: string, format: uuid}
         platformMemberId: {type: string}
@@ -2483,7 +2644,15 @@ components:
         seatType: {type: string}
         state:
           type: string
-          enum: [pending, lease_acquired, remove_requested, remote_result_uncertain, absent_verification_pending, absent_verified, blocked, stopped]
+          enum:
+            - pending
+            - lease_acquired
+            - remove_requested
+            - remote_result_uncertain
+            - absent_verification_pending
+            - absent_verified
+            - blocked
+            - stopped
         attemptCount: {type: integer}
         leaseEpoch: {type: integer, format: int64}
         leaseExpiresAt: {type: string, format: date-time}
@@ -2493,6 +2662,36 @@ components:
         lastErrorCode: {type: string}
         updatedAt: {type: string, format: date-time}
         candidateReady: {type: boolean}
+    RotationJoinAction:
+      type: object
+      additionalProperties: false
+      required: [confirmed]
+      properties:
+        confirmed: {type: boolean}
+    RotationJoinStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - previewId
+        - slotId
+        - workspaceId
+        - candidateIdentifier
+        - phase
+        - membership
+        - credentials
+        - nextAction
+        - diagnostic
+      properties:
+        previewId: {type: string, format: uuid}
+        slotId: {type: string, format: uuid}
+        workspaceId: {type: string, format: uuid}
+        candidateIdentifier: {type: string}
+        phase: {type: string}
+        membership: {type: string}
+        credentials: {type: string}
+        nextAction: {type: string}
+        diagnostic: {type: string}
+
     ExpiryRotationAssignment:
       type: object
       additionalProperties: false

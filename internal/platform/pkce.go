@@ -196,6 +196,9 @@ func ExchangePKCECode(ctx context.Context, client *http.Client, code, verifier s
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return DeliveryCredentialSet{}, errors.New("PKCE token response has trailing data")
 	}
+	if credentialJSON(raw, &result) != nil {
+		return DeliveryCredentialSet{}, errors.New("PKCE token response is invalid")
+	}
 	if strings.TrimSpace(result.AccessToken) == "" || strings.TrimSpace(result.RefreshToken) == "" || strings.TrimSpace(result.IDToken) == "" {
 		return DeliveryCredentialSet{}, errors.New("PKCE token response is incomplete")
 	}

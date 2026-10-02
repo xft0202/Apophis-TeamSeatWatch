@@ -11,7 +11,7 @@ import (
 )
 
 // RequiredVersion is the schema version required by this release.
-const RequiredVersion int64 = 33
+const RequiredVersion int64 = 34
 
 //go:embed sql/*.sql
 var sqlFiles embed.FS

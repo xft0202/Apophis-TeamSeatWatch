@@ -43,23 +43,24 @@ type OwnerAuthConfig struct {
 
 // OwnerAuthHandler owns the HTTP boundary for the Ticket 03 Owner security API.
 type OwnerAuthHandler struct {
-	pool                    *pgxpool.Pool
-	keyRing                 auth.KeyRing
-	origins                 auth.OriginPolicy
-	dummyPasswordHash       string
-	workspaceFacts          *workspace.Service
-	workspaceTasks          *task.Store
-	egress                  *egress.Manager
-	destinationProbe        DestinationProbe
-	discovery               platform.DiscoveryAdapter
-	personalRefresh         platform.PersonalSessionRefresher
-	selectedWorkspaceReader platform.SelectedWorkspaceReader
-	workspaceTokenExchanger platform.WorkspaceTokenExchanger
-	rotationCapability      rotationCapability // read-only evidence adapter; never performs platform mutation
-	workspaceMemberRemover  platform.WorkspaceMemberRemoval
-	rotationJoinEgress      func(context.Context) (rotationJoinEgress, error)
-	rotationJoinAdapters    func(platform.DiscoveryClient) rotationJoinAdapters
-	secureCookies           bool
+	pool                       *pgxpool.Pool
+	keyRing                    auth.KeyRing
+	origins                    auth.OriginPolicy
+	dummyPasswordHash          string
+	workspaceFacts             *workspace.Service
+	workspaceTasks             *task.Store
+	egress                     *egress.Manager
+	destinationProbe           DestinationProbe
+	discovery                  platform.DiscoveryAdapter
+	personalRefresh            platform.PersonalSessionRefresher
+	selectedWorkspaceReader    platform.SelectedWorkspaceReader
+	workspaceTokenExchanger    platform.WorkspaceTokenExchanger
+	rotationCapability         rotationCapability // read-only evidence adapter; never performs platform mutation
+	workspaceMemberRemover     platform.WorkspaceMemberRemoval
+	rotationJoinEgress         func(context.Context) (rotationJoinEgress, error)
+	rotationJoinAdapters       func(platform.DiscoveryClient) rotationJoinAdapters
+	rotationCredentialAdapters func(platform.DiscoveryClient) platform.RotationCredentialAdapter
+	secureCookies              bool
 }
 
 type ownerContext struct {
@@ -141,6 +142,9 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 		return handler.egress.Acquire(ctx)
 	}
 	handler.rotationJoinAdapters = officialRotationJoinAdapters
+	handler.rotationCredentialAdapters = func(client platform.DiscoveryClient) platform.RotationCredentialAdapter {
+		return platform.OfficialRotationCredentialAdapter{Client: client}
+	}
 	if handler.selectedWorkspaceReader != nil {
 		handler.rotationCapability = officialRotationCapability{handler: handler}
 	}

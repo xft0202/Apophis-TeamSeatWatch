@@ -39,6 +39,10 @@ func (g workspaceExchangeGuard) RoundTrip(req *http.Request) (*http.Response, er
 }
 
 func (e OfficialWorkspaceTokenExchanger) ExchangeWorkspace(ctx context.Context, personal PersonalSession, workspaceID string) (WorkspaceAccess, error) {
+	return e.exchangeWorkspace(ctx, personal, workspaceID, "")
+}
+
+func (e OfficialWorkspaceTokenExchanger) exchangeWorkspace(ctx context.Context, personal PersonalSession, workspaceID, candidateUser string) (WorkspaceAccess, error) {
 	failed := WorkspaceAccess{}
 	if e.Client == nil || !ValidatePersonalRefresh(PersonalRefreshResult{Status: "ready", Session: personal}, time.Now()) ||
 		workspaceID == "" || len(workspaceID) > 255 || strings.TrimSpace(workspaceID) != workspaceID || strings.ContainsAny(workspaceID, "\r\n\x00") {
@@ -109,8 +113,15 @@ func (e OfficialWorkspaceTokenExchanger) ExchangeWorkspace(ctx context.Context, 
 		Account     struct {
 			ID string `json:"id"`
 		} `json:"account"`
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
 	}
-	if json.Unmarshal(body, &snapshot) != nil || snapshot.Account.ID != workspaceID {
+	decodeErr := json.Unmarshal(body, &snapshot)
+	if candidateUser != "" {
+		decodeErr = credentialJSON(body, &snapshot)
+	}
+	if decodeErr != nil || snapshot.Account.ID != workspaceID {
 		return failed, ErrWorkspaceExchangeUnavailable
 	}
 	sessionExpiry, err := time.Parse(time.RFC3339, snapshot.Expires)
@@ -132,6 +143,18 @@ func (e OfficialWorkspaceTokenExchanger) ExchangeWorkspace(ctx context.Context, 
 	access := WorkspaceAccess{AccessToken: snapshot.AccessToken, WorkspaceID: workspaceID, DeviceID: personal.DeviceID, SessionID: uuid.NewString(), ExpiresAt: expires}
 	for _, cookie := range jar.Cookies(origin) {
 		access.Cookies = append(access.Cookies, SessionCookie{Name: cookie.Name, Value: cookie.Value})
+	}
+	if candidateUser != "" {
+		personalClaims, claimErr := rotationCredentialClaims(personal.AccessToken)
+		if claimErr != nil {
+			return failed, ErrWorkspaceExchangeUnavailable
+		}
+		nested, _ := personalClaims["https://api.openai.com/auth"].(map[string]any)
+		if !workspaceClaimMatches(personalClaims, nested, "chatgpt_user_id", candidateUser) ||
+			(snapshot.User.ID != candidateUser && snapshot.User.ID != personalClaims["sub"]) || snapshot.User.ID == "" ||
+			!ValidateRotationCandidateWorkspace(access, workspaceID, candidateUser, now) {
+			return failed, ErrWorkspaceExchangeUnavailable
+		}
 	}
 	if !ValidateWorkspaceAccess(access, workspaceID, now) {
 		return failed, ErrWorkspaceExchangeUnavailable

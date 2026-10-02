@@ -88,12 +88,24 @@ func executionExpire(t *testing.T, f *removalFixture, l rotationJoinExecutionLea
 	f.exec(t, `SELECT pg_sleep(GREATEST(0,extract(epoch FROM ($1::timestamptz-clock_timestamp())))+0.01)`, l.expires)
 }
 
-// Include intent, membership, credentials, protections, usage, epochs and all
-// sources; only this seam's two derived outputs are excluded.
+// Include credentials, protections, usage, epochs and all sources. Ordinary
+// execution/dispatch assertions also detect any accidental schema34 writes.
 func executionSources(t *testing.T, f *removalFixture) string {
 	t.Helper()
+	return executionSourceSnapshot(t, f, false)
+}
+
+// Migration31/32/33 down/up removes schema34's derived tables as well. Only
+// those migration assertions exclude the disappearing schema34 inventory.
+func executionMigrationSources(t *testing.T, f *removalFixture) string {
+	t.Helper()
+	return executionSourceSnapshot(t, f, true)
+}
+
+func executionSourceSnapshot(t *testing.T, f *removalFixture, downgradeSchema34 bool) string {
+	t.Helper()
 	ctx := context.Background()
-	rows, err := f.pool.Query(ctx, `SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'tsw_%' AND tablename NOT IN ('tsw_rotation_join_executions','tsw_rotation_join_execution_attempts','tsw_rotation_join_membership_evidence','tsw_rotation_join_personal_bindings') ORDER BY tablename`)
+	rows, err := f.pool.Query(ctx, `SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'tsw_%' AND tablename NOT IN ('tsw_rotation_join_executions','tsw_rotation_join_execution_attempts','tsw_rotation_join_membership_evidence','tsw_rotation_join_personal_bindings') AND (NOT $1::boolean OR tablename NOT IN ('tsw_rotation_join_credential_attempts','tsw_rotation_join_credential_events','tsw_rotation_join_credential_components','tsw_rotation_join_credential_generations')) ORDER BY tablename`, downgradeSchema34)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -739,7 +751,7 @@ func TestRotationJoinExecutionFinalWriteClock(t *testing.T) {
 func TestRotationJoinExecutionMigrationDownUp(t *testing.T) {
 	f, owner, slot, _ := membershipDispatched(t)
 	ctx := context.Background()
-	before := executionSources(t, f)
+	before := executionMigrationSources(t, f)
 	db, err := sql.Open("pgx", os.Getenv("TSW_TEST_DATABASE_URL"))
 	if err != nil {
 		t.Fatal(err)
@@ -760,7 +772,7 @@ func TestRotationJoinExecutionMigrationDownUp(t *testing.T) {
 	if err = f.pool.QueryRow(ctx, `SELECT to_regclass('public.tsw_rotation_join_executions') IS NULL AND to_regclass('public.tsw_rotation_join_execution_attempts') IS NULL AND to_regprocedure('public.tsw_rotation_join_execution_guard()') IS NULL AND to_regprocedure('public.tsw_rotation_join_attempt_guard()') IS NULL AND to_regprocedure('public.tsw_rotation_join_execution_start_guard()') IS NULL`).Scan(&absent); err != nil || !absent {
 		t.Fatalf("own down cleanup absent=%v err=%v", absent, err)
 	}
-	if before != executionSources(t, f) {
+	if before != executionMigrationSources(t, f) {
 		t.Fatal("migration down changed previous sources or intent")
 	}
 	for i := 0; i < 2; i++ {
@@ -772,7 +784,7 @@ func TestRotationJoinExecutionMigrationDownUp(t *testing.T) {
 	if err != nil || version != migrations.RequiredVersion {
 		t.Fatalf("up version=%d required=%d err=%v", version, migrations.RequiredVersion, err)
 	}
-	if before != executionSources(t, f) {
+	if before != executionMigrationSources(t, f) {
 		t.Fatal("migration up changed previous sources or intent")
 	}
 	if executionClaim(t, f, owner, slot, time.Minute).epoch != 1 {

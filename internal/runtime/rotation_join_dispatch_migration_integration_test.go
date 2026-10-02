@@ -15,7 +15,7 @@ import (
 func TestRotationJoinDispatchMigrationDownUp(t *testing.T) {
 	f, _, _, _ := dispatchFixture(t)
 	ctx := context.Background()
-	before := executionSources(t, f)
+	before := executionMigrationSources(t, f)
 	db, err := sql.Open("pgx", os.Getenv("TSW_TEST_DATABASE_URL"))
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func TestRotationJoinDispatchMigrationDownUp(t *testing.T) {
 	if err = f.pool.QueryRow(ctx, `SELECT to_regprocedure('public.tsw_rotation_candidate_personal_gate()') IS NULL AND NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='tsw_rotation_candidate_personal_gate')`).Scan(&absent); err != nil || !absent {
 		t.Fatalf("down cleanup absent=%v err=%v", absent, err)
 	}
-	if before != executionSources(t, f) {
+	if before != executionMigrationSources(t, f) {
 		t.Fatal("downgrade changed source payload or original intent")
 	}
 	for i := 0; i < 2; i++ {
@@ -60,7 +60,7 @@ func TestRotationJoinDispatchMigrationDownUp(t *testing.T) {
 	if err = f.pool.QueryRow(ctx, `SELECT count(*) FROM pg_trigger WHERE tgname='tsw_rotation_candidate_personal_gate' AND tgrelid IN ('public.tsw_target_personal_access'::regclass,'public.tsw_target_personal_sessions'::regclass) AND tgenabled='O'`).Scan(&triggers); err != nil || triggers != 2 {
 		t.Fatalf("triggers=%d err=%v", triggers, err)
 	}
-	if before != executionSources(t, f) {
+	if before != executionMigrationSources(t, f) {
 		t.Fatal("upgrade changed source payload or epoch")
 	}
 }

@@ -4,6 +4,7 @@ import { OwnerApiError } from './auth';
 import { expiryRotationApi, type ExpiryPreview } from './expiryRotation';
 import { rotationRemovalApi, type Removal, type RemovalHistory, type RemovalSlot } from './rotationRemoval';
 import { removalErrorMessage, removalSlotAction, removalSlotStatus } from './rotationRemovalState';
+import RotationJoinPanel from './RotationJoinPanel';
 
 // Reads restore persisted work. No effect, poll, response or browser restart can
 // start a campaign or dispatch a slot: all mutations require a labelled click.
@@ -102,5 +103,6 @@ export default function RotationRemovalPanel({ preview }: { preview: ExpiryPrevi
         })}</Table.Tbody>
       </Table></Table.ScrollContainer>
     </> : null}
+    {progress ? <RotationJoinPanel removal={progress} /> : null}
   </Stack></Paper>;
 }

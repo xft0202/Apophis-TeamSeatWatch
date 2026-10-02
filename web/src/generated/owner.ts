@@ -295,6 +295,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getRotationJoinStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["runRotationJoin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["verifyRotationJoin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["saveRotationJoinCredentials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["repairRotationJoinCredentials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/stop": {
         parameters: {
             query?: never;
@@ -1379,6 +1459,23 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             candidateReady: boolean;
+        };
+        RotationJoinAction: {
+            confirmed: boolean;
+        };
+        RotationJoinStatus: {
+            /** Format: uuid */
+            previewId: string;
+            /** Format: uuid */
+            slotId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            candidateIdentifier: string;
+            phase: string;
+            membership: string;
+            credentials: string;
+            nextAction: string;
+            diagnostic: string;
         };
         ExpiryRotationAssignment: {
             platformMemberId: string;
@@ -3161,6 +3258,150 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RotationRemoval"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRotationJoinStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                previewId: string;
+                slotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redacted original-intent join and credential status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationJoinStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    runRotationJoin: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+                slotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationJoinAction"];
+            };
+        };
+        responses: {
+            /** @description Durable redacted original-intent status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationJoinStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    verifyRotationJoin: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+                slotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationJoinAction"];
+            };
+        };
+        responses: {
+            /** @description Durable redacted original-intent status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationJoinStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    saveRotationJoinCredentials: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+                slotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationJoinAction"];
+            };
+        };
+        responses: {
+            /** @description Durable redacted original-intent status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationJoinStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    repairRotationJoinCredentials: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+                slotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationJoinAction"];
+            };
+        };
+        responses: {
+            /** @description Durable redacted original-intent status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationJoinStatus"];
                 };
             };
             default: components["responses"]["Problem"];
