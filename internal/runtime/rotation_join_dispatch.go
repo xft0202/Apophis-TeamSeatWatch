@@ -23,11 +23,12 @@ type rotationJoinAdapters struct {
 	reader    platform.SelectedWorkspaceReader
 	discovery platform.DiscoveryAdapter
 	identity  platform.PersonalIdentityConfirmer
+	members   platform.PersonalMembershipReader
 	joiner    platform.RotationCandidateJoiner
 }
 
 func officialRotationJoinAdapters(client platform.DiscoveryClient) rotationJoinAdapters {
-	return rotationJoinAdapters{reader: platform.OfficialSelectedWorkspaceReader{Client: client}, discovery: platform.AccountsCheckDiscovery{Client: client}, identity: platform.OfficialPersonalIdentityConfirmer{Client: client}, joiner: platform.OfficialRotationCandidateJoiner{Client: client}}
+	return rotationJoinAdapters{reader: platform.OfficialSelectedWorkspaceReader{Client: client}, discovery: platform.AccountsCheckDiscovery{Client: client}, identity: platform.OfficialPersonalIdentityConfirmer{Client: client}, members: platform.OfficialPersonalMembershipReader{Client: client}, joiner: platform.OfficialRotationCandidateJoiner{Client: client}}
 }
 
 type joinPersonalBinding struct {
@@ -307,7 +308,15 @@ func (h *OwnerAuthHandler) dispatchRotationCandidateJoin(ctx context.Context, ow
 		}
 		if err == nil {
 			guard, args := joinDispatchWriteGuard(i, pinned, pinnedIdentity, proofDeadline)
-			err = markRotationJoinStageInTx(bounded, tx, l, state, stage, guard, args)
+			if stage == "accept_join" {
+				err = requireJoinPersonalBinding(bounded, tx, i, pinned, pinnedIdentity.SubjectID)
+			}
+			if err == nil {
+				err = markRotationJoinStageInTx(bounded, tx, l, state, stage, guard, args)
+			}
+			if err == nil && stage == "request_join" {
+				err = appendJoinPersonalBinding(bounded, tx, l, i, pinned, pinnedIdentity)
+			}
 		}
 		if err != nil {
 			_ = tx.Rollback(bounded)
@@ -384,7 +393,17 @@ func joinDispatchWriteGuard(i rotationJoinIntent, p joinAdmission, identity plat
 }
 
 func checkJoinDispatchGate(ctx context.Context, g *removalGate) error {
-	if g.conn == nil || !g.workspaceLocked {
+	return checkJoinGateLocks(ctx, g, true)
+}
+
+// Read-only membership GETs retain the physical session and source action
+// locks, but deliberately release Workspace so stop can fence them promptly.
+func checkJoinReadGate(ctx context.Context, g *removalGate) error {
+	return checkJoinGateLocks(ctx, g, false)
+}
+
+func checkJoinGateLocks(ctx context.Context, g *removalGate, requireWorkspace bool) error {
+	if g.conn == nil || requireWorkspace && !g.workspaceLocked {
 		return removalFailure("dispatch_gate_lost")
 	}
 	// A healthy connection alone is insufficient: unlock_all on a still-live
@@ -393,7 +412,9 @@ func checkJoinDispatchGate(ctx context.Context, g *removalGate) error {
 	for _, key := range g.keys {
 		scopes = append(scopes, "tsw.rotation.action."+string(key.Kind)+"/"+key.ID.String())
 	}
-	scopes = append(scopes, "tsw.rotation.workspace."+g.workspace.String())
+	if requireWorkspace {
+		scopes = append(scopes, "tsw.rotation.workspace."+g.workspace.String())
+	}
 	var held bool
 	err := g.conn.QueryRow(ctx, `SELECT NOT EXISTS(SELECT 1 FROM unnest($1::text[]) scope WHERE NOT EXISTS(SELECT 1 FROM pg_locks l WHERE l.pid=pg_backend_pid() AND l.locktype='advisory' AND l.granted AND l.objsubid=1 AND l.classid=((hashtextextended(scope,0)>>32)&4294967295)::oid AND l.objid=(hashtextextended(scope,0)&4294967295)::oid))`, scopes).Scan(&held)
 	if err != nil || !held {

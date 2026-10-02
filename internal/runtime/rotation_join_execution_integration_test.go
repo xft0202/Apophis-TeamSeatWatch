@@ -31,6 +31,44 @@ func executionFixture(t *testing.T) (*removalFixture, ownerContext, uuid.UUID) {
 	}
 	return f, owner, slot
 }
+
+// Only legacy journal assertions intentionally creating unbound request markers
+// use schema 32. Dispatch, membership, and SQL enforcement tests stay at 33.
+func legacyExecutionSchema32Fixture(t *testing.T) (*removalFixture, ownerContext, uuid.UUID) {
+	t.Helper()
+	f, o, slot := executionFixture(t)
+	membershipSchemaVersion(t, 32)
+	return f, o, slot
+}
+func membershipSchemaVersion(t *testing.T, version int64) {
+	t.Helper()
+	ctx := context.Background()
+	db, err := sql.Open("pgx", os.Getenv("TSW_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, os.DirFS("../migrations/sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := provider.GetDBVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current > version {
+		_, err = provider.DownTo(ctx, version)
+	} else if current < version {
+		_, err = provider.UpTo(ctx, version)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := provider.GetDBVersion(ctx)
+	if err != nil || actual != version {
+		t.Fatalf("schema=%d want=%d err=%v", actual, version, err)
+	}
+}
 func executionClaim(t *testing.T, f *removalFixture, owner ownerContext, slot uuid.UUID, d time.Duration) rotationJoinExecutionLease {
 	t.Helper()
 	l, err := f.h.claimRotationJoinExecution(context.Background(), owner, f.preview.Id, slot, uuid.New(), d)
@@ -55,7 +93,7 @@ func executionExpire(t *testing.T, f *removalFixture, l rotationJoinExecutionLea
 func executionSources(t *testing.T, f *removalFixture) string {
 	t.Helper()
 	ctx := context.Background()
-	rows, err := f.pool.Query(ctx, `SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'tsw_%' AND tablename NOT IN ('tsw_rotation_join_executions','tsw_rotation_join_execution_attempts') ORDER BY tablename`)
+	rows, err := f.pool.Query(ctx, `SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'tsw_%' AND tablename NOT IN ('tsw_rotation_join_executions','tsw_rotation_join_execution_attempts','tsw_rotation_join_membership_evidence','tsw_rotation_join_personal_bindings') ORDER BY tablename`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +220,7 @@ func TestRotationJoinExecutionConcurrentClaim(t *testing.T) {
 }
 
 func TestRotationJoinExecutionStageOrderAndAppendOnlyPairing(t *testing.T) {
-	f, owner, slot := executionFixture(t)
+	f, owner, slot := legacyExecutionSchema32Fixture(t)
 	before := executionSources(t, f)
 	reads, calls := f.http.reads, f.http.calls
 	l := executionClaim(t, f, owner, slot, time.Minute)
@@ -241,7 +279,7 @@ func TestRotationJoinExecutionStageOrderAndAppendOnlyPairing(t *testing.T) {
 func TestRotationJoinExecutionExpiryAndCrashRecovery(t *testing.T) {
 	for _, stage := range []string{"none", "request_join", "request_succeeded", "accept_join"} {
 		t.Run(stage, func(t *testing.T) {
-			f, owner, slot := executionFixture(t)
+			f, owner, slot := legacyExecutionSchema32Fixture(t)
 			ctx := context.Background()
 			before := executionSources(t, f)
 			l := executionClaim(t, f, owner, slot, 300*time.Millisecond)
@@ -292,7 +330,7 @@ func TestRotationJoinExecutionFailureAndUncertainty(t *testing.T) {
 		for _, outcome := range []string{"failed", "uncertain"} {
 			for _, reached := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/reached=%v", stage, outcome, reached), func(t *testing.T) {
-					f, owner, slot := executionFixture(t)
+					f, owner, slot := legacyExecutionSchema32Fixture(t)
 					ctx := context.Background()
 					before := executionSources(t, f)
 					l := executionClaim(t, f, owner, slot, time.Minute)
@@ -328,7 +366,7 @@ func TestRotationJoinExecutionFailureAndUncertainty(t *testing.T) {
 }
 
 func TestRotationJoinExecutionInjectedFailuresRollback(t *testing.T) {
-	f, owner, slot := executionFixture(t)
+	f, owner, slot := legacyExecutionSchema32Fixture(t)
 	ctx := context.Background()
 	before := executionSources(t, f)
 	f.exec(t, `CREATE FUNCTION join_execution_test_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected execution insert failure'; END; $$; CREATE TRIGGER join_execution_test_fail AFTER INSERT ON tsw_rotation_join_executions FOR EACH ROW EXECUTE FUNCTION join_execution_test_fail()`)
@@ -369,7 +407,7 @@ func TestRotationJoinExecutionInjectedFailuresRollback(t *testing.T) {
 }
 
 func TestRotationJoinExecutionCurrentOwnerAndImmutableRecovery(t *testing.T) {
-	f, owner, slot := executionFixture(t)
+	f, owner, slot := legacyExecutionSchema32Fixture(t)
 	ctx := context.Background()
 	original, err := f.h.loadRotationJoinIntent(ctx, owner, f.preview.Id, slot)
 	if err != nil {
@@ -442,7 +480,7 @@ func TestRotationJoinExecutionDirectSQLCannotUnlockAccept(t *testing.T) {
 }
 
 func TestRotationJoinExecutionDirectSQLTransitions(t *testing.T) {
-	f, owner, slot := executionFixture(t)
+	f, owner, slot := legacyExecutionSchema32Fixture(t)
 	ctx := context.Background()
 	before := executionSources(t, f)
 	reads, calls := f.http.reads, f.http.calls
@@ -545,7 +583,7 @@ func TestRotationJoinExecutionDirectSQLTransitions(t *testing.T) {
 }
 
 func TestRotationJoinExecutionDirectSQLGuards(t *testing.T) {
-	f, owner, slot := executionFixture(t)
+	f, owner, slot := legacyExecutionSchema32Fixture(t)
 	ctx := context.Background()
 	columns := strings.Split(executionColumns, ",")
 	for i, column := range columns {
@@ -643,7 +681,7 @@ func (*executionWriteBarrier) TraceQueryEnd(context.Context, *pgx.Conn, pgx.Trac
 func TestRotationJoinExecutionFinalWriteClock(t *testing.T) {
 	for _, finish := range []bool{false, true} {
 		t.Run(fmt.Sprint("finish=", finish), func(t *testing.T) {
-			f, owner, slot := executionFixture(t)
+			f, owner, slot := legacyExecutionSchema32Fixture(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			l := executionClaim(t, f, owner, slot, 400*time.Millisecond)
@@ -699,12 +737,8 @@ func TestRotationJoinExecutionFinalWriteClock(t *testing.T) {
 }
 
 func TestRotationJoinExecutionMigrationDownUp(t *testing.T) {
-	f, owner, slot := executionFixture(t)
+	f, owner, slot, _ := membershipDispatched(t)
 	ctx := context.Background()
-	l := executionClaim(t, f, owner, slot, time.Minute)
-	if err := f.h.markRotationJoinStageStarted(ctx, l, "request_join"); err != nil {
-		t.Fatal(err)
-	}
 	before := executionSources(t, f)
 	db, err := sql.Open("pgx", os.Getenv("TSW_TEST_DATABASE_URL"))
 	if err != nil {

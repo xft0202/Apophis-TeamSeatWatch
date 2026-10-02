@@ -34,6 +34,10 @@ type dispatchTransport struct {
 	role, remoteWorkspace, seat string
 	incomplete                  bool
 	responseBody                string
+	membershipBody              string
+	membershipStatus            int
+	membershipHook              func()
+	identityHook                func()
 	remoteError                 error
 	gateConn                    *pgx.Conn
 	route                       *dispatchRoute
@@ -83,6 +87,9 @@ func (d *dispatchTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return removalHTTPResponse(200, `{"items":[{"email_address":"`+d.f.preview.Candidates[0].Identifier+`","status":"pending","seat_type":"`+d.seat+`"}],"total":1,"offset":0,"limit":100}`), nil
 	}
 	if r.Method == "GET" && r.URL.Path == "/api/auth/session" {
+		if d.identityHook != nil {
+			d.identityHook()
+		}
 		identifier := d.f.preview.Candidates[0].Identifier
 		if d.identity != "" {
 			identifier = d.identity
@@ -93,6 +100,20 @@ func (d *dispatchTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 		raw, _ := json.Marshal(map[string]any{"accessToken": token, "expires": d.session.ExpiresAt.Format(time.RFC3339Nano), "user": map[string]string{"email": identifier}})
 		return removalHTTPResponse(200, string(raw)), nil
+	}
+	if r.Method == "GET" && r.URL.Path == "/workspaces/"+d.f.space.String()+"/members" {
+		body := d.membershipBody
+		if body == "" {
+			body = `{"complete":true,"members":[]}`
+		}
+		if d.membershipHook != nil {
+			d.membershipHook()
+		}
+		status := d.membershipStatus
+		if status == 0 {
+			status = 200
+		}
+		return removalHTTPResponse(status, body), nil
 	}
 	if r.Method != "POST" || !strings.HasPrefix(r.URL.Path, "/backend-api/accounts/"+d.f.space.String()+"/invites/") {
 		d.t.Fatalf("unexpected request %s %s", r.Method, r.URL)
