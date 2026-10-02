@@ -454,7 +454,7 @@ func TestRotationJoinIntentSingleConnectionConcurrent(t *testing.T) {
 	}
 }
 
-func newJoinFixture(t *testing.T, n int) *removalFixture {
+func newJoinFixture(t *testing.T, n int, noFirstUse ...bool) *removalFixture {
 	t.Helper()
 	const privateURL = "postgres://postgres@127.0.0.1:55311/tsw_ticket11?sslmode=disable"
 	if os.Getenv("TSW_TEST_DATABASE_URL") == "" {
@@ -462,6 +462,9 @@ func newJoinFixture(t *testing.T, n int) *removalFixture {
 	}
 	if os.Getenv("TSW_TEST_DATABASE_URL") != privateURL {
 		t.Fatal("S1 tests require the designated disposable private PostgreSQL URL")
+	}
+	if len(noFirstUse) > 0 && noFirstUse[0] {
+		return newRemovalFixtureWithUsage(t, n, true)
 	}
 	return newRemovalFixture(t, n)
 }

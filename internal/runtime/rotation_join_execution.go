@@ -19,8 +19,8 @@ const (
 	joinExecutionTransition rotationJoinExecutionFailure = "join_execution_invalid_transition"
 )
 
-// This lease only owns journal writes. It is not execution permission: a future
-// dispatcher must independently recheck current authority before any egress.
+// This lease only owns journal writes. It is not execution permission: the
+// dispatcher independently rechecks current authority before any egress.
 type rotationJoinExecutionLease struct {
 	slotID, workerID, token uuid.UUID
 	epoch                   int64
@@ -31,12 +31,19 @@ type rotationJoinExecutionLease struct {
 
 // The owner action gate fences concurrent revocation; DB clocks are still
 // checked at each final write. No source writerfence epochs are adopted here.
+type rotationJoinBeginner interface {
+	Begin(context.Context) (pgx.Tx, error)
+}
+
 func (h *OwnerAuthHandler) joinExecutionTx(ctx context.Context, owner ownerContext) (pgx.Tx, error) {
+	return joinExecutionTxOn(ctx, h.pool, owner)
+}
+func joinExecutionTxOn(ctx context.Context, db rotationJoinBeginner, owner ownerContext) (pgx.Tx, error) {
 	oid, err := uuid.Parse(owner.OwnerID)
 	if err != nil {
 		return nil, err
 	}
-	tx, err := h.pool.Begin(ctx)
+	tx, err := db.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +111,10 @@ const joinExecutionCurrentSession = `EXISTS(SELECT 1 FROM public.tsw_owner_sessi
 const joinExecutionCAS = `slot_id=$1 AND lease_owner=$2 AND lease_token=$3 AND lease_epoch=$4 AND lease_expires_at>clock_timestamp() AND owner_id=$6 AND ` + joinExecutionCurrentSession
 
 func (h *OwnerAuthHandler) lockedJoinExecution(ctx context.Context, l rotationJoinExecutionLease) (pgx.Tx, string, error) {
-	tx, err := h.joinExecutionTx(ctx, l.owner)
+	return lockedJoinExecutionOn(ctx, h.pool, l)
+}
+func lockedJoinExecutionOn(ctx context.Context, db rotationJoinBeginner, l rotationJoinExecutionLease) (pgx.Tx, string, error) {
+	tx, err := joinExecutionTxOn(ctx, db, l.owner)
 	if err != nil {
 		return nil, "", err
 	}
@@ -129,6 +139,14 @@ func (h *OwnerAuthHandler) markRotationJoinStageStarted(ctx context.Context, l r
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err = markRotationJoinStageInTx(ctx, tx, l, state, stage, "", nil); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// The dispatcher adds admitted clocks/bindings to this same final CAS write.
+func markRotationJoinStageInTx(ctx context.Context, tx pgx.Tx, l rotationJoinExecutionLease, state, stage, guard string, extra []any) error {
 	if l.reconcileOnly || stage == "request_join" && state != "ready" || stage == "accept_join" && state != "request_succeeded" {
 		return joinExecutionTransition
 	}
@@ -136,9 +154,10 @@ func (h *OwnerAuthHandler) markRotationJoinStageStarted(ctx context.Context, l r
 	if stage == "accept_join" {
 		column, next = "accept", "accept_started"
 	}
-	// Conservatively mark may-have-reached BEFORE a future dispatcher could send.
+	// Conservatively mark may-have-reached BEFORE a dispatcher can send.
 	// Neither a later failure nor recovery may clear this durable uncertainty.
-	tag, err := tx.Exec(ctx, `UPDATE public.tsw_rotation_join_executions SET state=$7,`+column+`_attempt_count=`+column+`_attempt_count+1,`+column+`_may_have_reached=true,last_stage='`+stage+`',last_outcome='started',updated_at=clock_timestamp() WHERE `+joinExecutionCAS, l.slotID, l.workerID, l.token, l.epoch, l.owner.SessionID, l.owner.OwnerID, next)
+	args := append([]any{l.slotID, l.workerID, l.token, l.epoch, l.owner.SessionID, l.owner.OwnerID, next}, extra...)
+	tag, err := tx.Exec(ctx, `UPDATE public.tsw_rotation_join_executions SET state=$7,`+column+`_attempt_count=`+column+`_attempt_count+1,`+column+`_may_have_reached=true,last_stage='`+stage+`',last_outcome='started',updated_at=clock_timestamp() WHERE `+joinExecutionCAS+guard, args...)
 	if err != nil {
 		return err
 	}
@@ -149,14 +168,17 @@ func (h *OwnerAuthHandler) markRotationJoinStageStarted(ctx context.Context, l r
 	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 func (h *OwnerAuthHandler) finishRotationJoinStage(ctx context.Context, l rotationJoinExecutionLease, stage, outcome string, mayHaveReached bool) error {
+	return finishRotationJoinStageOn(ctx, h.pool, l, stage, outcome, mayHaveReached)
+}
+func finishRotationJoinStageOn(ctx context.Context, db rotationJoinBeginner, l rotationJoinExecutionLease, stage, outcome string, mayHaveReached bool) error {
 	if (stage != "request_join" && stage != "accept_join" && stage != "reconcile") || (outcome != "succeeded" && outcome != "failed" && outcome != "uncertain") || stage == "reconcile" && mayHaveReached {
 		return joinExecutionTransition
 	}
-	tx, state, err := h.lockedJoinExecution(ctx, l)
+	tx, state, err := lockedJoinExecutionOn(ctx, db, l)
 	if err != nil {
 		return err
 	}

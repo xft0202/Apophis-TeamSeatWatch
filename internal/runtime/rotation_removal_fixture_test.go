@@ -108,6 +108,9 @@ type removalFixture struct {
 }
 
 func newRemovalFixture(t *testing.T, n int, sessionWindow ...time.Duration) *removalFixture {
+	return newRemovalFixtureWithUsage(t, n, false, sessionWindow...)
+}
+func newRemovalFixtureWithUsage(t *testing.T, n int, noFirstUse bool, sessionWindow ...time.Duration) *removalFixture {
 	t.Helper()
 	pool, h, owner, session, csrf := childReviewFixture(t)
 	ctx := context.Background()
@@ -160,6 +163,9 @@ func newRemovalFixture(t *testing.T, n int, sessionWindow ...time.Duration) *rem
 		seed(`INSERT INTO tsw_standby_child_memberships(target_account_id,batch_id) VALUES($1,$2)`, child, batch)
 		seed(`INSERT INTO tsw_workspace_verification_entries(verification_id,kind,identifier,identifier_hmac,identifier_key_version,status,platform_member_id,role,seat_type) VALUES($1,'member',$2,decode(repeat($3,32),'hex'),1,'active',$4,'member','prolite'),($1,'pending_invite',$5,decode(repeat($6,32),'hex'),1,'pending',NULL,NULL,'prolite')`, verification, identifier, fmt.Sprintf("%02x", 40+i), member, candidate, fmt.Sprintf("%02x", 80+i))
 		seed(`INSERT INTO tsw_rotation_usage_ledger(target_account_id,workspace_id,usage_state,ever_used,evidence_source,evidence_id,observed_at,expires_at) VALUES($1,$2,'used',true,'workspace_usage_probe',repeat('a',64),now()-interval '1 second',now()+interval '4 minutes'),($3,$2,'never_used',false,'workspace_usage_probe',repeat('b',64),now()-interval '1 second',now()+interval '4 minutes')`, original, f.space, child)
+		if noFirstUse {
+			seed(`DELETE FROM tsw_rotation_usage_ledger WHERE target_account_id=$1`, child)
+		}
 		children = append(children, ownerapi.OperationDraftChild{AccountId: child, MembershipVersion: 1})
 		assignments = append(assignments, ownerapi.ExpiryRotationAssignment{PlatformMemberId: member, AccountId: child})
 		m := platform.Member{Kind: "member", PlatformMemberID: member, Identifier: identifier, Status: "listed", Role: "member", SeatType: "prolite"}

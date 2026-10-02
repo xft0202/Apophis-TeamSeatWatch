@@ -715,7 +715,7 @@ func TestRotationJoinExecutionMigrationDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = provider.Down(ctx); err != nil {
+	if _, err = provider.DownTo(ctx, 30); err != nil {
 		t.Fatal(err)
 	}
 	version, err := provider.GetDBVersion(ctx)
@@ -735,7 +735,7 @@ func TestRotationJoinExecutionMigrationDownUp(t *testing.T) {
 		}
 	}
 	version, err = provider.GetDBVersion(ctx)
-	if err != nil || version != 31 || migrations.RequiredVersion != 31 {
+	if err != nil || version != migrations.RequiredVersion {
 		t.Fatalf("up version=%d required=%d err=%v", version, migrations.RequiredVersion, err)
 	}
 	if before != executionSources(t, f) {

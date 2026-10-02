@@ -125,6 +125,14 @@ func (h *OwnerAuthHandler) RefreshTargetPersonalAccess(w http.ResponseWriter, r 
 		h.targetFailure(w, r, err)
 		return
 	}
+	// Preserve the existing target/credential row order, but take Owner before
+	// any Personal write trigger takes candidate's action gate. Taking candidate
+	// before Owner would invert the dispatcher's ordered action gates; taking an
+	// action gate before these rows would invert existing row-first writers.
+	if _, err = tx.Exec(r.Context(), `SELECT pg_advisory_xact_lock(hashtextextended('tsw.rotation.action.owner/'||$1::text,0))`, owner.OwnerID); err != nil {
+		h.targetFailure(w, r, err)
+		return
+	}
 	if status == "ready" {
 		version, nonce, sealed, sealErr := sealSessionFor("target", h.keyRing, id, revision, session)
 		if sealErr != nil {

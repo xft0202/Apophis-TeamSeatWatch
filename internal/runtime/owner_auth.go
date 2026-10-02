@@ -57,6 +57,8 @@ type OwnerAuthHandler struct {
 	workspaceTokenExchanger platform.WorkspaceTokenExchanger
 	rotationCapability      rotationCapability // read-only evidence adapter; never performs platform mutation
 	workspaceMemberRemover  platform.WorkspaceMemberRemoval
+	rotationJoinEgress      func(context.Context) (rotationJoinEgress, error)
+	rotationJoinAdapters    func(platform.DiscoveryClient) rotationJoinAdapters
 	secureCookies           bool
 }
 
@@ -132,6 +134,13 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 		workspaceMemberRemover:  config.WorkspaceMemberRemover,
 		secureCookies:           config.Origins.SecureCookies(),
 	}
+	handler.rotationJoinEgress = func(ctx context.Context) (rotationJoinEgress, error) {
+		if handler.egress == nil {
+			return nil, platform.ErrRotationJoinUnavailable
+		}
+		return handler.egress.Acquire(ctx)
+	}
+	handler.rotationJoinAdapters = officialRotationJoinAdapters
 	if handler.selectedWorkspaceReader != nil {
 		handler.rotationCapability = officialRotationCapability{handler: handler}
 	}
