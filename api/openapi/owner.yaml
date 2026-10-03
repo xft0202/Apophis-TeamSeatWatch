@@ -405,6 +405,72 @@ paths:
                 $ref: '#/components/schemas/RotationRemoval'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery:
+    get:
+      operationId: getChannelDelivery
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Original object channel evidence and unfinished obligations
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChannelDeliveryStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery/receive:
+    post:
+      operationId: receiveChannelDelivery
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RotationJoinAction'}
+      responses:
+        '200':
+          description: Original object channel evidence and unfinished obligations
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChannelDeliveryStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery/reconcile:
+    post:
+      operationId: reconcileChannelDelivery
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RotationJoinAction'}
+      responses:
+        '200':
+          description: Original object channel evidence and unfinished obligations
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChannelDeliveryStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip:
     get:
       operationId: getBatchZIPStatus
@@ -2853,6 +2919,33 @@ components:
       required: [confirmed]
       properties:
         confirmed: {type: boolean}
+    ChannelDeliveryStatus:
+      type: object
+      additionalProperties: false
+      required: [previewId, workspaceId, phase, nextAction, receivedCount, deliveredCount, objects]
+      properties:
+        previewId: {type: string, format: uuid}
+        workspaceId: {type: string, format: uuid}
+        packageId: {type: string, format: uuid}
+        destinationName: {type: string}
+        phase: {type: string, enum: [pending, ready, receiving, received, partial, delivered, blocked]}
+        nextAction: {type: string, enum: [none, receive, reconcile]}
+        receivedCount: {type: integer, minimum: 0, maximum: 999}
+        deliveredCount: {type: integer, minimum: 0, maximum: 999}
+        objects:
+          type: array
+          maxItems: 999
+          items: {$ref: '#/components/schemas/ChannelDeliveryObject'}
+    ChannelDeliveryObject:
+      type: object
+      additionalProperties: false
+      required: [accountId, slotId, identifier, reception, delivery]
+      properties:
+        accountId: {type: string, format: uuid}
+        slotId: {type: string, format: uuid}
+        identifier: {type: string}
+        reception: {type: string, enum: [pending, receipt_pending, record_pending, received]}
+        delivery: {type: string, enum: [pending, record_pending, delivered]}
     BatchZIPStatus:
       type: object
       additionalProperties: false

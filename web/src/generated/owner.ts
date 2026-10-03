@@ -295,6 +295,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getChannelDelivery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery/receive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["receiveChannelDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reconcileChannelDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip": {
         parameters: {
             query?: never;
@@ -1560,6 +1608,33 @@ export interface components {
         };
         RotationJoinAction: {
             confirmed: boolean;
+        };
+        ChannelDeliveryStatus: {
+            /** Format: uuid */
+            previewId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            packageId?: string;
+            destinationName?: string;
+            /** @enum {string} */
+            phase: "pending" | "ready" | "receiving" | "received" | "partial" | "delivered" | "blocked";
+            /** @enum {string} */
+            nextAction: "none" | "receive" | "reconcile";
+            receivedCount: number;
+            deliveredCount: number;
+            objects: components["schemas"]["ChannelDeliveryObject"][];
+        };
+        ChannelDeliveryObject: {
+            /** Format: uuid */
+            accountId: string;
+            /** Format: uuid */
+            slotId: string;
+            identifier: string;
+            /** @enum {string} */
+            reception: "pending" | "receipt_pending" | "record_pending" | "received";
+            /** @enum {string} */
+            delivery: "pending" | "record_pending" | "delivered";
         };
         BatchZIPStatus: {
             /** Format: uuid */
@@ -3396,6 +3471,87 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RotationRemoval"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getChannelDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original object channel evidence and unfinished obligations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelDeliveryStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    receiveChannelDelivery: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationJoinAction"];
+            };
+        };
+        responses: {
+            /** @description Original object channel evidence and unfinished obligations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelDeliveryStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    reconcileChannelDelivery: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationJoinAction"];
+            };
+        };
+        responses: {
+            /** @description Original object channel evidence and unfinished obligations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelDeliveryStatus"];
                 };
             };
             default: components["responses"]["Problem"];
