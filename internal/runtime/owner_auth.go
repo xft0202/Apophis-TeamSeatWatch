@@ -34,6 +34,7 @@ type OwnerAuthConfig struct {
 	Origins                 auth.OriginPolicy
 	Egress                  *egress.Manager
 	DestinationProbe        DestinationProbe
+	ChannelDelivery         ChannelDeliveryAdapter
 	Discovery               platform.DiscoveryAdapter
 	PersonalRefresh         platform.PersonalSessionRefresher
 	SelectedWorkspaceReader platform.SelectedWorkspaceReader
@@ -51,6 +52,7 @@ type OwnerAuthHandler struct {
 	workspaceTasks             *task.Store
 	egress                     *egress.Manager
 	destinationProbe           DestinationProbe
+	channelDelivery            ChannelDeliveryAdapter
 	discovery                  platform.DiscoveryAdapter
 	personalRefresh            platform.PersonalSessionRefresher
 	selectedWorkspaceReader    platform.SelectedWorkspaceReader
@@ -129,6 +131,7 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 		workspaceTasks:          task.NewStore(pool, config.KeyRing),
 		egress:                  config.Egress,
 		destinationProbe:        config.DestinationProbe,
+		channelDelivery:         config.ChannelDelivery,
 		discovery:               config.Discovery,
 		personalRefresh:         config.PersonalRefresh,
 		selectedWorkspaceReader: config.SelectedWorkspaceReader,

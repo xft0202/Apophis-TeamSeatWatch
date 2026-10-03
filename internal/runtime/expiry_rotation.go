@@ -225,7 +225,7 @@ func rotationCandidateLedgerLookup(ctx context.Context, db rotationRow, accountI
 		return false, false, err
 	}
 	var blocked bool
-	if err = db.QueryRow(ctx, `SELECT public.tsw_rotation_join_usage_blocks_candidate($1,$2) OR EXISTS(SELECT 1 FROM public.tsw_batch_zip_protections WHERE target_account_id=$1)`, accountID, workspaceID).Scan(&blocked); err != nil {
+	if err = db.QueryRow(ctx, `SELECT public.tsw_rotation_join_usage_blocks_candidate($1,$2) OR EXISTS(SELECT 1 FROM public.tsw_batch_zip_protections WHERE target_account_id=$1) OR EXISTS(SELECT 1 FROM public.tsw_channel_objects WHERE target_account_id=$1)`, accountID, workspaceID).Scan(&blocked); err != nil {
 		return false, false, err
 	}
 	return absent, clear && !blocked, nil

@@ -198,6 +198,105 @@ func (e CardActivationStatus) Valid() bool {
 	}
 }
 
+// Defines values for ChannelDeliveryObjectDelivery.
+const (
+	ChannelDeliveryObjectDeliveryDelivered     ChannelDeliveryObjectDelivery = "delivered"
+	ChannelDeliveryObjectDeliveryPending       ChannelDeliveryObjectDelivery = "pending"
+	ChannelDeliveryObjectDeliveryRecordPending ChannelDeliveryObjectDelivery = "record_pending"
+)
+
+// Valid indicates whether the value is a known member of the ChannelDeliveryObjectDelivery enum.
+func (e ChannelDeliveryObjectDelivery) Valid() bool {
+	switch e {
+	case ChannelDeliveryObjectDeliveryDelivered:
+		return true
+	case ChannelDeliveryObjectDeliveryPending:
+		return true
+	case ChannelDeliveryObjectDeliveryRecordPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChannelDeliveryObjectReception.
+const (
+	ChannelDeliveryObjectReceptionPending        ChannelDeliveryObjectReception = "pending"
+	ChannelDeliveryObjectReceptionReceiptPending ChannelDeliveryObjectReception = "receipt_pending"
+	ChannelDeliveryObjectReceptionReceived       ChannelDeliveryObjectReception = "received"
+	ChannelDeliveryObjectReceptionRecordPending  ChannelDeliveryObjectReception = "record_pending"
+)
+
+// Valid indicates whether the value is a known member of the ChannelDeliveryObjectReception enum.
+func (e ChannelDeliveryObjectReception) Valid() bool {
+	switch e {
+	case ChannelDeliveryObjectReceptionPending:
+		return true
+	case ChannelDeliveryObjectReceptionReceiptPending:
+		return true
+	case ChannelDeliveryObjectReceptionReceived:
+		return true
+	case ChannelDeliveryObjectReceptionRecordPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChannelDeliveryStatusNextAction.
+const (
+	ChannelDeliveryStatusNextActionNone      ChannelDeliveryStatusNextAction = "none"
+	ChannelDeliveryStatusNextActionReceive   ChannelDeliveryStatusNextAction = "receive"
+	ChannelDeliveryStatusNextActionReconcile ChannelDeliveryStatusNextAction = "reconcile"
+)
+
+// Valid indicates whether the value is a known member of the ChannelDeliveryStatusNextAction enum.
+func (e ChannelDeliveryStatusNextAction) Valid() bool {
+	switch e {
+	case ChannelDeliveryStatusNextActionNone:
+		return true
+	case ChannelDeliveryStatusNextActionReceive:
+		return true
+	case ChannelDeliveryStatusNextActionReconcile:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChannelDeliveryStatusPhase.
+const (
+	ChannelDeliveryStatusPhaseBlocked   ChannelDeliveryStatusPhase = "blocked"
+	ChannelDeliveryStatusPhaseDelivered ChannelDeliveryStatusPhase = "delivered"
+	ChannelDeliveryStatusPhasePartial   ChannelDeliveryStatusPhase = "partial"
+	ChannelDeliveryStatusPhasePending   ChannelDeliveryStatusPhase = "pending"
+	ChannelDeliveryStatusPhaseReady     ChannelDeliveryStatusPhase = "ready"
+	ChannelDeliveryStatusPhaseReceived  ChannelDeliveryStatusPhase = "received"
+	ChannelDeliveryStatusPhaseReceiving ChannelDeliveryStatusPhase = "receiving"
+)
+
+// Valid indicates whether the value is a known member of the ChannelDeliveryStatusPhase enum.
+func (e ChannelDeliveryStatusPhase) Valid() bool {
+	switch e {
+	case ChannelDeliveryStatusPhaseBlocked:
+		return true
+	case ChannelDeliveryStatusPhaseDelivered:
+		return true
+	case ChannelDeliveryStatusPhasePartial:
+		return true
+	case ChannelDeliveryStatusPhasePending:
+		return true
+	case ChannelDeliveryStatusPhaseReady:
+		return true
+	case ChannelDeliveryStatusPhaseReceived:
+		return true
+	case ChannelDeliveryStatusPhaseReceiving:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ChildMaterialsExportScope.
 const (
 	ChildMaterialsExportScopeFiltered ChildMaterialsExportScope = "filtered"
@@ -2457,6 +2556,40 @@ type CardActivation struct {
 // CardActivationStatus defines model for CardActivation.Status.
 type CardActivationStatus string
 
+// ChannelDeliveryObject defines model for ChannelDeliveryObject.
+type ChannelDeliveryObject struct {
+	AccountId  openapi_types.UUID             `json:"accountId"`
+	Delivery   ChannelDeliveryObjectDelivery  `json:"delivery"`
+	Identifier string                         `json:"identifier"`
+	Reception  ChannelDeliveryObjectReception `json:"reception"`
+	SlotId     openapi_types.UUID             `json:"slotId"`
+}
+
+// ChannelDeliveryObjectDelivery defines model for ChannelDeliveryObject.Delivery.
+type ChannelDeliveryObjectDelivery string
+
+// ChannelDeliveryObjectReception defines model for ChannelDeliveryObject.Reception.
+type ChannelDeliveryObjectReception string
+
+// ChannelDeliveryStatus defines model for ChannelDeliveryStatus.
+type ChannelDeliveryStatus struct {
+	DeliveredCount  int                             `json:"deliveredCount"`
+	DestinationName *string                         `json:"destinationName,omitempty"`
+	NextAction      ChannelDeliveryStatusNextAction `json:"nextAction"`
+	Objects         []ChannelDeliveryObject         `json:"objects"`
+	PackageId       *openapi_types.UUID             `json:"packageId,omitempty"`
+	Phase           ChannelDeliveryStatusPhase      `json:"phase"`
+	PreviewId       openapi_types.UUID              `json:"previewId"`
+	ReceivedCount   int                             `json:"receivedCount"`
+	WorkspaceId     openapi_types.UUID              `json:"workspaceId"`
+}
+
+// ChannelDeliveryStatusNextAction defines model for ChannelDeliveryStatus.NextAction.
+type ChannelDeliveryStatusNextAction string
+
+// ChannelDeliveryStatusPhase defines model for ChannelDeliveryStatus.Phase.
+type ChannelDeliveryStatusPhase string
+
 // ChildMaterialsExport defines model for ChildMaterialsExport.
 type ChildMaterialsExport struct {
 	AccountIds    *[]openapi_types.UUID     `json:"accountIds,omitempty"`
@@ -4079,6 +4212,16 @@ type GenerateBatchZIPParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// ReceiveChannelDeliveryParams defines parameters for ReceiveChannelDelivery.
+type ReceiveChannelDeliveryParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// ReconcileChannelDeliveryParams defines parameters for ReconcileChannelDelivery.
+type ReconcileChannelDeliveryParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // ConfirmExpiryRotationParams defines parameters for ConfirmExpiryRotation.
 type ConfirmExpiryRotationParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
@@ -4440,6 +4583,12 @@ type UpdateDeliveryDestinationJSONRequestBody = UpdateDeliveryDestination
 // GenerateBatchZIPJSONRequestBody defines body for GenerateBatchZIP for application/json ContentType.
 type GenerateBatchZIPJSONRequestBody = RotationJoinAction
 
+// ReceiveChannelDeliveryJSONRequestBody defines body for ReceiveChannelDelivery for application/json ContentType.
+type ReceiveChannelDeliveryJSONRequestBody = RotationJoinAction
+
+// ReconcileChannelDeliveryJSONRequestBody defines body for ReconcileChannelDelivery for application/json ContentType.
+type ReconcileChannelDeliveryJSONRequestBody = RotationJoinAction
+
 // ConfirmExpiryRotationJSONRequestBody defines body for ConfirmExpiryRotation for application/json ContentType.
 type ConfirmExpiryRotationJSONRequestBody = ExpiryRotationConfirmation
 
@@ -4667,6 +4816,15 @@ type ServerInterface interface {
 
 	// (GET /api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip/download)
 	DownloadBatchZIP(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID)
+
+	// (GET /api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery)
+	GetChannelDelivery(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery/receive)
+	ReceiveChannelDelivery(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params ReceiveChannelDeliveryParams)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery/reconcile)
+	ReconcileChannelDelivery(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params ReconcileChannelDeliveryParams)
 
 	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/confirm)
 	ConfirmExpiryRotation(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params ConfirmExpiryRotationParams)
@@ -6828,6 +6986,140 @@ func (siw *ServerInterfaceWrapper) DownloadBatchZIP(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DownloadBatchZIP(w, r, previewId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetChannelDelivery operation middleware
+func (siw *ServerInterfaceWrapper) GetChannelDelivery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetChannelDelivery(w, r, previewId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReceiveChannelDelivery operation middleware
+func (siw *ServerInterfaceWrapper) ReceiveChannelDelivery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReceiveChannelDeliveryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReceiveChannelDelivery(w, r, previewId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReconcileChannelDelivery operation middleware
+func (siw *ServerInterfaceWrapper) ReconcileChannelDelivery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReconcileChannelDeliveryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReconcileChannelDelivery(w, r, previewId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10273,6 +10565,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal", wrapper.StartRotationRemoval)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/run", wrapper.RunRotationRemovalSlot)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/verify", wrapper.VerifyRotationRemovalSlot)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery", wrapper.GetChannelDelivery)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery/receive", wrapper.ReceiveChannelDelivery)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/channel-delivery/reconcile", wrapper.ReconcileChannelDelivery)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip", wrapper.GetBatchZIPStatus)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip", wrapper.GenerateBatchZIP)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip/download", wrapper.DownloadBatchZIP)
