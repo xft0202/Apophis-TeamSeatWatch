@@ -287,7 +287,7 @@ func (h *OwnerAuthHandler) persistedRotationEvidence(ctx context.Context, accoun
 		usage = positive
 	}
 	protection := rotationProtectionProof{rotationProof: rotationProof{Source: "persisted_global_protection", ObservedAt: observedAt, ExpiresAt: defaultExpiry}, AccountID: accountID, Status: "none"}
-	err = h.pool.QueryRow(ctx, `SELECT status,evidence_id,observed_at FROM public.tsw_rotation_global_protections WHERE target_account_id=$1`, accountID).Scan(&protection.Status, &protection.EvidenceID, &protection.ObservedAt)
+	err = h.pool.QueryRow(ctx, `SELECT status,evidence_id,observed_at FROM public.tsw_rotation_effective_protections WHERE target_account_id=$1`, accountID).Scan(&protection.Status, &protection.EvidenceID, &protection.ObservedAt)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return usage, protection, err
 	}

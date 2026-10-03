@@ -117,6 +117,51 @@ func (e BatchStatus) Valid() bool {
 	}
 }
 
+// Defines values for BatchZIPStatusNextAction.
+const (
+	BatchZIPStatusNextActionDownload BatchZIPStatusNextAction = "download"
+	BatchZIPStatusNextActionGenerate BatchZIPStatusNextAction = "generate"
+	BatchZIPStatusNextActionNone     BatchZIPStatusNextAction = "none"
+)
+
+// Valid indicates whether the value is a known member of the BatchZIPStatusNextAction enum.
+func (e BatchZIPStatusNextAction) Valid() bool {
+	switch e {
+	case BatchZIPStatusNextActionDownload:
+		return true
+	case BatchZIPStatusNextActionGenerate:
+		return true
+	case BatchZIPStatusNextActionNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BatchZIPStatusPhase.
+const (
+	BatchZIPStatusPhaseDelivered BatchZIPStatusPhase = "delivered"
+	BatchZIPStatusPhasePending   BatchZIPStatusPhase = "pending"
+	BatchZIPStatusPhasePrepared  BatchZIPStatusPhase = "prepared"
+	BatchZIPStatusPhaseReserved  BatchZIPStatusPhase = "reserved"
+)
+
+// Valid indicates whether the value is a known member of the BatchZIPStatusPhase enum.
+func (e BatchZIPStatusPhase) Valid() bool {
+	switch e {
+	case BatchZIPStatusPhaseDelivered:
+		return true
+	case BatchZIPStatusPhasePending:
+		return true
+	case BatchZIPStatusPhasePrepared:
+		return true
+	case BatchZIPStatusPhaseReserved:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BindingStatus.
 const (
 	BindingStatusActive BindingStatus = "active"
@@ -2368,6 +2413,25 @@ type BatchPreview struct {
 	Targets              []TargetAccount  `json:"targets"`
 }
 
+// BatchZIPStatus defines model for BatchZIPStatus.
+type BatchZIPStatus struct {
+	AccountCount int                      `json:"accountCount"`
+	CanGenerate  bool                     `json:"canGenerate"`
+	CreatedAt    *time.Time               `json:"createdAt,omitempty"`
+	Filename     *string                  `json:"filename,omitempty"`
+	NextAction   BatchZIPStatusNextAction `json:"nextAction"`
+	PackageId    *openapi_types.UUID      `json:"packageId,omitempty"`
+	Phase        BatchZIPStatusPhase      `json:"phase"`
+	PreviewId    openapi_types.UUID       `json:"previewId"`
+	WorkspaceId  openapi_types.UUID       `json:"workspaceId"`
+}
+
+// BatchZIPStatusNextAction defines model for BatchZIPStatus.NextAction.
+type BatchZIPStatusNextAction string
+
+// BatchZIPStatusPhase defines model for BatchZIPStatus.Phase.
+type BatchZIPStatusPhase string
+
 // Binding defines model for Binding.
 type Binding struct {
 	Id              openapi_types.UUID `json:"id"`
@@ -4010,6 +4074,11 @@ type PreviewExpiryRotationParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// GenerateBatchZIPParams defines parameters for GenerateBatchZIP.
+type GenerateBatchZIPParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // ConfirmExpiryRotationParams defines parameters for ConfirmExpiryRotation.
 type ConfirmExpiryRotationParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
@@ -4368,6 +4437,9 @@ type CreateDeliveryDestinationJSONRequestBody = CreateDeliveryDestination
 // UpdateDeliveryDestinationJSONRequestBody defines body for UpdateDeliveryDestination for application/json ContentType.
 type UpdateDeliveryDestinationJSONRequestBody = UpdateDeliveryDestination
 
+// GenerateBatchZIPJSONRequestBody defines body for GenerateBatchZIP for application/json ContentType.
+type GenerateBatchZIPJSONRequestBody = RotationJoinAction
+
 // ConfirmExpiryRotationJSONRequestBody defines body for ConfirmExpiryRotation for application/json ContentType.
 type ConfirmExpiryRotationJSONRequestBody = ExpiryRotationConfirmation
 
@@ -4586,6 +4658,15 @@ type ServerInterface interface {
 
 	// (GET /api/owner/v1/expiry-rotation/previews/{previewId})
 	GetExpiryRotationPreview(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID)
+
+	// (GET /api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip)
+	GetBatchZIPStatus(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip)
+	GenerateBatchZIP(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params GenerateBatchZIPParams)
+
+	// (GET /api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip/download)
+	DownloadBatchZIP(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID)
 
 	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/confirm)
 	ConfirmExpiryRotation(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, params ConfirmExpiryRotationParams)
@@ -6641,6 +6722,112 @@ func (siw *ServerInterfaceWrapper) GetExpiryRotationPreview(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetExpiryRotationPreview(w, r, previewId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBatchZIPStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetBatchZIPStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBatchZIPStatus(w, r, previewId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GenerateBatchZIP operation middleware
+func (siw *ServerInterfaceWrapper) GenerateBatchZIP(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GenerateBatchZIPParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GenerateBatchZIP(w, r, previewId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DownloadBatchZIP operation middleware
+func (siw *ServerInterfaceWrapper) DownloadBatchZIP(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DownloadBatchZIP(w, r, previewId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10086,6 +10273,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal", wrapper.StartRotationRemoval)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/run", wrapper.RunRotationRemovalSlot)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/verify", wrapper.VerifyRotationRemovalSlot)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip", wrapper.GetBatchZIPStatus)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip", wrapper.GenerateBatchZIP)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip/download", wrapper.DownloadBatchZIP)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join", wrapper.GetRotationJoinStatus)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/run", wrapper.RunRotationJoin)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/verify", wrapper.VerifyRotationJoin)

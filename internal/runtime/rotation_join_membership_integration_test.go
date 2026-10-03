@@ -175,7 +175,7 @@ func TestRotationJoinMembershipMissingOriginalBinding(t *testing.T) {
 	if err := f.h.finishRotationJoinStage(context.Background(), l, "request_join", "uncertain", true); err != nil {
 		t.Fatal(err)
 	}
-	membershipSchemaVersion(t, 33)
+	membershipSchemaVersion(t, migrations.RequiredVersion)
 	before := executionSources(t, f)
 	// Missing access is also fail-closed for a historical marker without a binding.
 	f.h.rotationJoinEgress = func(context.Context) (rotationJoinEgress, error) {

@@ -225,7 +225,7 @@ func rotationCandidateLedgerLookup(ctx context.Context, db rotationRow, accountI
 		return false, false, err
 	}
 	var blocked bool
-	if err = db.QueryRow(ctx, `SELECT public.tsw_rotation_join_usage_blocks_candidate($1,$2)`, accountID, workspaceID).Scan(&blocked); err != nil {
+	if err = db.QueryRow(ctx, `SELECT public.tsw_rotation_join_usage_blocks_candidate($1,$2) OR EXISTS(SELECT 1 FROM public.tsw_batch_zip_protections WHERE target_account_id=$1)`, accountID, workspaceID).Scan(&blocked); err != nil {
 		return false, false, err
 	}
 	return absent, clear && !blocked, nil
@@ -276,7 +276,7 @@ func rotationPersistedVerdictMatches(ctx context.Context, db rotationRow, worksp
 	// Missing usage must not skip revalidation of global protection under the fence.
 	var status, protectionID string
 	var protectionObserved time.Time
-	err = db.QueryRow(ctx, `SELECT status,evidence_id,observed_at FROM public.tsw_rotation_global_protections WHERE target_account_id=$1`, verdict.AccountID).Scan(&status, &protectionID, &protectionObserved)
+	err = db.QueryRow(ctx, `SELECT status,evidence_id,observed_at FROM public.tsw_rotation_effective_protections WHERE target_account_id=$1`, verdict.AccountID).Scan(&status, &protectionID, &protectionObserved)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return verdict.Protection.Status == "none", nil
 	}

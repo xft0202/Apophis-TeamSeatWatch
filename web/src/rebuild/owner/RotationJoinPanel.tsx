@@ -5,6 +5,7 @@ import { rotationJoinApi, type RotationJoinAction, type RotationJoinStatus } fro
 import { rotationJoinActionLabel, rotationJoinCredentials, rotationJoinErrorMessage, rotationJoinMembership, rotationJoinPhase, rotationJoinUsage } from './rotationJoinState';
 import type { Removal, RemovalSlot } from './rotationRemoval';
 import { createRotationJoinRequests } from './rotationJoinRequests';
+import BatchZIPPanel from './BatchZIPPanel';
 
 export default function RotationJoinPanel({ removal }: { removal: Removal }) {
   const scope = `${removal.previewId}:${removal.workspaceId}:${removal.slots.map((slot) => slot.id).join('|')}`;
@@ -75,5 +76,6 @@ function ScopedRotationJoinPanel({ removal }: { removal: Removal }) {
         {canAct ? <Button size="xs" variant="light" disabled={busy.has(slot.id)} loading={busy.has(slot.id)} onClick={() => void act(slot, action)}>{rotationJoinActionLabel(action)}</Button> : null}
       </Stack></Paper>;
     })}
+    <BatchZIPPanel removal={removal} />
   </Stack></Paper>;
 }

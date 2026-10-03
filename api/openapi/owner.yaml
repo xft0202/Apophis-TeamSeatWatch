@@ -405,6 +405,65 @@ paths:
                 $ref: '#/components/schemas/RotationRemoval'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip:
+    get:
+      operationId: getBatchZIPStatus
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Redacted original batch package state; generation is not customer delivery
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BatchZIPStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: generateBatchZIP
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RotationJoinAction'}
+      responses:
+        '200':
+          description: Complete immutable original package and object association committed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BatchZIPStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip/download:
+    get:
+      operationId: downloadBatchZIP
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Owner-authorized original immutable ZIP bytes
+          content:
+            application/zip:
+              schema: {type: string, format: binary}
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join:
     get:
       operationId: getRotationJoinStatus
@@ -2724,6 +2783,20 @@ components:
       required: [confirmed]
       properties:
         confirmed: {type: boolean}
+    BatchZIPStatus:
+      type: object
+      additionalProperties: false
+      required: [previewId, workspaceId, accountCount, phase, nextAction, canGenerate]
+      properties:
+        previewId: {type: string, format: uuid}
+        workspaceId: {type: string, format: uuid}
+        accountCount: {type: integer, minimum: 0}
+        phase: {type: string, enum: [pending, prepared, reserved, delivered]}
+        nextAction: {type: string, enum: [none, generate, download]}
+        canGenerate: {type: boolean}
+        packageId: {type: string, format: uuid}
+        filename: {type: string}
+        createdAt: {type: string, format: date-time}
     RotationJoinStatus:
       type: object
       additionalProperties: false

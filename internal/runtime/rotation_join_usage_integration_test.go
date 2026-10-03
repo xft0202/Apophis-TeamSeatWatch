@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/xft0202/Apophis-TeamSeatWatch/internal/migrations"
 	"github.com/xft0202/Apophis-TeamSeatWatch/internal/platform"
 )
 
@@ -460,8 +461,8 @@ func TestRotationJoinUsageMigration35DownUpAndImmutableJournal(t *testing.T) {
 	if err := f.pool.QueryRow(context.Background(), `SELECT to_regclass('public.tsw_rotation_join_usage_attempts') IS NULL AND to_regprocedure('public.tsw_rotation_join_usage_ready(uuid)') IS NULL`).Scan(&absent); err != nil || !absent {
 		t.Fatal(absent, err)
 	}
-	membershipSchemaVersion(t, 35)
-	membershipSchemaVersion(t, 35)
+	membershipSchemaVersion(t, migrations.RequiredVersion)
+	membershipSchemaVersion(t, migrations.RequiredVersion)
 	if before != usageOriginalDigest(t, f) {
 		t.Fatal("migration mutated original sources")
 	}

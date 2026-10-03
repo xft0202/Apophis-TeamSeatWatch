@@ -295,6 +295,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getBatchZIPStatus"];
+        put?: never;
+        post: operations["generateBatchZIP"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/batch-zip/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["downloadBatchZIP"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join": {
         parameters: {
             query?: never;
@@ -1494,6 +1526,23 @@ export interface components {
         };
         RotationJoinAction: {
             confirmed: boolean;
+        };
+        BatchZIPStatus: {
+            /** Format: uuid */
+            previewId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            accountCount: number;
+            /** @enum {string} */
+            phase: "pending" | "prepared" | "reserved" | "delivered";
+            /** @enum {string} */
+            nextAction: "none" | "generate" | "download";
+            canGenerate: boolean;
+            /** Format: uuid */
+            packageId?: string;
+            filename?: string;
+            /** Format: date-time */
+            createdAt?: string;
         };
         RotationJoinStatus: {
             /** Format: uuid */
@@ -3292,6 +3341,81 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RotationRemoval"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getBatchZIPStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redacted original batch package state; generation is not customer delivery */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchZIPStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    generateBatchZIP: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationJoinAction"];
+            };
+        };
+        responses: {
+            /** @description Complete immutable original package and object association committed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchZIPStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    downloadBatchZIP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Owner-authorized original immutable ZIP bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
                 };
             };
             default: components["responses"]["Problem"];
