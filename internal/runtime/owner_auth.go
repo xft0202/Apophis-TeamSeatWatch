@@ -595,7 +595,7 @@ func (h *OwnerAuthHandler) rotateSessionTx(ctx context.Context, tx pgx.Tx, owner
 		Outcome:           audit.OutcomeSucceeded,
 		CorrelationID:     correlation(r),
 		SourceFingerprint: source[:],
-		Details:           audit.SessionDetails{Reason: reason},
+		Details:           audit.SessionDetails{Reason: reason, PredecessorSessionID: owner.SessionID},
 		IdempotencyKey:    owner.SessionID + ":rotated:" + newSessionID,
 	})
 	return token, idleExpiresAt, err

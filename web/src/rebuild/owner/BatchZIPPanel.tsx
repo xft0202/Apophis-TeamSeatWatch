@@ -4,6 +4,7 @@ import { batchZIPApi, type BatchZIPStatus } from './batchZIP';
 import { batchZIPCanGenerate, batchZIPDownloadURL, batchZIPLabel } from './batchZIPState';
 import { createRotationJoinRequests } from './rotationJoinRequests';
 import type { Removal } from './rotationRemoval';
+import PublicInventoryPanel from './PublicInventoryPanel';
 
 export default function BatchZIPPanel({ removal }: { removal: Removal }) {
   return <ScopedBatchZIPPanel key={`${removal.previewId}:${removal.workspaceId}`} removal={removal} />;
@@ -50,5 +51,6 @@ function ScopedBatchZIPPanel({ removal }: { removal: Removal }) {
       {status?.nextAction === 'download' && status.packageId ? <Button size="xs" component="a" href={batchZIPDownloadURL(removal.previewId)} download={status.filename}>下载原交付包</Button> : null}
       <Button size="xs" variant="subtle" disabled={busy} onClick={() => void reload()}>刷新状态</Button>
     </Group>
+    {status?.packageId ? <PublicInventoryPanel key={status.packageId} packageId={status.packageId} /> : null}
   </Stack></Paper>;
 }

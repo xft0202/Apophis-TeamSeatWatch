@@ -2204,6 +2204,76 @@ paths:
                 $ref: '#/components/schemas/CardActivation'
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/public-inventory/{packageId}:
+    parameters:
+      - name: packageId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getPublicZIPInventory
+      security:
+        - ownerSession: []
+      responses:
+        '200':
+          description: Independent Public inventory for the owned original ZIP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicZIPInventory'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: activatePublicZIPInventory
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivatePublicZIPInventoryRequest'
+      responses:
+        '200':
+          description: Exact activation or idempotent retry; no secret is returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicZIPInventory'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/public-inventory/{packageId}/revoke:
+    post:
+      operationId: revokePublicZIPInventory
+      security:
+        - ownerSession: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotationJoinAction'
+      responses:
+        '200':
+          description: Public authorization permanently revoked; original protection persists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicZIPInventory'
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/audit-events:
     get:
       operationId: listAuditEvents
@@ -5651,6 +5721,46 @@ components:
         queued:
           type: integer
           minimum: 0
+    PublicZIPInventory:
+      type: object
+      additionalProperties: false
+      required: [packageId, status]
+      properties:
+        packageId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [not_activated, active, revoked, unavailable]
+        cardSuffix:
+          type: string
+        claimExpiresAt:
+          type: string
+          format: date-time
+        accessExpiresAt:
+          type: string
+          format: date-time
+        hasOrder:
+          type: boolean
+    ActivatePublicZIPInventoryRequest:
+      type: object
+      additionalProperties: false
+      required: [cardSecret, claimExpiresAt, accessExpiresAt, confirmed]
+      properties:
+        cardSecret:
+          type: string
+          minLength: 4
+          maxLength: 128
+          pattern: '^TSW1-[A-Za-z0-9_-]+$'
+        claimExpiresAt:
+          type: string
+          format: date-time
+        accessExpiresAt:
+          type: string
+          format: date-time
+        confirmed:
+          type: boolean
+          const: true
     ActivateCardRequest:
       type: object
       additionalProperties: false

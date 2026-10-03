@@ -15,6 +15,21 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for ActivatePublicZIPInventoryRequestConfirmed.
+const (
+	ActivatePublicZIPInventoryRequestConfirmedTrue ActivatePublicZIPInventoryRequestConfirmed = true
+)
+
+// Valid indicates whether the value is a known member of the ActivatePublicZIPInventoryRequestConfirmed enum.
+func (e ActivatePublicZIPInventoryRequestConfirmed) Valid() bool {
+	switch e {
+	case ActivatePublicZIPInventoryRequestConfirmedTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AuditEventActor.
 const (
 	AuditEventActorAnonymous AuditEventActor = "anonymous"
@@ -1251,6 +1266,30 @@ func (e PersonalProbePreviewScope) Valid() bool {
 	}
 }
 
+// Defines values for PublicZIPInventoryStatus.
+const (
+	PublicZIPInventoryStatusActive       PublicZIPInventoryStatus = "active"
+	PublicZIPInventoryStatusNotActivated PublicZIPInventoryStatus = "not_activated"
+	PublicZIPInventoryStatusRevoked      PublicZIPInventoryStatus = "revoked"
+	PublicZIPInventoryStatusUnavailable  PublicZIPInventoryStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the PublicZIPInventoryStatus enum.
+func (e PublicZIPInventoryStatus) Valid() bool {
+	switch e {
+	case PublicZIPInventoryStatusActive:
+		return true
+	case PublicZIPInventoryStatusNotActivated:
+		return true
+	case PublicZIPInventoryStatusRevoked:
+		return true
+	case PublicZIPInventoryStatusUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RemovalDifferenceReason.
 const (
 	OtherBatchMember RemovalDifferenceReason = "other_batch_member"
@@ -2304,6 +2343,17 @@ type ActivateCardRequest struct {
 	IdempotencyKey string `json:"idempotencyKey"`
 }
 
+// ActivatePublicZIPInventoryRequest defines model for ActivatePublicZIPInventoryRequest.
+type ActivatePublicZIPInventoryRequest struct {
+	AccessExpiresAt time.Time                                  `json:"accessExpiresAt"`
+	CardSecret      string                                     `json:"cardSecret"`
+	ClaimExpiresAt  time.Time                                  `json:"claimExpiresAt"`
+	Confirmed       ActivatePublicZIPInventoryRequestConfirmed `json:"confirmed"`
+}
+
+// ActivatePublicZIPInventoryRequestConfirmed defines model for ActivatePublicZIPInventoryRequest.Confirmed.
+type ActivatePublicZIPInventoryRequestConfirmed bool
+
 // AuditEvent defines model for AuditEvent.
 type AuditEvent struct {
 	Actor         AuditEventActor        `json:"actor"`
@@ -3185,6 +3235,19 @@ type Problem struct {
 	Title             string  `json:"title"`
 	Type              string  `json:"type"`
 }
+
+// PublicZIPInventory defines model for PublicZIPInventory.
+type PublicZIPInventory struct {
+	AccessExpiresAt *time.Time               `json:"accessExpiresAt,omitempty"`
+	CardSuffix      *string                  `json:"cardSuffix,omitempty"`
+	ClaimExpiresAt  *time.Time               `json:"claimExpiresAt,omitempty"`
+	HasOrder        *bool                    `json:"hasOrder,omitempty"`
+	PackageId       openapi_types.UUID       `json:"packageId"`
+	Status          PublicZIPInventoryStatus `json:"status"`
+}
+
+// PublicZIPInventoryStatus defines model for PublicZIPInventory.Status.
+type PublicZIPInventoryStatus string
 
 // RefreshJoinRequest defines model for RefreshJoinRequest.
 type RefreshJoinRequest struct {
@@ -4237,6 +4300,16 @@ type CancelPersonalProbesParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// ActivatePublicZIPInventoryParams defines parameters for ActivatePublicZIPInventory.
+type ActivatePublicZIPInventoryParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// RevokePublicZIPInventoryParams defines parameters for RevokePublicZIPInventory.
+type RevokePublicZIPInventoryParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // ListRemovalOperationsNeedingAttentionParams defines parameters for ListRemovalOperationsNeedingAttention.
 type ListRemovalOperationsNeedingAttentionParams struct {
 	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
@@ -4499,6 +4572,12 @@ type CreatePersonalProbesJSONRequestBody = CreatePersonalProbes
 
 // PreviewPersonalProbesJSONRequestBody defines body for PreviewPersonalProbes for application/json ContentType.
 type PreviewPersonalProbesJSONRequestBody = PersonalProbeScope
+
+// ActivatePublicZIPInventoryJSONRequestBody defines body for ActivatePublicZIPInventory for application/json ContentType.
+type ActivatePublicZIPInventoryJSONRequestBody = ActivatePublicZIPInventoryRequest
+
+// RevokePublicZIPInventoryJSONRequestBody defines body for RevokePublicZIPInventory for application/json ContentType.
+type RevokePublicZIPInventoryJSONRequestBody = RotationJoinAction
 
 // CreateStandbyChildBatchJSONRequestBody defines body for CreateStandbyChildBatch for application/json ContentType.
 type CreateStandbyChildBatchJSONRequestBody = StandbyChildBatchChange
@@ -4778,6 +4857,15 @@ type ServerInterface interface {
 
 	// (GET /api/owner/v1/personal-probes/{batchId})
 	GetPersonalProbes(w http.ResponseWriter, r *http.Request, batchId openapi_types.UUID)
+
+	// (GET /api/owner/v1/public-inventory/{packageId})
+	GetPublicZIPInventory(w http.ResponseWriter, r *http.Request, packageId openapi_types.UUID)
+
+	// (POST /api/owner/v1/public-inventory/{packageId})
+	ActivatePublicZIPInventory(w http.ResponseWriter, r *http.Request, packageId openapi_types.UUID, params ActivatePublicZIPInventoryParams)
+
+	// (POST /api/owner/v1/public-inventory/{packageId}/revoke)
+	RevokePublicZIPInventory(w http.ResponseWriter, r *http.Request, packageId openapi_types.UUID, params RevokePublicZIPInventoryParams)
 
 	// (GET /api/owner/v1/removal-operations/needs-attention)
 	ListRemovalOperationsNeedingAttention(w http.ResponseWriter, r *http.Request, params ListRemovalOperationsNeedingAttentionParams)
@@ -8627,6 +8715,140 @@ func (siw *ServerInterfaceWrapper) GetPersonalProbes(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// GetPublicZIPInventory operation middleware
+func (siw *ServerInterfaceWrapper) GetPublicZIPInventory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPublicZIPInventory(w, r, packageId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ActivatePublicZIPInventory operation middleware
+func (siw *ServerInterfaceWrapper) ActivatePublicZIPInventory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ActivatePublicZIPInventoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ActivatePublicZIPInventory(w, r, packageId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokePublicZIPInventory operation middleware
+func (siw *ServerInterfaceWrapper) RevokePublicZIPInventory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "packageId" -------------
+	var packageId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageId", r.PathValue("packageId"), &packageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RevokePublicZIPInventoryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokePublicZIPInventory(w, r, packageId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRemovalOperationsNeedingAttention operation middleware
 func (siw *ServerInterfaceWrapper) ListRemovalOperationsNeedingAttention(w http.ResponseWriter, r *http.Request) {
 
@@ -10355,6 +10577,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/batches/{batchId}/deliveries", wrapper.GetBatchDeliveries)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/batches/{batchId}/deliveries/probe", wrapper.ProbeBatchDeliveries)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/memberships/{membershipId}/card", wrapper.ActivateMembershipCard)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/public-inventory/{packageId}", wrapper.GetPublicZIPInventory)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/public-inventory/{packageId}", wrapper.ActivatePublicZIPInventory)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/public-inventory/{packageId}/revoke", wrapper.RevokePublicZIPInventory)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/audit-events", wrapper.ListAuditEvents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/audit-events/export", wrapper.ExportAuditEvents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/data-protection", wrapper.GetDataProtectionStatus)

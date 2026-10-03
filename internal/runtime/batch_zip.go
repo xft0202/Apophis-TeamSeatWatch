@@ -262,6 +262,19 @@ func (h *OwnerAuthHandler) ReserveBatchZIP(ctx context.Context, packageID uuid.U
 		return e
 	}
 	defer tx.Rollback(ctx)
+	if e = h.reserveBatchZIPTx(ctx, tx, packageID, r); e != nil {
+		return e
+	}
+	return tx.Commit(ctx)
+}
+
+// reserveBatchZIPTx lets independent Public inventory bind its order and global
+// reservation in one transaction, using the same qualification and fences.
+func (h *OwnerAuthHandler) reserveBatchZIPTx(ctx context.Context, tx pgx.Tx, packageID uuid.UUID, r BatchZIPRecipient) error {
+	if !r.valid() {
+		return errBatchZIPProtected
+	}
+	var e error
 	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('tsw.batch.zip.receiver.'||$1::text,0))`, packageID); e != nil {
 		return e
 	}
@@ -271,7 +284,7 @@ func (h *OwnerAuthHandler) ReserveBatchZIP(ctx context.Context, packageID uuid.U
 		if old != r {
 			return errBatchZIPProtected
 		}
-		return tx.Commit(ctx)
+		return nil
 	}
 	if !errors.Is(e, pgx.ErrNoRows) {
 		return e
@@ -310,7 +323,7 @@ func (h *OwnerAuthHandler) ReserveBatchZIP(ctx context.Context, packageID uuid.U
 			return errBatchZIPProtected
 		}
 		var ready bool
-		if e = tx.QueryRow(ctx, `SELECT public.tsw_rotation_join_usage_ready(m.slot_id) AND ev.expires_at>clock_timestamp() AND ua.attempt_no=(SELECT max(attempt_no) FROM public.tsw_rotation_join_usage_attempts WHERE slot_id=m.slot_id) FROM public.tsw_batch_zip_members m JOIN public.tsw_rotation_join_usage_attempts ua ON ua.id=m.usage_attempt_id JOIN public.tsw_rotation_join_usage_evidence ev ON ev.attempt_id=ua.id WHERE m.package_id=$1 AND m.target_account_id=$2`, packageID, id).Scan(&ready); e != nil {
+		if e = tx.QueryRow(ctx, `SELECT public.tsw_archived_batch_zip_ready(m.package_id,m.slot_id) AND ev.expires_at>clock_timestamp() AND ua.attempt_no=(SELECT max(attempt_no) FROM public.tsw_rotation_join_usage_attempts WHERE slot_id=m.slot_id) FROM public.tsw_batch_zip_members m JOIN public.tsw_rotation_join_usage_attempts ua ON ua.id=m.usage_attempt_id JOIN public.tsw_rotation_join_usage_evidence ev ON ev.attempt_id=ua.id WHERE m.package_id=$1 AND m.target_account_id=$2`, packageID, id).Scan(&ready); e != nil {
 			return e
 		}
 		if !ready {
@@ -336,7 +349,7 @@ func (h *OwnerAuthHandler) ReserveBatchZIP(ctx context.Context, packageID uuid.U
 			return e
 		}
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 // ReadBatchZIPForRecipient returns only that exact receiver's original bytes.

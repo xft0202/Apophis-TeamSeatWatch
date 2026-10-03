@@ -1355,6 +1355,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/public-inventory/{packageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                packageId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getPublicZIPInventory"];
+        put?: never;
+        post: operations["activatePublicZIPInventory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/public-inventory/{packageId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revokePublicZIPInventory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/audit-events": {
         parameters: {
             query?: never;
@@ -2695,6 +2729,27 @@ export interface components {
             /** Format: uuid */
             batchId: string;
             queued: number;
+        };
+        PublicZIPInventory: {
+            /** Format: uuid */
+            packageId: string;
+            /** @enum {string} */
+            status: "not_activated" | "active" | "revoked" | "unavailable";
+            cardSuffix?: string;
+            /** Format: date-time */
+            claimExpiresAt?: string;
+            /** Format: date-time */
+            accessExpiresAt?: string;
+            hasOrder?: boolean;
+        };
+        ActivatePublicZIPInventoryRequest: {
+            cardSecret: string;
+            /** Format: date-time */
+            claimExpiresAt: string;
+            /** Format: date-time */
+            accessExpiresAt: string;
+            /** @constant */
+            confirmed: true;
         };
         ActivateCardRequest: {
             cardSecret: string;
@@ -5540,6 +5595,87 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CardActivation"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getPublicZIPInventory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                packageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Independent Public inventory for the owned original ZIP */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicZIPInventory"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    activatePublicZIPInventory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                packageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivatePublicZIPInventoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Exact activation or idempotent retry; no secret is returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicZIPInventory"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    revokePublicZIPInventory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                packageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationJoinAction"];
+            };
+        };
+        responses: {
+            /** @description Public authorization permanently revoked; original protection persists */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicZIPInventory"];
                 };
             };
             default: components["responses"]["Problem"];
