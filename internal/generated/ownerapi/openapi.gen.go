@@ -3244,12 +3244,14 @@ type RotationJoinAction struct {
 type RotationJoinStatus struct {
 	CandidateIdentifier string             `json:"candidateIdentifier"`
 	Credentials         string             `json:"credentials"`
+	DeliveryReady       bool               `json:"deliveryReady"`
 	Diagnostic          string             `json:"diagnostic"`
 	Membership          string             `json:"membership"`
 	NextAction          string             `json:"nextAction"`
 	Phase               string             `json:"phase"`
 	PreviewId           openapi_types.UUID `json:"previewId"`
 	SlotId              openapi_types.UUID `json:"slotId"`
+	Usage               string             `json:"usage"`
 	WorkspaceId         openapi_types.UUID `json:"workspaceId"`
 }
 
@@ -4033,6 +4035,16 @@ type SaveRotationJoinCredentialsParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
 }
 
+// ObserveRotationJoinUsageParams defines parameters for ObserveRotationJoinUsage.
+type ObserveRotationJoinUsageParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
+// RecheckRotationJoinUsageParams defines parameters for RecheckRotationJoinUsage.
+type RecheckRotationJoinUsageParams struct {
+	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
+}
+
 // VerifyRotationJoinParams defines parameters for VerifyRotationJoin.
 type VerifyRotationJoinParams struct {
 	XCSRFToken CsrfHeader `json:"X-CSRF-Token"`
@@ -4371,6 +4383,12 @@ type RunRotationJoinJSONRequestBody = RotationJoinAction
 // SaveRotationJoinCredentialsJSONRequestBody defines body for SaveRotationJoinCredentials for application/json ContentType.
 type SaveRotationJoinCredentialsJSONRequestBody = RotationJoinAction
 
+// ObserveRotationJoinUsageJSONRequestBody defines body for ObserveRotationJoinUsage for application/json ContentType.
+type ObserveRotationJoinUsageJSONRequestBody = RotationJoinAction
+
+// RecheckRotationJoinUsageJSONRequestBody defines body for RecheckRotationJoinUsage for application/json ContentType.
+type RecheckRotationJoinUsageJSONRequestBody = RotationJoinAction
+
 // VerifyRotationJoinJSONRequestBody defines body for VerifyRotationJoin for application/json ContentType.
 type VerifyRotationJoinJSONRequestBody = RotationJoinAction
 
@@ -4589,6 +4607,12 @@ type ServerInterface interface {
 
 	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/save)
 	SaveRotationJoinCredentials(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, slotId openapi_types.UUID, params SaveRotationJoinCredentialsParams)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/usage)
+	ObserveRotationJoinUsage(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, slotId openapi_types.UUID, params ObserveRotationJoinUsageParams)
+
+	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/usage/recheck)
+	RecheckRotationJoinUsage(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, slotId openapi_types.UUID, params RecheckRotationJoinUsageParams)
 
 	// (POST /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/verify)
 	VerifyRotationJoin(w http.ResponseWriter, r *http.Request, previewId openapi_types.UUID, slotId openapi_types.UUID, params VerifyRotationJoinParams)
@@ -6975,6 +6999,132 @@ func (siw *ServerInterfaceWrapper) SaveRotationJoinCredentials(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SaveRotationJoinCredentials(w, r, previewId, slotId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ObserveRotationJoinUsage operation middleware
+func (siw *ServerInterfaceWrapper) ObserveRotationJoinUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "slotId" -------------
+	var slotId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slotId", r.PathValue("slotId"), &slotId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slotId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ObserveRotationJoinUsageParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ObserveRotationJoinUsage(w, r, previewId, slotId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RecheckRotationJoinUsage operation middleware
+func (siw *ServerInterfaceWrapper) RecheckRotationJoinUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "previewId" -------------
+	var previewId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "previewId", r.PathValue("previewId"), &previewId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "previewId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "slotId" -------------
+	var slotId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slotId", r.PathValue("slotId"), &slotId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slotId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RecheckRotationJoinUsageParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RecheckRotationJoinUsage(w, r, previewId, slotId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9941,6 +10091,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/verify", wrapper.VerifyRotationJoin)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/save", wrapper.SaveRotationJoinCredentials)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/repair", wrapper.RepairRotationJoinCredentials)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/usage", wrapper.ObserveRotationJoinUsage)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/usage/recheck", wrapper.RecheckRotationJoinUsage)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/expiry-rotation/previews/{previewId}/removal/stop", wrapper.StopRotationRemoval)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/owner/v1/mother-accounts", wrapper.ListMotherAccounts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/owner/v1/mother-accounts", wrapper.CreateMotherAccount)

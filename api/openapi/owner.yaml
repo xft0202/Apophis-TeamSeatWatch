@@ -539,6 +539,62 @@ paths:
               schema: {$ref: '#/components/schemas/RotationJoinStatus'}
         default:
           $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/usage:
+    post:
+      operationId: observeRotationJoinUsage
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slotId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RotationJoinAction'}
+      responses:
+        '200':
+          description: Durable redacted original-intent status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RotationJoinStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/usage/recheck:
+    post:
+      operationId: recheckRotationJoinUsage
+      security:
+        - ownerSession: []
+      parameters:
+        - name: previewId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: slotId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RotationJoinAction'}
+      responses:
+        '200':
+          description: Durable redacted original-intent status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RotationJoinStatus'}
+        default:
+          $ref: '#/components/responses/Problem'
   /api/owner/v1/expiry-rotation/previews/{previewId}/removal/stop:
     post:
       operationId: stopRotationRemoval
@@ -2681,6 +2737,8 @@ components:
         - credentials
         - nextAction
         - diagnostic
+        - usage
+        - deliveryReady
       properties:
         previewId: {type: string, format: uuid}
         slotId: {type: string, format: uuid}
@@ -2691,6 +2749,8 @@ components:
         credentials: {type: string}
         nextAction: {type: string}
         diagnostic: {type: string}
+        usage: {type: string}
+        deliveryReady: {type: boolean}
 
     ExpiryRotationAssignment:
       type: object

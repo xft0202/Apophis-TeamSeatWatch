@@ -60,6 +60,7 @@ type OwnerAuthHandler struct {
 	rotationJoinEgress         func(context.Context) (rotationJoinEgress, error)
 	rotationJoinAdapters       func(platform.DiscoveryClient) rotationJoinAdapters
 	rotationCredentialAdapters func(platform.DiscoveryClient) platform.RotationCredentialAdapter
+	rotationUsageAdapters      func(platform.DiscoveryClient) platform.RotationUsageReader
 	secureCookies              bool
 }
 
@@ -144,6 +145,9 @@ func NewOwnerAuthHandler(config OwnerAuthConfig) (http.Handler, func(), error) {
 	handler.rotationJoinAdapters = officialRotationJoinAdapters
 	handler.rotationCredentialAdapters = func(client platform.DiscoveryClient) platform.RotationCredentialAdapter {
 		return platform.OfficialRotationCredentialAdapter{Client: client}
+	}
+	handler.rotationUsageAdapters = func(client platform.DiscoveryClient) platform.RotationUsageReader {
+		return platform.OfficialRotationUsageReader{Client: client}
 	}
 	if handler.selectedWorkspaceReader != nil {
 		handler.rotationCapability = officialRotationCapability{handler: handler}

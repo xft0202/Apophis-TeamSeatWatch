@@ -156,7 +156,7 @@ func (h *OwnerAuthHandler) reserveRotationJoinIntent(ctx context.Context, owner 
 	if !eligible {
 		return rotationJoinIntent{}, removalFailure("candidate_local_facts_changed")
 	}
-	previouslyUsed, err := rotationPreviouslyUsed(ctx, tx, candidate)
+	previouslyUsed, err := rotationPreviouslyUsed(ctx, tx, candidate, a.preview.WorkspaceId)
 	if err != nil {
 		return rotationJoinIntent{}, err
 	}

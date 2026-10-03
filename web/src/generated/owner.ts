@@ -375,6 +375,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["observeRotationJoinUsage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/slots/{slotId}/join/usage/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["recheckRotationJoinUsage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/owner/v1/expiry-rotation/previews/{previewId}/removal/stop": {
         parameters: {
             query?: never;
@@ -1476,6 +1508,8 @@ export interface components {
             credentials: string;
             nextAction: string;
             diagnostic: string;
+            usage: string;
+            deliveryReady: boolean;
         };
         ExpiryRotationAssignment: {
             platformMemberId: string;
@@ -3378,6 +3412,66 @@ export interface operations {
         };
     };
     repairRotationJoinCredentials: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+                slotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationJoinAction"];
+            };
+        };
+        responses: {
+            /** @description Durable redacted original-intent status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationJoinStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    observeRotationJoinUsage: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CsrfHeader"];
+            };
+            path: {
+                previewId: string;
+                slotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotationJoinAction"];
+            };
+        };
+        responses: {
+            /** @description Durable redacted original-intent status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotationJoinStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    recheckRotationJoinUsage: {
         parameters: {
             query?: never;
             header: {
