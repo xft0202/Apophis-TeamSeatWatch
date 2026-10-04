@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { togglePage } from '../src/rebuild/owner/childSelection.ts';
-import { frozenStandbyPreview, standbyRangeLimitNotice, standbySelectionRequest } from '../src/rebuild/owner/standbySelection.ts';
+import { togglePage } from '../src/owner/childSelection.ts';
+import { frozenStandbyPreview, standbyRangeLimitNotice, standbySelectionRequest } from '../src/owner/standbySelection.ts';
 
 test('cross-page checkboxes and explicit all-current-filter do not conflate ranges', () => {
   const selected = togglePage(togglePage(new Set(), ['first', 'second']), ['third']);

@@ -1,0 +1,166 @@
+@import url('https://api.fontshare.com/v2/css?f[]=general-sans@400,600&display=swap');
+@import '@mantine/core/styles.css';
+
+:root {
+  color: #0a0a0a;
+  background: #fafafa;
+  font-family: 'DM Sans', 'Segoe UI', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: #fafafa;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background: #fafafa;
+}
+
+.auth-card {
+  width: min(100%, 456px);
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: #0a0a0a;
+  letter-spacing: -0.02em;
+}
+
+.brand-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  background: #0a0a0a;
+  color: #fafafa;
+  font-family: 'General Sans', 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.brand-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.auth-title {
+  margin-top: 32px;
+  letter-spacing: -0.04em;
+}
+
+.auth-form {
+  margin-top: 32px;
+}
+
+.auth-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+.session-page {
+  min-height: 100vh;
+  background: #fafafa;
+}
+
+.session-header {
+  border-bottom: 1px solid #e8e8ec;
+  background: #ffffff;
+}
+
+.session-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 56px;
+}
+
+.session-main {
+  padding-top: 48px;
+  padding-bottom: 64px;
+}
+
+.session-username {
+  overflow-wrap: anywhere;
+}
+
+.session-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.session-status::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #10b981;
+  content: '';
+}
+
+.public-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background: #fafafa;
+}
+
+.public-card {
+  width: min(100%, 560px);
+}
+
+@media (max-width: 520px) {
+  .auth-page {
+    padding: 24px 16px;
+  }
+
+  .session-header-inner {
+    min-height: 56px;
+  }
+
+  .session-main {
+    padding-top: 32px;
+    padding-bottom: 40px;
+  }
+}
+
+.session-header { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px); }
+.session-main :is(p, span) { overflow-wrap: anywhere; }
+.mantine-Input-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgb(99 102 241 / 12%); }
+.mantine-Paper-root { border-color: #e8e8ec; }
+.mantine-Title-root { letter-spacing: -0.03em; }
+:is(.session-page, .auth-page) :is(.mantine-Button-root, .mantine-Badge-root, .mantine-InputWrapper-label, .mantine-Table-th, .mantine-Tabs-tab, .mantine-Alert-title, .mantine-Pagination-control) { font-weight: 600; }
+.mantine-Button-root:hover { transform: translateY(-1px); }
+.mantine-Tabs-list { flex-wrap: wrap; }
+@media (max-width: 520px) { .brand-name { max-width: 176px; font-size: 12px; } .session-main .mantine-Paper-root { padding: 16px; } }

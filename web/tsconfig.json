@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
@@ -11,7 +15,13 @@
     "useUnknownInCatchVariables": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["vite/client"]
+    "types": [
+      "vite/client"
+    ]
   },
-  "include": ["src", "vite.owner.config.ts", "vite.public.config.ts", "vite.owner-rebuild.config.ts"]
+  "include": [
+    "src",
+    "vite.owner.config.ts",
+    "vite.public.config.ts"
+  ]
 }

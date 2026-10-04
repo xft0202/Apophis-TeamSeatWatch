@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { exportRange, togglePage } from '../src/rebuild/owner/childSelection.ts';
-import { visiblePersonalStatus } from '../src/rebuild/owner/personalSessionStatus.ts';
+import { exportRange, togglePage } from '../src/owner/childSelection.ts';
+import { visiblePersonalStatus } from '../src/owner/personalSessionStatus.ts';
 
 test('page selection keeps earlier pages without silently selecting filtered results', () => {
   const first = togglePage(new Set(), ['a', 'b']);

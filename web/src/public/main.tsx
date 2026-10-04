@@ -2,7 +2,7 @@ import { MantineProvider, Container, Group, Text } from '@mantine/core';
 import { createRoot } from 'react-dom/client';
 import '@fontsource/dm-sans/400.css';
 import '@fontsource/dm-sans/600.css';
-import { appTheme } from '../rebuild/shared/theme';
+import { appTheme } from '../shared/theme';
 import './public.css';
 import RedeemPage from './RedeemPage';
 

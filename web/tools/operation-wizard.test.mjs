@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canChooseDestination, draftStatus, wizardStep } from '../src/rebuild/owner/operationWizardState.ts';
-import { createOperationWizardRequests } from '../src/rebuild/owner/operationWizardRequests.ts';
+import { canChooseDestination, draftStatus, wizardStep } from '../src/owner/operationWizardState.ts';
+import { createOperationWizardRequests } from '../src/owner/operationWizardRequests.ts';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 

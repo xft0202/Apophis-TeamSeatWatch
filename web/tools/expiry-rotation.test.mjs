@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canConfirmRotation, explicitRotationAssignments, rotationCandidateStatus, rotationStatus } from '../src/rebuild/owner/rotationPreviewState.ts';
+import { canConfirmRotation, explicitRotationAssignments, rotationCandidateStatus, rotationStatus } from '../src/owner/rotationPreviewState.ts';
 
 const now = Date.parse('2026-01-01T00:00:00Z');
 const ready = {
@@ -22,18 +22,23 @@ test('wizard submits explicit mapping review only for a fresh, exact ready previ
   assert.equal(canConfirmRotation({ ...ready, candidates: [{ decision: 'eligible' }] }, 4, now), false);
   assert.equal(canConfirmRotation({ ...ready, candidates: [{ decision: 'eligible', deliveryStatus: 'blocked' }] }, 4, now), false);
   assert.equal(canConfirmRotation({ ...ready, slots: [{ decision: 'retained' }] }, 4, now), false);
-  assert.match(rotationStatus({ ...ready, status: 'pending_permission' }), /可读取空间不代表允许管理/);
-  assert.match(rotationStatus({ ...ready, status: 'needs_verification' }), /不会整批清退/);
-  assert.match(rotationStatus(ready), /可明确冻结逐席授权/);
+  assert.match(rotationStatus({ ...ready, status: 'pending_permission' }), /管理权限待核验/);
+  assert.match(rotationStatus({ ...ready, status: 'needs_verification' }), /席位或候选待核验/);
+  assert.match(rotationStatus(ready), /预览已核验 · 待确认/);
 });
 
 test('join candidate is not a deliverable before persisted post-join scoped zero', () => {
   const candidate = { decision: 'eligible', usageState: 'unobserved_prejoin', deliveryStatus: 'join_candidate_pending_first_probe', reason: 'join_candidate_pending_first_probe' };
   assert.match(rotationCandidateStatus(candidate), /当前不可交付/);
   for (const reason of ['usage_absence_unverified', 'usage_unknown']) {
-    assert.match(rotationCandidateStatus({ ...candidate, decision: 'excluded', deliveryStatus: 'blocked', reason }), /不能当作无记录/);
+    assert.match(rotationCandidateStatus({ ...candidate, decision: 'excluded', deliveryStatus: 'blocked', reason }), /用量记录待核验/);
   }
   assert.match(rotationCandidateStatus({ ...candidate, decision: 'excluded', deliveryStatus: 'blocked', reason: 'sticky_usage_conflict' }), /曾有用量/);
+  assert.match(rotationCandidateStatus({ ...candidate, decision: 'retained', deliveryStatus: 'blocked', protectionStatus: 'delivered', reason: 'global_delivery_protected' }), /全局保护 · 不可解除/);
+  for (const protectionStatus of ['delivered', 'canceled_retired']) {
+    assert.equal(rotationCandidateStatus({ ...candidate, protectionStatus, reason: 'invitation_required' }), '已全局保护 · 不可解除', 'permanent account protection takes priority over invitation and join states');
+  }
+  assert.equal(rotationCandidateStatus({ ...candidate, protectionStatus: 'none', reason: 'global_delivery_protected' }), '已全局保护 · 不可解除');
   assert.match(rotationCandidateStatus({ ...candidate, decision: 'excluded', deliveryStatus: 'blocked', reason: 'legacy_preview_requires_repreview' }), /重新预览核验/);
 });
 

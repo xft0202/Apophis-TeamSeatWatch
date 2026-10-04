@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canShowWorkspaceFacts, canShowSelectedWorkspaceFacts, createWorkspaceRequestGate } from '../src/rebuild/owner/workspaceVerification.ts';
+import { canShowWorkspaceFacts, canShowSelectedWorkspaceFacts, createWorkspaceRequestGate } from '../src/owner/workspaceVerification.ts';
 
 const fact = {
   status: 'verified', permission: 'manage', accessStatus: 'readable',

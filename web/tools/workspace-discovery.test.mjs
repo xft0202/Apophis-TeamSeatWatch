@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canDiscover, confirmWorkspace, isWorkspaceSelectable } from '../src/rebuild/owner/workspaceSelection.ts';
+import { canDiscover, confirmWorkspace, isWorkspaceSelectable } from '../src/owner/workspaceSelection.ts';
 
 const visible = { id: 'team-1', displayName: 'One', accessStatus: 'readable' };
 const denied = { id: 'team-2', displayName: 'Two', accessStatus: 'permission_denied' };

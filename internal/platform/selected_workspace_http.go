@@ -16,6 +16,7 @@ import (
 const selectedWorkspaceOrigin = "https://chatgpt.com"
 const selectedPageLimit = 100
 const selectedMaxEntries = 1000
+const selectedMaxMembers = 999
 
 // OfficialSelectedWorkspaceReader uses only the four sourced GET capabilities
 // with an explicitly exchanged Workspace bearer. Client must hand it an admitted
@@ -248,13 +249,17 @@ func fetchSelectedPages[T any](ctx context.Context, r selectedHTTPRead, endpoint
 	var entries []Member
 	seen := map[string]bool{}
 	declared := -1
+	maximum := selectedMaxEntries
+	if endpoint == "workspace_members" {
+		maximum = selectedMaxMembers
+	}
 	for offset := 0; ; {
 		body, outcome := r.page(ctx, endpoint, offset)
 		if outcome != OutcomeOperational {
 			return nil, outcome
 		}
 		var page selectedPage[T]
-		if json.Unmarshal(body, &page) != nil || page.Total == nil || page.Offset == nil || page.Limit == nil || page.Items == nil || *page.Total < 0 || *page.Total > selectedMaxEntries || *page.Offset != offset || *page.Limit != selectedPageLimit || len(page.Items) > *page.Limit || len(page.Items) > *page.Total-offset {
+		if json.Unmarshal(body, &page) != nil || page.Total == nil || page.Offset == nil || page.Limit == nil || page.Items == nil || *page.Total < 0 || *page.Total > maximum || *page.Offset != offset || *page.Limit != selectedPageLimit || len(page.Items) > *page.Limit || len(page.Items) > *page.Total-offset {
 			return nil, OutcomeIncomplete
 		}
 		if declared < 0 {

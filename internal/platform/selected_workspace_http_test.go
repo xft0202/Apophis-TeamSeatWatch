@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -130,5 +132,38 @@ func TestOfficialSelectedWorkspaceReaderRejectsInvalidPersonalSessionWithoutIO(t
 	facts, err := readerFixture(transport).VerifySelectedWorkspace(context.Background(), WorkspaceAccess{}, "mother-id", "canonical-space")
 	if err != nil || facts.Permission != "unknown" || len(transport.calls) != 0 {
 		t.Fatalf("invalid session used transport: %+v %v", facts, err)
+	}
+}
+
+func TestOfficialSelectedWorkspaceReaderMemberBoundary999(t *testing.T) {
+	for _, declared := range []int{999, 1000} {
+		t.Run(strconv.Itoa(declared), func(t *testing.T) {
+			transport := &selectedTransport{answer: func(r *http.Request) (int, string, http.Header) {
+				if strings.HasSuffix(r.URL.Path, "/users") {
+					offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+					items := []map[string]string{}
+					// The rejected 1000 declaration has no members: this fixture never
+					// constructs a Workspace containing more than 999 actual members.
+					if declared == 999 {
+						for i := offset; i < min(offset+100, 999); i++ {
+							items = append(items, map[string]string{"id": fmt.Sprintf("member-%d", i), "email": fmt.Sprintf("member%d@boundary.test", i), "role": "member", "seat_type": "prolite"})
+						}
+					}
+					raw, _ := json.Marshal(map[string]any{"total": declared, "limit": 100, "offset": offset, "items": items})
+					return 200, string(raw), nil
+				}
+				return selectedOK(r)
+			}}
+			facts, err := readerFixture(transport).VerifySelectedWorkspace(context.Background(), selectedSession(), "mother", "canonical-space")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if declared == 999 && (facts.Result.Outcome != OutcomeOperational || facts.Result.MemberCount == nil || *facts.Result.MemberCount != 999) {
+				t.Fatalf("999 members rejected: %+v", facts)
+			}
+			if declared == 1000 && facts.Result.Completeness == Complete {
+				t.Fatal("over-limit declared membership reported complete")
+			}
+		})
 	}
 }

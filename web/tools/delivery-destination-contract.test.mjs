@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { URL, fileURLToPath } from 'node:url';
 
 const contract = await readFile(fileURLToPath(new URL('../../api/openapi/owner.yaml', import.meta.url)), 'utf8');
-const adapter = await readFile(fileURLToPath(new URL('../src/rebuild/owner/deliveryDestination.ts', import.meta.url)), 'utf8');
+const adapter = await readFile(fileURLToPath(new URL('../src/owner/deliveryDestination.ts', import.meta.url)), 'utf8');
 
 test('delivery destination contract is Owner-authenticated and secret-redacting', () => {
   assert.match(contract, /\/api\/owner\/v1\/delivery-destinations:/);

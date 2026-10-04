@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { URL } from 'node:url';
-import { removalSlotAction, removalSlotStatus, removalErrorMessage } from '../src/rebuild/owner/rotationRemovalState.ts';
-import { rotationJoinActionLabel, rotationJoinCredentials, rotationJoinMembership, rotationJoinPhase, rotationJoinUsage } from '../src/rebuild/owner/rotationJoinState.ts';
-import { createRotationJoinRequests } from '../src/rebuild/owner/rotationJoinRequests.ts';
+import { removalSlotAction, removalSlotStatus, removalErrorMessage } from '../src/owner/rotationRemovalState.ts';
+import { rotationJoinActionLabel, rotationJoinCredentials, rotationJoinMembership, rotationJoinPhase, rotationJoinUsage } from '../src/owner/rotationJoinState.ts';
+import { createRotationJoinRequests } from '../src/owner/rotationJoinRequests.ts';
 
 function slot(state, more = {}) {
   return { id: 'slot', platformMemberId: 'frozen-member', originalAccountId: 'original', candidateAccountId: 'frozen-candidate', identifier: 'original@example.test', seatType: 'prolite', state, attemptCount: 0, leaseEpoch: 0, uncertainObligation: false, lastErrorCode: '', updatedAt: '2026-01-01T00:00:00Z', candidateReady: false, ...more };
@@ -37,7 +37,7 @@ test('stop, authorization drift and live leases prevent new dispatch but preserv
   assert.equal(removalSlotAction(progress, leased, Date.parse('2026-01-01T00:02:00Z')), 'run');
 });
 test('browser mount, refresh and history recovery use only reads; stopped work is not silently recreated', () => {
-  const ui = readFileSync(new URL('../src/rebuild/owner/RotationRemovalPanel.tsx', import.meta.url), 'utf8');
+  const ui = readFileSync(new URL('../src/owner/RotationRemovalPanel.tsx', import.meta.url), 'utf8');
   const effects = ui.slice(ui.indexOf('  useEffect('), ui.indexOf('  async function control'));
   assert.doesNotMatch(effects, /rotationRemovalApi\.(start|run|stop|verify)\(/);
   assert.match(ui, /rotationRemovalApi\.history/);
@@ -49,13 +49,13 @@ test('browser mount, refresh and history recovery use only reads; stopped work i
   assert.match(ui, /slot\.candidateReady \? '空位已核实，候选加入尚未启用' : '不可加入'/);
 });
 test('removal panel uses short business states and actions rather than teaching paragraphs', () => {
-  const ui = readFileSync(new URL('../src/rebuild/owner/RotationRemovalPanel.tsx', import.meta.url), 'utf8');
+  const ui = readFileSync(new URL('../src/owner/RotationRemovalPanel.tsx', import.meta.url), 'utf8');
   assert.match(ui, /停止后续清退/);
   assert.match(ui, /只读核实原槽/);
   assert.doesNotMatch(ui, /回执不算空位|停止或撤权不会撤回/);
 });
 test('request keys and target scope are stable after a lost response, reload or new login', () => {
-  const client = readFileSync(new URL('../src/rebuild/owner/rotationRemoval.ts', import.meta.url), 'utf8');
+  const client = readFileSync(new URL('../src/owner/rotationRemoval.ts', import.meta.url), 'utf8');
   assert.match(client, /const digest = preview\.authorizationDigest/);
   assert.match(client, /if \(!digest\) throw/);
   assert.match(client, /authorizationDigest: digest/);
@@ -65,7 +65,7 @@ test('request keys and target scope are stable after a lost response, reload or 
   assert.doesNotMatch(client, /\.DELETE\(/);
 });
 test('join panel exposes explicit original-intent actions and saved usage qualification', () => {
-  const ui = readFileSync(new URL('../src/rebuild/owner/RotationJoinPanel.tsx', import.meta.url), 'utf8');
+  const ui = readFileSync(new URL('../src/owner/RotationJoinPanel.tsx', import.meta.url), 'utf8');
   assert.match(ui, /rotationJoinApi\.get/);
   assert.match(ui, /rotationJoinApi\.act/);
   assert.match(ui, /status.deliveryReady/);

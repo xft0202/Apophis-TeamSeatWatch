@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { channelCanReceive, channelDeliveryLabel, channelFinalLabel, channelReceptionLabel } from '../src/rebuild/owner/channelDeliveryState.ts';
-import { createRotationJoinRequests } from '../src/rebuild/owner/rotationJoinRequests.ts';
+import { channelCanReceive, channelDeliveryLabel, channelFinalLabel, channelReceptionLabel } from '../src/owner/channelDeliveryState.ts';
+import { createRotationJoinRequests } from '../src/owner/rotationJoinRequests.ts';
 
 test('reception is distinct from final customer delivery and unknown receipts stay actionable', () => {
   assert.equal(channelDeliveryLabel({ phase: 'received' }), '待交付回执');
@@ -29,9 +29,9 @@ test('late polling and changed workspace cannot replace an original channel acti
   assert.equal(requests.finishAction(action), false);
 });
 test('Mantine channel results remain in original operation and passive reload never pushes', () => {
-  const ui = readFileSync(new URL('../src/rebuild/owner/ChannelDeliveryPanel.tsx', import.meta.url), 'utf8');
-  const api = readFileSync(new URL('../src/rebuild/owner/channelDelivery.ts', import.meta.url), 'utf8');
-  const parent = readFileSync(new URL('../src/rebuild/owner/RotationJoinPanel.tsx', import.meta.url), 'utf8');
+  const ui = readFileSync(new URL('../src/owner/ChannelDeliveryPanel.tsx', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../src/owner/channelDelivery.ts', import.meta.url), 'utf8');
+  const parent = readFileSync(new URL('../src/owner/RotationJoinPanel.tsx', import.meta.url), 'utf8');
   const effects = ui.slice(ui.indexOf('  useEffect('), ui.indexOf('  async function act'));
   assert.doesNotMatch(effects, /receive|reconcile/);
   assert.match(ui, /isCurrentRead/);

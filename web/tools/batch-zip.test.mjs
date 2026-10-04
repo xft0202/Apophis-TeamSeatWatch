@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { batchZIPCanGenerate, batchZIPDownloadURL, batchZIPLabel } from '../src/rebuild/owner/batchZIPState.ts';
-import { createRotationJoinRequests } from '../src/rebuild/owner/rotationJoinRequests.ts';
+import { batchZIPCanGenerate, batchZIPDownloadURL, batchZIPLabel } from '../src/owner/batchZIPState.ts';
+import { createRotationJoinRequests } from '../src/owner/rotationJoinRequests.ts';
 
 test('prepared and reserved packages remain pending customer delivery', () => {
   assert.equal(batchZIPLabel({ phase: 'prepared' }), '待交付');
@@ -26,8 +26,8 @@ test('lost response and changed workspace cannot make stale results overwrite or
   assert.equal(guard.isCurrentRead(current), true);
 });
 test('one original ZIP is a result action; mounting and polling never generate it', () => {
-  const ui = readFileSync(new URL('../src/rebuild/owner/BatchZIPPanel.tsx', import.meta.url), 'utf8');
-  const client = readFileSync(new URL('../src/rebuild/owner/batchZIP.ts', import.meta.url), 'utf8');
+  const ui = readFileSync(new URL('../src/owner/BatchZIPPanel.tsx', import.meta.url), 'utf8');
+  const client = readFileSync(new URL('../src/owner/batchZIP.ts', import.meta.url), 'utf8');
   const effects = ui.slice(ui.indexOf('  useEffect('), ui.indexOf('  async function generate'));
   assert.doesNotMatch(effects, /batchZIPApi\.generate/);
   assert.match(ui, /key=\{`\$\{removal.previewId\}:\$\{removal.workspaceId\}`\}/);
@@ -40,7 +40,7 @@ test('one original ZIP is a result action; mounting and polling never generate i
   assert.match(client, /mutationHeaders/);
   assert.equal(batchZIPDownloadURL('original/id'), '/api/owner/v1/expiry-rotation/previews/original%2Fid/batch-zip/download');
   for (const page of ['ChildMaterialsView', 'StandbyChildBatchesView']) {
-    const source = readFileSync(new URL(`../src/rebuild/owner/${page}.tsx`, import.meta.url), 'utf8');
+    const source = readFileSync(new URL(`../src/owner/${page}.tsx`, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /batchZIP|BatchZIP|sub2api/);
   }
 });

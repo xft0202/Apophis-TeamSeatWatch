@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { personalProbeScope } from '../src/rebuild/owner/personalProbeScope.ts';
-import { PersonalPreviewGate } from '../src/rebuild/owner/personalPreviewGate.ts';
+import { personalProbeScope } from '../src/owner/personalProbeScope.ts';
+import { PersonalPreviewGate } from '../src/owner/personalPreviewGate.ts';
 
 test('personal probe selected IDs take precedence across pages and exclude the search filter', () => {
   const selected = new Set(['page-2', 'page-1']);
