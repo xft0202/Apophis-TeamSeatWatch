@@ -1,0 +1,17 @@
+@import '../shared/app.css';
+:root { font-family: 'DM Sans', 'Segoe UI', sans-serif; color: var(--tsw-text); background: var(--tsw-background); font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+.public-shell { min-height: 100vh; background: var(--tsw-background); }
+.public-header { background: var(--tsw-surface); border-bottom: 1px solid var(--tsw-border); }
+.public-content { padding-top: 64px; padding-bottom: 64px; }
+.public-title { font-size: 32px; letter-spacing: -0.04em; margin: 0; }
+.public-redeem-page { max-width: 1080px; }
+.public-redeem-page .public-input-panel { max-width: 720px; }
+.public-redeem-page .public-result-row { min-height: 0; }
+.mantine-Input-input:focus { box-shadow: 0 0 0 3px rgb(76 78 218 / 12%); }
+@media (max-width: 600px) { .public-content { padding-top: 32px; padding-bottom: 32px; } .public-title { font-size: 32px; } }
+
+.public-shell .mantine-InputWrapper-label,
+.public-shell .mantine-Button-root,
+.public-shell .mantine-Badge-root { font-weight: 600; }

@@ -1,0 +1,73 @@
+import ActionNotice from '../shared/ActionNotice';
+import { Alert, Box, Button, Group, Modal, NumberInput, Paper, PasswordInput, Select, SimpleGrid, Stack, Table, Text, Textarea, TextInput, Title } from '@mantine/core';
+import OwnerIcon from './OwnerIcon';
+import { formatDateTime } from '../shared/dateTime';
+import { diagnosticLabel, proxyFailureLabel, proxyStateLabel, sessionRemaining, sourceLabel, sourceOptions, sourceFilterOptions, type ProxyState, type ProxySourceFilter, type SourceDraft } from './proxyPool';
+import useProxyPool from './useProxyPool';
+import StatusBadge from '../shared/StatusBadge';
+import ListPagination from '../shared/ListPagination';
+
+const countryNames = new Intl.DisplayNames(['zh-CN'], { type: 'region' });
+const countries = 'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW'.split(' ').map(value => ({ value, label: `${countryNames.of(value) ?? value} · ${value}` }));
+function checkedLabel(value?: string | null): string { return value ? formatDateTime(value) : '未验证'; }
+
+export default function ProxyManagementView({ active }: { active: boolean }) {
+  const state = useProxyPool(active);
+  const { pool, pending, draft } = state;
+  const disabled = pending !== null;
+  const direct = pool?.mode === 'direct';
+  return <section className="management-page proxy-page" aria-labelledby="proxy-heading">
+    <Group className="owner-page-header" justify="space-between" align="center">
+      <Group gap={12}><Box className="management-page-icon"><OwnerIcon name="proxy" size={20} /></Box><Title id="proxy-heading" order={1}>代理管理</Title></Group>
+      <Group gap="xs"><Button variant="default" disabled={disabled || !pool} onClick={state.openSettings}>运行参数</Button><Button disabled={disabled || !pool} onClick={state.openSource}>配置来源</Button></Group>
+    </Group>
+    <ActionNotice message={state.dialog || state.removing ? '' : state.notice} tone={state.noticeTone} onClose={state.dismissNotice} mb="md" />
+    {pool ? <>
+      <Box className="proxy-status-strip" role="status"><Group gap="lg" wrap="wrap">
+        <Text size="sm">{direct ? '直连模式' : pool.source ? sourceLabel(pool.source.kind) : '代理模式'}</Text>
+        {direct ? <><Text size="sm">并发上限 <strong>{pool.taskConcurrency}</strong></Text><Text size="sm">执行中 <strong>{pool.activeLeases}</strong></Text></> : <><Text size="sm"><strong>{pool.healthyCount}</strong> 健康 / 目标 {pool.targetHealthy}</Text>
+        <Text size="sm"><strong>{pool.pendingCount}</strong> 待验证</Text><Text size="sm"><strong>{pool.isolatedCount}</strong> 已隔离</Text><Text size="sm"><strong>{pool.activeLeases}</strong> 使用中</Text>
+        {pool.refilling ? <StatusBadge tone="warning" label="正在补齐" /> : pool.healthyCount < pool.targetHealthy ? <StatusBadge tone="warning" label={`待补齐 ${pool.targetHealthy - pool.healthyCount} 个`} /> : null}</>}
+      </Group></Box>
+      {pool.source?.lastError ? <Alert color="warning" mb="md">{pool.source.lastError}</Alert> : null}
+      <Paper withBorder radius={12} className="management-list-panel proxy-list-panel">
+        <Group className="management-list-heading" justify="space-between" gap="sm" wrap="wrap">
+          <Group gap="sm"><Select aria-label="代理状态筛选" placeholder="全部状态" clearable value={state.filterState ?? null} onChange={value => state.filterByState(value ? value as ProxyState : undefined)} data={[{ value: 'healthy', label: '健康' }, { value: 'pending', label: '待验证' }, { value: 'isolated', label: '已隔离' }]} w={130} /><Select aria-label="代理来源筛选" placeholder="全部来源" clearable value={state.filterSource ?? null} onChange={value => state.filterBySource(value ? value as ProxySourceFilter : undefined)} data={sourceFilterOptions} w={150} /></Group>
+          <Group gap="xs"><Button variant="default" disabled={disabled || direct || !pool.source || pool.refilling} loading={pending === 'sync'} onClick={() => void state.sync()}>立即补齐</Button><Button variant="default" disabled={disabled || !pool.total} loading={pending === 'probe'} onClick={() => void state.probe()}>验证全部</Button><Button variant="default" disabled={disabled} onClick={() => state.setDialog('manual')}>手动补充</Button><Button variant="subtle" disabled={disabled} onClick={state.refresh}>刷新</Button></Group>
+        </Group>
+        <Table.ScrollContainer minWidth={940}><Table className="management-table" highlightOnHover>
+          <Table.Thead><Table.Tr><Table.Th className="proxy-node-host">节点</Table.Th><Table.Th>来源</Table.Th><Table.Th>地区</Table.Th><Table.Th>会话剩余</Table.Th><Table.Th>状态</Table.Th><Table.Th>最近验证</Table.Th><Table.Th>操作</Table.Th></Table.Tr></Table.Thead>
+          <Table.Tbody>{pool.nodes.map(node => {
+            const status = proxyStateLabel(node.state); const checking = pending === `probe:${node.id}`;
+            const failure = [...node.diagnostics].reverse().find(step => !!step.code);
+            return <Table.Tr key={node.id}>
+              <Table.Td className="proxy-node-host"><Text size="sm" fw={500}>{node.displayHost}</Text><Text size="xs" c="dimmed">{node.scheme.toUpperCase()}{node.sessionKey ? ` · ${node.sessionKey}` : ''}</Text></Table.Td>
+              <Table.Td>{sourceLabel(node.sourceKind)}</Table.Td><Table.Td><Text size="xs">{node.region || '—'}</Text></Table.Td><Table.Td><Text size="xs">{sessionRemaining(node.stableUntil)}</Text></Table.Td>
+              <Table.Td><StatusBadge tone={checking ? 'warning' : status.tone} label={checking ? '验证中' : status.label} />{node.leaseCount > 0 ? <Text size="xs" c="dimmed" mt={4}>使用中</Text> : null}{node.failureReason ? <Text size="xs" c="error" mt={4}>{failure ? diagnosticLabel(failure) : proxyFailureLabel(node.failureReason)}</Text> : null}</Table.Td>
+              <Table.Td><Text size="xs">{checkedLabel(node.checkedAt)}</Text></Table.Td><Table.Td><Group justify="center" gap={4} wrap="nowrap"><Button variant="subtle" size="xs" loading={checking} disabled={disabled || node.leaseCount > 0 || !!node.stableUntil && Date.parse(node.stableUntil) - Date.now() < 120000} onClick={() => void state.probeNode(node)}>重新验证</Button><Button variant="subtle" color="error" size="xs" disabled={disabled || node.leaseCount > 0} title={node.leaseCount > 0 ? '正在使用，结束后可移除' : undefined} onClick={() => state.setRemoving(node)}>移除</Button></Group></Table.Td>
+            </Table.Tr>;
+          })}{!pool.nodes.length ? <Table.Tr><Table.Td colSpan={7}><Text ta="center" c="dimmed" py="xl">{state.filterState || state.filterSource ? '没有符合条件的代理' : '还没有代理节点'}</Text></Table.Td></Table.Tr> : null}</Table.Tbody>
+        </Table></Table.ScrollContainer>
+        <ListPagination page={pool.page} pageSize={pool.pageSize} total={pool.total} disabled={disabled} onPageChange={state.setPage} onPageSizeChange={state.changePageSize} />
+      </Paper>
+    </> : <Paper withBorder radius={12} p="xl"><Text c="dimmed">{state.loading ? '正在读取代理池…' : '代理池读取失败'}</Text>{!state.loading ? <Button variant="default" mt="md" onClick={state.refresh}>重新读取</Button> : null}</Paper>}
+    <Modal opened={state.dialog === 'source'} onClose={() => { if (!disabled) state.setDialog(null); }} title="配置代理来源" size="lg" centered>
+      <Stack gap="md"><ActionNotice message={state.dialog === 'source' ? state.notice : ''} tone={state.noticeTone} onClose={state.dismissNotice} />
+        <Select label="代理来源" value={draft.kind} data={sourceOptions} disabled={disabled} allowDeselect={false} onChange={value => { const kind = sourceOptions.find(item => item.value === value)?.value; if (kind) state.chooseSource(kind); }} />
+        {draft.kind !== 'direct' ? <TextInput label="来源名称" value={draft.label ?? ''} disabled={disabled} onChange={event => state.changeDraft({ label: event.currentTarget.value })} /> : null}
+        {state.supplier ? <>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md"><TextInput label="代理用户名" value={draft.username ?? ''} placeholder={state.savedSource?.usernameSet ? '已保存，留空保留' : ''} autoComplete="off" disabled={disabled} onChange={event => state.changeDraft({ username: event.currentTarget.value })} /><PasswordInput label="代理密码" value={draft.password ?? ''} placeholder={state.savedSource?.passwordSet ? '已保存，留空保留' : ''} autoComplete="new-password" disabled={disabled} onChange={event => state.changeDraft({ password: event.currentTarget.value })} /></SimpleGrid>
+          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md"><TextInput label="网关地址" value={draft.host ?? ''} disabled={disabled} onChange={event => state.changeDraft({ host: event.currentTarget.value })} /><NumberInput label="端口" value={draft.port ?? ''} min={1} max={65535} allowDecimal={false} disabled={disabled} onChange={value => state.changeDraft({ port: Number(value) })} /><Select label="协议" value={draft.protocol ?? 'socks5h'} data={[{ value: 'socks5h', label: 'SOCKS5' }, { value: 'http', label: 'HTTP' }, { value: 'https', label: 'HTTPS' }]} disabled={disabled} allowDeselect={false} onChange={value => state.changeDraft({ protocol: value as NonNullable<SourceDraft['protocol']> })} /></SimpleGrid>
+          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md"><Select label="国家" searchable data={countries} value={draft.country ?? 'US'} disabled={disabled} allowDeselect={false} onChange={value => state.changeDraft({ country: value ?? 'US', state: '', city: '' })} /><TextInput label="州 / 省" value={draft.state ?? ''} placeholder="不限定" disabled={disabled} onChange={event => state.changeDraft({ state: event.currentTarget.value, city: '' })} /><TextInput label="城市" value={draft.city ?? ''} placeholder="不限定" disabled={disabled} onChange={event => state.changeDraft({ city: event.currentTarget.value })} /></SimpleGrid>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md"><Select label="会话类型" value={draft.sessionType ?? 'sticky'} data={[{ value: 'sticky', label: '固定会话（Sticky）' }, { value: 'rotating', label: '动态换 IP（Rotating）' }]} allowDeselect={false} disabled={disabled} onChange={value => state.changeDraft({ sessionType: value as NonNullable<SourceDraft['sessionType']> })} />{draft.sessionType !== 'rotating' ? <NumberInput label="会话时长（分钟）" value={draft.sessionMinutes ?? 120} min={state.provider?.minMinutes ?? 1} max={state.provider?.maxMinutes ?? 120} allowDecimal={false} disabled={disabled} onChange={value => state.changeDraft({ sessionMinutes: Number(value) })} /> : null}</SimpleGrid>
+          {draft.sessionType === 'rotating' ? <Alert color="warning">动态换 IP 无法用于需要稳定出口的登录和 OAuth 任务。</Alert> : null}
+        </> : draft.kind === 'subscription' ? <><TextInput label="订阅链接" type="url" value={draft.url ?? ''} placeholder={state.savedSource?.urlMasked || 'https://'} disabled={disabled} onChange={event => state.changeDraft({ url: event.currentTarget.value })} /><NumberInput label="更新间隔（秒）" value={draft.updateSeconds ?? 300} min={60} max={86400} allowDecimal={false} disabled={disabled} onChange={value => state.changeDraft({ updateSeconds: Number(value) })} /></> : null}
+        {state.diagnostic ? <Paper withBorder p="sm"><Stack gap={8}><StatusBadge tone={state.diagnostic.passed ? 'success' : 'error'} label={state.diagnostic.passed ? '连接测试通过' : '连接测试未通过'} />{state.diagnostic.steps.map((step, index) => <Group key={index} justify="space-between"><Text size="sm" {...(step.code ? { c: 'error' } : {})}>{diagnosticLabel(step)}</Text><Text size="xs" c="dimmed">{step.durationMs} ms</Text></Group>)}</Stack></Paper> : null}
+        <Group justify="flex-end"><Button variant="default" disabled={disabled || !state.validSource} loading={pending === 'test'} onClick={() => void state.testSource()}>测试连接</Button><Button disabled={disabled || !state.validSource} loading={pending === 'source'} onClick={() => void state.saveSource()}>保存配置</Button></Group>
+      </Stack>
+    </Modal>
+    <Modal opened={state.dialog === 'manual'} onClose={() => { if (!disabled) state.setDialog(null); }} title="手动补充代理" size="lg" centered><Stack gap="md"><ActionNotice message={state.dialog === 'manual' ? state.notice : ''} tone={state.noticeTone} onClose={state.dismissNotice} /><Textarea label="代理地址" placeholder="每行一个 HTTP 或 SOCKS5 地址" minRows={6} value={state.manual} disabled={disabled} onChange={event => state.setManual(event.currentTarget.value)} /><Group justify="flex-end"><Button disabled={disabled || !state.manual.trim()} loading={pending === 'import'} onClick={() => void state.importNodes()}>导入并验证</Button></Group></Stack></Modal>
+    <Modal opened={state.dialog === 'settings'} onClose={() => { if (!disabled) state.setDialog(null); }} title="运行参数" centered><Stack gap="md"><ActionNotice message={state.dialog === 'settings' ? state.notice : ''} tone={state.noticeTone} onClose={state.dismissNotice} />{!direct ? <><NumberInput label="健康节点目标" min={1} max={1000} allowDecimal={false} value={state.targetHealthy} onChange={value => state.setTargetHealthy(Number(value))} disabled={disabled} /><NumberInput label="验证并发" min={1} max={100} allowDecimal={false} value={state.probeConcurrency} onChange={value => state.setProbeConcurrency(Number(value))} disabled={disabled} /></> : null}<NumberInput label="全局业务并发" min={1} max={100} allowDecimal={false} value={state.taskConcurrency} onChange={value => state.setTaskConcurrency(Number(value))} disabled={disabled} /><Group justify="flex-end"><Button disabled={disabled || !state.validSettings} loading={pending === 'settings'} onClick={() => void state.saveSettings()}>保存运行参数</Button></Group></Stack></Modal>
+    <Modal opened={state.removing !== null} onClose={() => { if (!disabled) state.setRemoving(null); }} title="移除代理" centered><Stack gap="md"><ActionNotice message={state.removing ? state.notice : ''} tone={state.noticeTone} onClose={state.dismissNotice} /><Text>{state.removing?.displayHost}</Text><Group justify="flex-end"><Button variant="default" disabled={disabled} onClick={() => state.setRemoving(null)}>取消</Button><Button color="error" disabled={disabled} loading={!!pending?.startsWith('remove:')} onClick={() => void state.remove()}>确认移除</Button></Group></Stack></Modal>
+  </section>;
+}

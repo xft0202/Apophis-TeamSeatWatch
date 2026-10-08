@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    network_mode: host
+    restart: unless-stopped
+    env_file: ${TSW_INSTALL_DIR}/postgres.env
+    command: [postgres, -c, listen_addresses=127.0.0.1, -c, 'port=${TSW_DATABASE_PORT}']
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -p, '${TSW_DATABASE_PORT}', -U, teamseatwatch, -d, teamseatwatch]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  control:
+    image: ${TSW_IMAGE}
+    network_mode: host
+    restart: unless-stopped
+    command: [control]
+    env_file: ${TSW_INSTALL_DIR}/control.env
+    volumes:
+      - ${TSW_INSTALL_DIR}/keyring.json:/secrets/keyring.json:ro
+      - ${TSW_INSTALL_DIR}/tls/control:/tls:ro
+
+  gateway:
+    image: ${TSW_IMAGE}
+    network_mode: host
+    restart: unless-stopped
+    command: [gateway]
+    env_file: ${TSW_INSTALL_DIR}/gateway.env
+    volumes:
+      - ${TSW_INSTALL_DIR}/tls/gateway:/tls:ro
+
+  https:
+    image: nginx:stable-alpine
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ${TSW_INSTALL_DIR}/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${TSW_INSTALL_DIR}/tls/web:/tls:ro
+
+  cli:
+    image: ${TSW_IMAGE}
+    network_mode: host
+    profiles: [maintenance]
+    env_file: ${TSW_INSTALL_DIR}/database.env
+    volumes:
+      - ${TSW_INSTALL_DIR}/keyring.json:/secrets/keyring.json:ro
+
+volumes:
+  database:

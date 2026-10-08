@@ -1,0 +1,305 @@
+openapi: 3.1.0
+info:
+  title: Apophis-TeamSeatWatch Private API
+  version: 1.0.0
+  description: Private mTLS control API used by the public gateway.
+paths:
+  /internal/v1/health:
+    get:
+      operationId: getPrivateHealth
+      summary: Check whether the control service can serve the gateway
+      responses:
+        '200':
+          description: Control service and schema are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Healthy'
+        '503':
+          description: Control service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unavailable'
+  /internal/v1/public/redeem/confirm:
+    post:
+      operationId: confirmPublicRedeem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardRequest'
+      responses:
+        '200':
+          description: Order access granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RedeemConfirmation'
+        default:
+          $ref: '#/components/responses/Problem'
+  /internal/v1/public/redeem/state:
+    get:
+      operationId: getPublicRedeemState
+      responses:
+        '200':
+          description: Current state for the customer access cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RedeemState'
+        default:
+          $ref: '#/components/responses/Problem'
+  /internal/v1/public/redeem/records:
+    get:
+      operationId: listPublicRedeemRecords
+      responses:
+        '200':
+          description: Redacted customer timeline
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RedeemTimeline'
+        default:
+          $ref: '#/components/responses/Problem'
+  /internal/v1/public/redeem/credential-status:
+    post:
+      operationId: checkPublicRedeemCredentialStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardRequest'
+      responses:
+        '200':
+          description: Persisted status and queued customer probe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+  /internal/v1/public/redeem/reclaim:
+    post:
+      operationId: requestPublicRedeemReclaim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardRequest'
+      responses:
+        '202':
+          description: OAuth reclaim accepted or already active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclaimStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+  /internal/v1/public/redeem/reclaim/status:
+    get:
+      operationId: getPublicRedeemReclaimStatus
+      responses:
+        '200':
+          description: Read-only OAuth reclaim status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclaimStatus'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /internal/v1/public/redeem/download:
+    post:
+      operationId: downloadPublicRedeemDelivery
+      responses:
+        '200':
+          description: >-
+            Server-produced ZIP containing the authorized original account delivery.
+            Repeated downloads preserve the original payload and archive bytes.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: '#/components/responses/Problem'
+components:
+  responses:
+    Problem:
+      description: Stable public-safe error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Healthy:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    Unavailable:
+      type: object
+      additionalProperties: false
+      required: [status, dependency]
+      properties:
+        status:
+          type: string
+          const: not_ready
+        dependency:
+          type: string
+          enum: [database, migration]
+    CardRequest:
+      type: object
+      additionalProperties: false
+      required: [cardSecret]
+      properties:
+        cardSecret:
+          type: string
+          minLength: 4
+          maxLength: 128
+          pattern: '^TSW1-[A-Za-z0-9_-]+$'
+    TimelineEntry:
+      type: object
+      additionalProperties: false
+      required: [occurredAt, action, result]
+      properties:
+        occurredAt:
+          type: string
+          format: date-time
+        action:
+          type: string
+        result:
+          type: string
+        reason:
+          type: string
+    RedeemPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - cardSuffix
+        - hasOrder
+        - canClaim
+        - canAccess
+        - remainingSeconds
+        - deliveryStatus
+        - livenessStatus
+      properties:
+        filename:
+          type: string
+        accountCount:
+          type: integer
+          minimum: 1
+          maximum: 999
+          description: Account-card redemption always contains one account; an independent ZIP authorization may contain a batch.
+        deliveryFormat:
+          type: string
+          enum: [zip]
+        cardSuffix:
+          type: string
+        hasOrder:
+          type: boolean
+        canClaim:
+          type: boolean
+        canAccess:
+          type: boolean
+        remainingSeconds:
+          type: integer
+          format: int64
+        deliveryStatus:
+          type: string
+        livenessStatus:
+          type: string
+    RedeemConfirmation:
+      allOf:
+        - $ref: '#/components/schemas/RedeemPreview'
+        - type: object
+          required: [action]
+          properties:
+            action:
+              type: string
+    RedeemState:
+      allOf:
+        - $ref: '#/components/schemas/RedeemPreview'
+        - type: object
+          required: [timeline]
+          properties:
+            timeline:
+              type: array
+              maxItems: 100
+              items:
+                $ref: '#/components/schemas/TimelineEntry'
+    RedeemTimeline:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/TimelineEntry'
+    CredentialStatus:
+      type: object
+      additionalProperties: false
+      required: [status, checkQueued, hasOrder]
+      properties:
+        status:
+          type: string
+        checkQueued:
+          type: boolean
+        hasOrder:
+          type: boolean
+          description: Whether this card already has an original redemption order.
+        checkedAt:
+          type: string
+          format: date-time
+    ReclaimStatus:
+      type: object
+      additionalProperties: false
+      required: [status, deliveryStatus, livenessStatus]
+      properties:
+        status:
+          type: string
+          enum: [not_requested, queued, running, retry_wait, succeeded, failed]
+        stage:
+          type: string
+          enum: [probe, refresh, relogin, publish]
+        tier:
+          type: string
+          enum: [probe_ok, token_refresh, full_relogin, unrecoverable]
+        result:
+          type: string
+          enum: [queued, checking, healthy, restored, unrecoverable, unknown]
+        deliveryStatus:
+          type: string
+          enum: [available, unavailable]
+        livenessStatus:
+          type: string
+          enum: [healthy, need_reclaim, cannot_reclaim, unknown]
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+        detail:
+          type: string
+        retryAfterSeconds:
+          type: integer

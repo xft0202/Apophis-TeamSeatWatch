@@ -1,0 +1,14 @@
+.git
+.pi
+.scratch
+deploy
+docs
+web/node_modules
+web/dist
+coverage
+test-results
+playwright-report
+reports
+*.sbom.json
+*.spdx.json
+*.cdx.json

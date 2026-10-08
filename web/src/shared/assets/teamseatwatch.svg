@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <style>
+    @media (prefers-color-scheme: dark) {
+      .seat-ring-violet { stop-color: var(--brand-violet, #BAADD7); }
+      .seat-ring-blue { stop-color: var(--brand-blue, #9FAED5); }
+      .seat-ring-cyan { stop-color: var(--brand-cyan, #91BDC8); }
+      .seat-ring-green { stop-color: var(--brand-green, #9FC4AC); }
+      .seat-ring-gold { stop-color: var(--brand-gold, #D0BE8E); }
+      .seat-ring-orange { stop-color: var(--brand-orange, #DDB59F); }
+      .seat-ring-red { stop-color: var(--brand-red, #DBA8B2); }
+    }
+  </style>
+  <defs>
+    <linearGradient id="teamseatwatch-rainbow" x1="3" y1="16" x2="29" y2="16" gradientUnits="userSpaceOnUse">
+      <stop class="seat-ring-violet" offset="0" stop-color="var(--brand-violet, #6657A8)" />
+      <stop class="seat-ring-blue" offset=".1667" stop-color="var(--brand-blue, #4C65A7)" />
+      <stop class="seat-ring-cyan" offset=".3333" stop-color="var(--brand-cyan, #367786)" />
+      <stop class="seat-ring-green" offset=".5" stop-color="var(--brand-green, #4C785D)" />
+      <stop class="seat-ring-gold" offset=".6667" stop-color="var(--brand-gold, #866B35)" />
+      <stop class="seat-ring-orange" offset=".8333" stop-color="var(--brand-orange, #9A6044)" />
+      <stop class="seat-ring-red" offset="1" stop-color="var(--brand-red, #A65361)" />
+    </linearGradient>
+  </defs>
+  <path d="M19.5 4.5H12C7.858 4.5 4.5 7.858 4.5 12V20C4.5 24.142 7.858 27.5 12 27.5H20C24.142 27.5 27.5 24.142 27.5 20V12.5" stroke="url(#teamseatwatch-rainbow)" stroke-width="2.25" stroke-linecap="round" />
+  <rect x="22.5" y="3" width="6.5" height="6.5" rx="2" fill="url(#teamseatwatch-rainbow)" />
+  <path d="M11 17H19V21H11Z" fill="url(#teamseatwatch-rainbow)" />
+  <rect x="11" y="11" width="8" height="4" rx="2" fill="url(#teamseatwatch-rainbow)" />
+</svg>
