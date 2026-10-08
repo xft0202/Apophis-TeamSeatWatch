@@ -36,9 +36,7 @@ type BuildInput struct {
 	ExpiresIn    int64
 	ExpiresAt    int64
 	IssuedAt     time.Time
-	Name         string
 	FirstOK      time.Time
-	UsageCycle   string
 	// ModelMapping 是自定义模型映射（per-space 配置）；空时回退默认 ModelMapping()。
 	ModelMapping map[string]string
 	// EmptyModelMapping 显式要求推送空模型映射（model_mapping: {}）。
@@ -104,7 +102,7 @@ func BuildSub2APIAt(now time.Time, input BuildInput) (map[string]any, error) {
 	if info.Email != "" {
 		email = info.Email
 	}
-	name := BuildName(input.FirstOK, input.UsageCycle, email, input.Name)
+	name := BuildName(input.FirstOK, email)
 	mapping := ModelMapping()
 	if input.EmptyModelMapping {
 		// 显式空映射优先于默认映射：轮转交付必须推 {}。
@@ -225,22 +223,15 @@ func decodeJWTPart(part string) ([]byte, error) {
 }
 
 // BuildName builds the stable vehicle/departure label used by OAuth deliveries:
-// <M月D日HH.MM>发车-<7D|30D|未知>-<账号名>.
+// <M月D日HH.MM>发车-<邮箱名>.
 // The departure clock is always rendered in UTC+8 regardless of the caller,
 // database driver, container, or host timezone.
-func BuildName(firstOK time.Time, usageCycle, email, fallbackName string) string {
-	local := strings.TrimSpace(fallbackName)
-	if local == "" {
-		local = strings.TrimSpace(email)
-		if idx := strings.Index(local, "@"); idx > 0 {
-			local = local[:idx]
-		}
+func BuildName(firstOK time.Time, email string) string {
+	local := strings.TrimSpace(email)
+	if idx := strings.Index(local, "@"); idx > 0 {
+		local = local[:idx]
 	}
-	cycle := strings.TrimSpace(usageCycle)
-	if cycle == "" {
-		cycle = "未知"
-	}
-	name := firstOK.In(oauthDeliveryUTCPlus8).Format("1月2日15.04") + "发车-" + cycle
+	name := firstOK.In(oauthDeliveryUTCPlus8).Format("1月2日15.04") + "发车"
 	if local != "" {
 		name += "-" + local
 	}

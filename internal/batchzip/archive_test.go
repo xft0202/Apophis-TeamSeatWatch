@@ -72,6 +72,9 @@ func TestArchiveExactWholeBatchAndTechnicalPartitions(t *testing.T) {
 				t.Fatal(bundle, e)
 			}
 			for i, entry := range bundle.Accounts {
+				if entry["name"] != fmt.Sprintf("10月3日17.08发车-child%d", i+1) {
+					t.Fatal("batch account name must use UTC+8 and the email local part", i)
+				}
 				credentials := entry["credentials"].(map[string]any)
 				if credentials["email"] != accounts[i].Identifier || credentials["chatgpt_account_id"] != "platform-space" || credentials["client_id"] != "app_EMoamEEZ73f0CkXaXp7hrann" || entry["type"] != "oauth" || entry["platform"] != "openai" || len(credentials["model_mapping"].(map[string]any)) != 0 {
 					t.Fatal("reference account mapping changed", i)

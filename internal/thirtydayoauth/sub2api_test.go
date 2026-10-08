@@ -39,12 +39,12 @@ func TestOAuthSub2APIBuildPreservesDeliveryShape(t *testing.T) {
 
 	entry, err := BuildSub2APIAt(now, BuildInput{
 		Email: "source@example.com", WorkspaceID: "account-from-claim", RefreshToken: "refresh", AccessToken: accessToken,
-		IDToken: idToken, ExpiresIn: 3600, Name: "vehicle", FirstOK: firstOK, UsageCycle: "30D",
+		IDToken: idToken, ExpiresIn: 3600, FirstOK: firstOK,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry["name"] != "7月22日20.28发车-30D-vehicle" || entry["platform"] != "openai" || entry["type"] != "oauth" {
+	if entry["name"] != "7月22日20.28发车-claim" || entry["platform"] != "openai" || entry["type"] != "oauth" {
 		t.Fatalf("identity shape changed: %#v", entry)
 	}
 	if entry["plan_type"] != "team" || entry["concurrency"] != 100 || entry["priority"] != 1 || entry["rate_multiplier"] != 1 || entry["auto_pause_on_expired"] != true {
@@ -75,12 +75,12 @@ func TestOAuthSub2APIBuildPreservesDeliveryShape(t *testing.T) {
 
 func TestBuildNameAlwaysRendersUTCPlus8(t *testing.T) {
 	instant := time.Date(2026, 8, 7, 7, 18, 0, 0, time.UTC)
-	want := "8月7日15.18发车-30D-samanthataylor23114+klj5"
-	if got := BuildName(instant, "30D", "samanthataylor23114+klj5@example.com", ""); got != want {
+	want := "8月7日15.18发车-samanthataylor23114+klj5"
+	if got := BuildName(instant, "samanthataylor23114+klj5@example.com"); got != want {
 		t.Fatalf("UTC 时间应转为 UTC+8: want=%q got=%q", want, got)
 	}
 	otherZone := time.FixedZone("UTC-5", -5*60*60)
-	if got := BuildName(instant.In(otherZone), "30D", "samanthataylor23114+klj5@example.com", ""); got != want {
+	if got := BuildName(instant.In(otherZone), "samanthataylor23114+klj5@example.com"); got != want {
 		t.Fatalf("同一时刻不应受输入时区影响: want=%q got=%q", want, got)
 	}
 }
@@ -93,28 +93,19 @@ func TestOAuthSub2APIUsesJWTExpiryWhenPersistedExpiresInIsZero(t *testing.T) {
 		"exp":                         expiresAt,
 		"https://api.openai.com/auth": map[string]any{"chatgpt_account_id": "workspace"},
 	})
-	for _, tc := range []struct {
-		cycle string
-		want  string
-	}{
-		{cycle: "7D", want: "3月5日17.07发车-7D-member"},
-		{cycle: "30D", want: "3月5日17.07发车-30D-member"},
-		{cycle: "", want: "3月5日17.07发车-未知-member"},
-	} {
-		entry, err := BuildSub2APIAt(now, BuildInput{
-			Email: "member@example.com", WorkspaceID: "workspace", RefreshToken: "refresh",
-			AccessToken: accessToken, ExpiresIn: 0, FirstOK: firstOK, UsageCycle: tc.cycle,
-		})
-		if err != nil {
-			t.Fatalf("cycle %q: %v", tc.cycle, err)
-		}
-		if entry["name"] != tc.want {
-			t.Errorf("cycle %q: name=%q want=%q", tc.cycle, entry["name"], tc.want)
-		}
-		credentials := entry["credentials"].(map[string]any)
-		if credentials["chatgpt_account_id"] != "workspace" || credentials["expires_at"] != expiresAt {
-			t.Fatalf("fallback shape changed: %#v", credentials)
-		}
+	entry, err := BuildSub2APIAt(now, BuildInput{
+		Email: "member@example.com", WorkspaceID: "workspace", RefreshToken: "refresh",
+		AccessToken: accessToken, ExpiresIn: 0, FirstOK: firstOK,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry["name"] != "3月5日17.07发车-member" {
+		t.Fatalf("name=%q", entry["name"])
+	}
+	credentials := entry["credentials"].(map[string]any)
+	if credentials["chatgpt_account_id"] != "workspace" || credentials["expires_at"] != expiresAt {
+		t.Fatalf("fallback shape changed: %#v", credentials)
 	}
 }
 
@@ -240,7 +231,7 @@ func TestOAuthSub2APIBuildEmptyModelMapping(t *testing.T) {
 	})
 	entry, err := BuildSub2APIAt(now, BuildInput{
 		Email: "empty-map@example.com", WorkspaceID: "acc-empty-map", RefreshToken: "rt",
-		AccessToken: accessToken, IDToken: idToken, ExpiresIn: 3600, Name: "teamseatwatch-rotation-test",
+		AccessToken: accessToken, IDToken: idToken, ExpiresIn: 3600,
 		EmptyModelMapping: true,
 	})
 	if err != nil {

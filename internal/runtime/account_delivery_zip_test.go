@@ -82,6 +82,9 @@ func TestAccountDeliveryZIPUsesReferenceSub2APIFormat(t *testing.T) {
 	if !ok || len(accounts) != 1 {
 		t.Fatal("one card must export one Sub2API account")
 	}
+	if accounts[0].(map[string]any)["name"] != "1月2日11.04发车-target" {
+		t.Fatal("account name must use the original UTC+8 time and email local part")
+	}
 	var source platform.DeliveryCredentialSet
 	if err := json.Unmarshal(payload, &source); err != nil {
 		t.Fatal(err)
