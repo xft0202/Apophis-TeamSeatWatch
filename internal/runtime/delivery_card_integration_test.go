@@ -13,6 +13,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -341,7 +342,7 @@ func seedCardActivationGraph(t *testing.T, ctx context.Context, pool *pgxpool.Po
 		{`INSERT INTO tsw_batch_memberships(id,batch_id,target_account_id,join_operation_target_id,joined_at) VALUES ($1,$2,$3,$4,now())`, []any{ids.membership, batchID, targetID, operationTargetID}},
 		{`UPDATE tsw_operation_targets SET target_account_id=NULL,membership_id=$2,status='succeeded',completed_at=now() WHERE id=$1`, []any{operationTargetID, ids.membership}},
 		{`INSERT INTO tsw_oauth_assets(id,membership_id,status,current_generation,platform_subject_id) VALUES ($1,$2,'ready',1,'subject')`, []any{ids.asset, ids.membership}},
-		{`INSERT INTO tsw_delivery_versions(id,oauth_asset_id,generation,payload,payload_sha256,validated_platform_subject_id,validated_workspace_id) VALUES ($1,$2,1,'{}',decode(repeat('00',32),'hex'),'subject',$3)`, []any{ids.deliveryVersion, ids.asset, ids.workspace}},
+		{`INSERT INTO tsw_delivery_versions(id,oauth_asset_id,generation,payload,payload_sha256,validated_platform_subject_id,validated_workspace_id) VALUES ($1,$2,1,$4,decode(repeat('00',32),'hex'),'subject',$3)`, []any{ids.deliveryVersion, ids.asset, ids.workspace, accountDeliveryFixture(t, time.Now().UTC(), "workspace-card", "subject")}},
 		{`UPDATE tsw_oauth_assets SET current_delivery_version_id=$2 WHERE id=$1`, []any{ids.asset, ids.deliveryVersion}},
 	}
 	for _, item := range queries {
@@ -456,7 +457,7 @@ func seedOtherWorkspaceDelivery(t *testing.T, fixture cardRevocationFixture) (ca
 		{`INSERT INTO tsw_batch_memberships(id,batch_id,target_account_id,join_operation_target_id,joined_at) VALUES ($1,$2,$3,$4,now())`, []any{membershipID, batchID, targetID, operationTargetID}},
 		{`UPDATE tsw_operation_targets SET target_account_id=NULL,membership_id=$2,status='succeeded',completed_at=now() WHERE id=$1`, []any{operationTargetID, membershipID}},
 		{`INSERT INTO tsw_oauth_assets(id,membership_id,status,current_generation,platform_subject_id) VALUES ($1,$2,'ready',1,'other-subject')`, []any{assetID, membershipID}},
-		{`INSERT INTO tsw_delivery_versions(id,oauth_asset_id,generation,payload,payload_sha256,validated_platform_subject_id,validated_workspace_id) VALUES ($1,$2,1,'{"other":true}',decode(repeat('00',32),'hex'),'other-subject',$3)`, []any{versionID, assetID, workspaceID}},
+		{`INSERT INTO tsw_delivery_versions(id,oauth_asset_id,generation,payload,payload_sha256,validated_platform_subject_id,validated_workspace_id) VALUES ($1,$2,1,$4,decode(repeat('00',32),'hex'),'other-subject',$3)`, []any{versionID, assetID, workspaceID, accountDeliveryFixture(t, time.Now().UTC(), "other-"+workspaceID, "other-subject")}},
 		{`UPDATE tsw_oauth_assets SET current_delivery_version_id=$2 WHERE id=$1`, []any{assetID, versionID}},
 	}
 	for _, item := range queries {

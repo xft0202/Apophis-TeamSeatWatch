@@ -162,9 +162,7 @@ func TestPublicRedeemIntegrationLifecycleAndDynamicAuthorization(t *testing.T) {
 	var originalZIP []byte
 	for range 2 {
 		download := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/download", nil, accessCookie)
-		if !bytes.Equal(accountCardZIPPayload(t, download), []byte("{}")) {
-			t.Fatal("ZIP must retain the original authorized delivery")
-		}
+		accountCardZIPPayload(t, download)
 		if originalZIP != nil && !bytes.Equal(originalZIP, download.Body.Bytes()) {
 			t.Fatal("repeated download must preserve the original ZIP bytes")
 		}
@@ -232,7 +230,7 @@ func TestPublicRedeemIntegrationLifecycleAndDynamicAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Material repairs cannot rewrite or hide an existing customer's frozen delivery.
-	if download := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/download", nil, accessCookie); download.Code != http.StatusOK || !bytes.Equal(accountCardZIPPayload(t, download), []byte("{}")) {
+	if download := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/download", nil, accessCookie); download.Code != http.StatusOK || !bytes.Equal(download.Body.Bytes(), originalZIP) {
 		t.Fatalf("existing order download after 2FA change: %d %s", download.Code, download.Body.String())
 	}
 	if restore := publicRedeemRequest(t, handler, http.MethodPost, "/api/public/v1/redeem/confirm", map[string]any{"cardSecret": secret}, nil); restore.Code != http.StatusOK {
@@ -351,8 +349,8 @@ func accountCardZIPPayload(t *testing.T, response *httptest.ResponseRecorder) []
 		t.Fatalf("account card must download ZIP: status=%d type=%s", response.Code, response.Header().Get("Content-Type"))
 	}
 	archive, err := zip.NewReader(bytes.NewReader(response.Body.Bytes()), int64(response.Body.Len()))
-	if err != nil || len(archive.File) != 1 || archive.File[0].Name != "apophis-teamseatwatch-delivery.json" {
-		t.Fatal("ZIP must contain exactly the original account delivery JSON")
+	if err != nil || len(archive.File) != 1 || archive.File[0].Name != "sub2api_all.json" {
+		t.Fatal("ZIP must contain exactly the original account in Sub2API format")
 	}
 	file, err := archive.File[0].Open()
 	if err != nil {
@@ -362,6 +360,18 @@ func accountCardZIPPayload(t *testing.T, response *httptest.ResponseRecorder) []
 	payload, err := io.ReadAll(file)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var bundle struct {
+		Proxies  []any            `json:"proxies"`
+		Accounts []map[string]any `json:"accounts"`
+	}
+	if err := json.Unmarshal(payload, &bundle); err != nil || bundle.Proxies == nil || len(bundle.Accounts) != 1 {
+		t.Fatal("account ZIP must contain an importable one-account Sub2API bundle")
+	}
+	entry := bundle.Accounts[0]
+	credentials, ok := entry["credentials"].(map[string]any)
+	if !ok || entry["platform"] != "openai" || entry["type"] != "oauth" || credentials["chatgpt_account_id"] != "workspace-card" || credentials["chatgpt_user_id"] != "subject" || credentials["refresh_token"] != "original-refresh" {
+		t.Fatal("account ZIP changed the original authorized identity or credentials")
 	}
 	return payload
 }

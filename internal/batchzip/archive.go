@@ -4,7 +4,6 @@ package batchzip
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -72,16 +71,8 @@ func Write(dst io.Writer, now time.Time, workspace string, accounts []Account) e
 		entries = append(entries, entry)
 		materials.WriteString(a.Identifier + "----" + a.Password + "----" + a.TOTP + "\n")
 	}
-	// Batch envelope and 100-account technical partition are sourced from the
-	// reference Team exporter. Product filenames/omission of IDs are intentional.
-	exported := now.UTC().Truncate(time.Second).Format(time.RFC3339)
-	bundle := func(items []map[string]any) ([]byte, error) {
-		return json.MarshalIndent(struct {
-			ExportedAt string           `json:"exported_at"`
-			Proxies    []any            `json:"proxies"`
-			Accounts   []map[string]any `json:"accounts"`
-		}{exported, []any{}, items}, "", "  ")
-	}
+	// The 100-account technical partition is sourced from the reference Team
+	// exporter. Product filenames/omission of IDs are intentional.
 	zw := zip.NewWriter(dst)
 	write := func(name string, data []byte) error {
 		header := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: now.UTC().Truncate(time.Second)}
@@ -95,7 +86,7 @@ func Write(dst io.Writer, now time.Time, workspace string, accounts []Account) e
 	if err := write("account-materials.txt", []byte(materials.String())); err != nil {
 		return err
 	}
-	data, err := bundle(entries)
+	data, err := thirtydayoauth.MarshalSub2APIBundle(now, entries)
 	if err != nil {
 		return err
 	}
@@ -105,7 +96,7 @@ func Write(dst io.Writer, now time.Time, workspace string, accounts []Account) e
 	if len(entries) > 100 {
 		for start := 0; start < len(entries); start += 100 {
 			end := min(start+100, len(entries))
-			data, err = bundle(entries[start:end])
+			data, err = thirtydayoauth.MarshalSub2APIBundle(now, entries[start:end])
 			if err != nil {
 				return err
 			}
