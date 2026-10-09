@@ -96,6 +96,11 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
   const canImport = importPreview.length > importSummary.invalid;
   const importRows = showImportIssues ? importSummary.issues : importPreview;
   const importedNeedsTwoFactor = importResult?.rows.filter((row) => row.status === 'needs_totp').length ?? 0;
+  const importResultSummary = importResult ? `已保存 ${importResult.imported} · 重复 ${importResult.duplicate} · 无效 ${importResult.invalid}${importedNeedsTwoFactor > 0 ? ` · 2FA 待补 ${importedNeedsTwoFactor}` : ''}` : '';
+
+  useEffect(() => {
+    if (visible && view !== 'list') window.scrollTo(0, 0);
+  }, [view, visible]);
 
   useEffect(() => {
     if (!visible || view !== 'list') return;
@@ -115,8 +120,8 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
 
   function clearSelection() { selectedNames.current.clear(); setSelected(new Set()); }
 
-  function startImport(content = '') {
-    setText(content); setFile(null); setImportPage(1); setShowImportIssues(false); setImportResult(null); setNotice(''); setView('import');
+  function startImport(content = '', previousResult: ImportResult | null = null) {
+    setText(content); setFile(null); setImportPage(1); setShowImportIssues(false); setImportResult(previousResult); setNotice(''); setView('import');
   }
 
   function updateSelection(next: Set<string>, accounts: Child[] = items) {
@@ -250,6 +255,7 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
     {view !== 'list' ? <Group gap={16} className="account-import-steps" aria-label="导入进度">
       {['录入资料', '核对账号', '导入结果'].map((label, index) => <Group key={label} gap={8} className={index === (view === 'import-result' ? 2 : view === 'import-preview' ? 1 : 0) ? 'account-import-step is-current' : 'account-import-step'}><Text className="account-step-number">{String(index + 1).padStart(2, '0')}</Text><Text size="sm">{label}</Text>{index < 2 ? <OwnerIcon name="arrow-right" size={12} /> : null}</Group>)}
     </Group> : null}
+    {view === 'import' && importResult ? <Paper withBorder radius={12} p="md"><Group justify="space-between"><Stack gap={8} align="flex-start"><StatusBadge tone={importResult.imported > 0 ? 'success' : 'warning'} label={importResult.imported > 0 ? '上次导入已完成' : '上次未新增账号'} /><Text size="sm" role="status">{importResultSummary}</Text></Stack><Button variant="default" onClick={() => setView('list')}>查看账号</Button></Group></Paper> : null}
     {view === 'import' ? <Paper withBorder radius={12} className="account-import-panel"><Stack gap={24}>
       <Box className="account-import-source">
         <Box className="account-file-zone"><Box className="account-file-icon"><OwnerIcon name="upload" size={24} /></Box><Text fw={600}>TXT 文件</Text><FileInput value={file} onChange={chooseFile} accept=".txt,text/plain" aria-label="选择 TXT 文件" placeholder="选择 TXT 文件" clearable /></Box>
@@ -258,13 +264,10 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
       <Group justify="flex-end" className="account-panel-actions"><Button disabled={!text.trim()} rightSection={<OwnerIcon name="arrow-right" size={16} />} onClick={() => { setImportResult(null); setShowImportIssues(false); setImportPage(1); setView('import-preview'); }}>预览导入</Button></Group>
     </Stack></Paper> : null}
     {view === 'import-result' && importResult ? <Paper withBorder radius={12} p={{ base: 16, sm: 24 }}><Stack gap="md">
-      <Text fw={600}>导入结果</Text>
-      <Text size="sm" role="status">已保存 {importResult.imported} · 重复 {importResult.duplicate} · 无效 {importResult.invalid}{importedNeedsTwoFactor > 0 ? ` · 2FA 待补 ${importedNeedsTwoFactor}` : ''}</Text>
+      <Group justify="space-between"><Group gap={8}><Box c={importResult.imported > 0 ? 'success' : 'warning'}><OwnerIcon name={importResult.imported > 0 ? 'check' : 'accounts'} size={24} /></Box><Title order={3}>{importResult.imported > 0 ? '导入完成' : '本次未新增账号'}</Title></Group><Group gap={8}><Button variant="default" onClick={() => startImport('', importResult)}>继续导入</Button><Button rightSection={<OwnerIcon name="arrow-right" size={16} />} onClick={() => setView('list')}>查看账号</Button></Group></Group>
+      <Text size="sm" role="status">{importResultSummary}</Text>
       <Stack gap={4} mt="xs">{importResult.rows.filter((row) => row.status !== 'imported').map((row) => <Group key={row.line} justify="space-between"><Text size="xs">第 {row.line} 行 · {row.status === 'duplicate' ? '重复' : row.status === 'needs_totp' ? '资料待补' : '无效'}{row.identifier ? ` · ${row.identifier}` : ''}</Text>{row.status === 'needs_totp' && row.identifier ? <Button size="xs" variant="subtle" onClick={() => void repairTwoFactor(row.identifier!)}>补齐2FA</Button> : null}</Group>)}</Stack>
-      <Group justify="flex-end">
-        {importResult.invalid > 0 ? <Button variant="default" onClick={() => { const lines = text.split('\n'); startImport(importResult.rows.filter((row) => row.status === 'invalid').map((row) => lines[row.line - 1] ?? '').join('\n')); }}>修正未导入</Button> : null}
-        <Button onClick={() => startImport()}>继续导入</Button>
-      </Group>
+      {importResult.invalid > 0 ? <Group justify="flex-end"><Button variant="default" onClick={() => { const lines = text.split('\n'); startImport(importResult.rows.filter((row) => row.status === 'invalid').map((row) => lines[row.line - 1] ?? '').join('\n')); }}>修正未导入</Button></Group> : null}
     </Stack></Paper> : null}
     {view === 'import-preview' ? <Paper withBorder radius={12} p={{ base: 16, sm: 24 }}><Stack gap="md">
       <Group justify="space-between"><Text fw={600}>导入预览 · {importPreview.length} 行</Text><Button variant="default" disabled={pending} onClick={() => setView('import')}>返回修改</Button></Group>

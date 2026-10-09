@@ -67,6 +67,8 @@ test('confirmed account import shows results without offering preview again', as
       await step('01 录入资料');
       await preview(source);
       await result(`已保存 ${count} · 重复 0 · 无效 0`);
+      await page.getByRole('heading', { name: '导入完成', exact: true }).waitFor();
+      assert.equal(await button('查看账号').count(), 1);
       assert.deepEqual(imports, [source]);
     });
     await t.test('result layout fits desktop and narrow screens in light and dark mode', async () => {
@@ -85,12 +87,17 @@ test('confirmed account import shows results without offering preview again', as
       }
       await page.setViewportSize({ width: 1440, height: 1000 });
     });
-    await t.test('continue import clears the previous source and result', async () => {
+    await t.test('continue import starts a fresh source while keeping the completed import receipt', async () => {
       await button('继续导入').click();
       await step('01 录入资料');
       assert.equal(await input().inputValue(), '');
       assert.equal(await button('预览导入').isDisabled(), true);
-      assert.equal(await page.getByText(`已保存 ${count} · 重复 0 · 无效 0`, { exact: true }).count(), 0);
+      assert.equal(await page.getByText(`已保存 ${count} · 重复 0 · 无效 0`, { exact: true }).count(), 1, 'The completed import must remain visible when starting the next file');
+      await page.getByText('上次导入已完成', { exact: true }).waitFor();
+      assert.equal(await button('查看账号').count(), 1);
+      await page.waitForTimeout(3200);
+      assert.equal(await page.getByText(`已保存 ${count} · 重复 0 · 无效 0`, { exact: true }).count(), 1, 'The saved receipt is durable rather than a disappearing toast');
+      if (process.env.TSW_BROWSER_EVIDENCE) await page.screenshot({ path: `${process.env.TSW_BROWSER_EVIDENCE}/continue-import-receipt.png`, fullPage: true });
       assert.deepEqual(imports, [source]);
       await page.locator('input[type=file]').setInputFiles({ name: 'accounts.txt', mimeType: 'text/plain', buffer: Buffer.from(source) });
       await button('预览导入').click();
@@ -198,6 +205,27 @@ test('confirmed account import shows results without offering preview again', as
       assert.equal(await button('确认导入').isDisabled(), false);
       assert.equal(await button('查看待修正').count(), 0);
       await result('已保存 41 · 重复 0 · 无效 0');
+    });
+    await t.test('completed import opens the current account page without another import', async () => {
+      const requests = imports.length;
+      await button('查看账号').click();
+      await page.getByRole('heading', { name: '账号管理', exact: true }).waitFor();
+      await page.getByText('暂无账号', { exact: true }).waitFor();
+      assert.deepEqual(lists.at(-1), { page: '1', pageSize: '20' });
+      assert.equal(imports.length, requests);
+    });
+    await t.test('an all-duplicate import reports no new accounts and preserves that outcome on continue', async () => {
+      await button('导入账号').click();
+      const line = source.split('\n')[0];
+      importResult = { imported: 0, duplicate: 1, invalid: 0, rows: [{ line: 1, status: 'duplicate', identifier: 'import1@example.test' }] };
+      await preview(line);
+      await result('已保存 0 · 重复 1 · 无效 0');
+      await page.getByRole('heading', { name: '本次未新增账号', exact: true }).waitFor();
+      assert.equal(await page.getByRole('heading', { name: '导入完成', exact: true }).count(), 0);
+      await button('继续导入').click();
+      await page.getByText('上次未新增账号', { exact: true }).waitFor();
+      await page.getByText('已保存 0 · 重复 1 · 无效 0', { exact: true }).waitFor();
+      assert.equal(await input().inputValue(), '');
     });
     assert.deepEqual(errors, []);
   } finally {
