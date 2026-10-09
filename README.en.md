@@ -31,6 +31,18 @@
 
 ---
 
+<a id="notice"></a>
+
+## Important notes
+
+> **Project identity**: TeamSeatWatch is an independent open source project and is not affiliated with OpenAI.
+>
+> **Authorized use**: Only manage accounts and workspaces you are authorized to use, and follow upstream terms of service and applicable laws.
+>
+> **Usage risks**: Account restrictions and changes to upstream rules may affect availability. The project is provided as is, with no guarantee of account quality or service continuity. See [LICENSE](LICENSE) for the software license and liability terms.
+>
+> **Protect your data**: Keep account credentials and card secrets secure, back up important data, and hide sensitive information in public feedback.
+
 <p align="center"><strong>EXCLUSIVE SPONSOR</strong></p>
 
 <a href="https://www.apophis.uk/">
@@ -101,6 +113,28 @@ The first run builds the app, prepares the configuration and guides you through 
 **[Read the deployment & first-use guide →](docs/deployment.en.md)**<br>
 These are local addresses on the deployment host. The guide covers remote access, a redemption domain and routine maintenance.
 
+<a id="structure"></a>
+
+## Project structure
+
+<details>
+<summary><strong>View directories and their purpose</strong></summary>
+
+```text
+Apophis-TeamSeatWatch/
+├── deploy/          # Startup, deployment and maintenance
+├── web/src/
+│   ├── owner/       # Admin workspace
+│   ├── public/      # Customer redemption and recovery
+│   └── shared/      # Shared components and styles
+├── cmd/             # Service entry point
+├── internal/        # Accounts, seats, batches and delivery
+├── api/openapi/     # API specifications
+└── docs/            # Deployment guides and project visuals
+```
+
+</details>
+
 <a id="community"></a>
 
 ## Community & feedback
@@ -121,12 +155,24 @@ These are local addresses on the deployment host. The guide covers remote access
 </a>
 </p>
 
-<sub>Hide account credentials and other sensitive information in shared screenshots.</sub>
+<a id="stars"></a>
+
+## Star History
+
+If this project helps you, give it a Star to support its continued development.
+
+<a href="https://www.star-history.com/?repos=xft0202%2FApophis-TeamSeatWatch&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=xft0202/Apophis-TeamSeatWatch&amp;type=date&amp;theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=xft0202/Apophis-TeamSeatWatch&amp;type=date">
+    <img src="https://api.star-history.com/chart?repos=xft0202/Apophis-TeamSeatWatch&amp;type=date" width="100%" alt="GitHub Star history for Apophis TeamSeatWatch. Click to view the detailed chart.">
+  </picture>
+</a>
 
 ---
 
 <p align="center">
   <strong>Apophis TeamSeatWatch</strong><br>
-  <sub>Open source · Self-hosted · Improvements welcome</sub><br>
+  <sub>Open source project · Self-hosted · Improvements welcome</sub><br>
   <sub><a href="LICENSE">Apache License 2.0</a> · <a href="NOTICE">NOTICE</a> · Exclusively sponsored by <a href="https://www.apophis.uk/">ApophisCode</a></sub>
 </p>

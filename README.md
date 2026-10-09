@@ -10,7 +10,7 @@
 <h1 align="center">Apophis TeamSeatWatch</h1>
 
 <p align="center">
-  面向临期 ChatGPT Team 的公益开源管理工作台。<br>
+  面向临期 ChatGPT Team 的开源管理工作台。<br>
   账号、席位与交付，在一处清晰掌握。
 </p>
 
@@ -30,6 +30,18 @@
 </p>
 
 ---
+
+<a id="notice"></a>
+
+## 重要提醒
+
+> **项目身份**：TeamSeatWatch 是独立开源项目，与 OpenAI 无官方关联。
+>
+> **使用边界**：请仅管理已获授权的账号与空间，并遵守上游服务条款及适用法律。
+>
+> **使用风险**：账号限制、上游规则变化可能影响使用。项目按现状提供，不承诺账号质量或服务连续性；软件许可与责任边界详见 [LICENSE](LICENSE)。
+>
+> **资料保护**：请妥善保管账号凭据与卡密，备份重要数据；公开反馈时隐藏敏感信息。
 
 <p align="center"><strong>独家赞助商</strong></p>
 
@@ -101,6 +113,28 @@ python3 deploy/manage.py start
 **[查看部署与首次使用指南 →](docs/deployment.md)**<br>
 以上为部署主机的本机入口，远程访问、兑换域名与日常维护方法见指南。
 
+<a id="structure"></a>
+
+## 项目结构
+
+<details>
+<summary><strong>查看目录与用途</strong></summary>
+
+```text
+Apophis-TeamSeatWatch/
+├── deploy/          # 启动、部署与日常维护
+├── web/src/
+│   ├── owner/       # 管理工作台
+│   ├── public/      # 用户兑换与找回
+│   └── shared/      # 共用组件与样式
+├── cmd/             # 服务启动入口
+├── internal/        # 账号、席位、批次与交付业务
+├── api/openapi/     # 接口规范
+└── docs/            # 部署指南与项目展示素材
+```
+
+</details>
+
 <a id="community"></a>
 
 ## 交流与反馈
@@ -121,12 +155,24 @@ python3 deploy/manage.py start
 </a>
 </p>
 
-<sub>附图请隐藏账号凭据等敏感信息。</sub>
+<a id="stars"></a>
+
+## Star History
+
+如果项目对你有帮助，欢迎点一个 Star，支持开源项目持续完善。
+
+<a href="https://www.star-history.com/?repos=xft0202%2FApophis-TeamSeatWatch&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=xft0202/Apophis-TeamSeatWatch&amp;type=date&amp;theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=xft0202/Apophis-TeamSeatWatch&amp;type=date">
+    <img src="https://api.star-history.com/chart?repos=xft0202/Apophis-TeamSeatWatch&amp;type=date" width="100%" alt="Apophis TeamSeatWatch 的 GitHub Star 增长历史，点击查看详细图表。">
+  </picture>
+</a>
 
 ---
 
 <p align="center">
   <strong>Apophis TeamSeatWatch</strong><br>
-  <sub>公益开源 · 自托管 · 欢迎参与改进</sub><br>
+  <sub>开源项目 · 自托管 · 欢迎参与改进</sub><br>
   <sub><a href="LICENSE">Apache License 2.0</a> · <a href="NOTICE">NOTICE</a> · 由 <a href="https://www.apophis.uk/">ApophisCode</a> 独家赞助</sub>
 </p>
