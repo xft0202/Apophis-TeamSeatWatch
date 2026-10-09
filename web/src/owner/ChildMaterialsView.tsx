@@ -51,6 +51,7 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
   const [debouncedDomain] = useDebouncedValue(domain, 300);
   const selectedNames = useRef(new Map<string, string>());
   const [importPage, setImportPage] = useState(1);
+  const [showImportIssues, setShowImportIssues] = useState(false);
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -85,6 +86,16 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
       return { line: index + 1, identifier: email && fields.length === 3 ? identifier : '—', format, duplicate, needsTwoFactor: !completeTwoFactor };
     });
   }, [text]);
+  const importSummary = useMemo(() => {
+    const invalid = importPreview.filter((row) => !row.format).length;
+    const duplicate = importPreview.filter((row) => row.duplicate).length;
+    const needsTwoFactor = importPreview.filter((row) => row.format && !row.duplicate && row.needsTwoFactor).length;
+    const issues = importPreview.filter((row) => !row.format || (!row.duplicate && row.needsTwoFactor));
+    return { invalid, duplicate, needsTwoFactor, complete: importPreview.length - invalid - duplicate - needsTwoFactor, issues };
+  }, [importPreview]);
+  const canImport = importPreview.length > importSummary.invalid;
+  const importRows = showImportIssues ? importSummary.issues : importPreview;
+  const importedNeedsTwoFactor = importResult?.rows.filter((row) => row.status === 'needs_totp').length ?? 0;
 
   useEffect(() => {
     if (!visible || view !== 'list') return;
@@ -105,7 +116,7 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
   function clearSelection() { selectedNames.current.clear(); setSelected(new Set()); }
 
   function startImport(content = '') {
-    setText(content); setFile(null); setImportPage(1); setImportResult(null); setNotice(''); setView('import');
+    setText(content); setFile(null); setImportPage(1); setShowImportIssues(false); setImportResult(null); setNotice(''); setView('import');
   }
 
   function updateSelection(next: Set<string>, accounts: Child[] = items) {
@@ -125,7 +136,7 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
 
   async function saveImport() {
     if (!text.trim()) { setNotice('请先选择或粘贴资料。'); return; }
-    if (importPreview.some((row) => !row.format || row.needsTwoFactor)) { setNotice('请修正格式并补齐有效2FA后再导入'); return; }
+    if (!canImport) { setNotice('没有可保存的账号，请返回修改。'); return; }
     setPending(true); setNotice(''); setImportResult(null);
     try {
       const result = await importChildMaterials(text);
@@ -244,11 +255,11 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
         <Box className="account-file-zone"><Box className="account-file-icon"><OwnerIcon name="upload" size={24} /></Box><Text fw={600}>TXT 文件</Text><FileInput value={file} onChange={chooseFile} accept=".txt,text/plain" aria-label="选择 TXT 文件" placeholder="选择 TXT 文件" clearable /></Box>
         <Textarea label="账号----密码----2FA" aria-label="账号资料文本" placeholder="email@example.com----password----2FA" value={text} onChange={(event) => { setText(event.currentTarget.value); setImportPage(1); }} minRows={8} maxRows={14} autosize className="account-import-text" />
       </Box>
-      <Group justify="flex-end" className="account-panel-actions"><Button disabled={!text.trim()} rightSection={<OwnerIcon name="arrow-right" size={16} />} onClick={() => { setImportResult(null); setView('import-preview'); }}>预览导入</Button></Group>
+      <Group justify="flex-end" className="account-panel-actions"><Button disabled={!text.trim()} rightSection={<OwnerIcon name="arrow-right" size={16} />} onClick={() => { setImportResult(null); setShowImportIssues(false); setImportPage(1); setView('import-preview'); }}>预览导入</Button></Group>
     </Stack></Paper> : null}
     {view === 'import-result' && importResult ? <Paper withBorder radius={12} p={{ base: 16, sm: 24 }}><Stack gap="md">
       <Text fw={600}>导入结果</Text>
-      <Text size="sm" role="status">已保存 {importResult.imported} · 重复 {importResult.duplicate} · 无效 {importResult.invalid}</Text>
+      <Text size="sm" role="status">已保存 {importResult.imported} · 重复 {importResult.duplicate} · 无效 {importResult.invalid}{importedNeedsTwoFactor > 0 ? ` · 2FA 待补 ${importedNeedsTwoFactor}` : ''}</Text>
       <Stack gap={4} mt="xs">{importResult.rows.filter((row) => row.status !== 'imported').map((row) => <Group key={row.line} justify="space-between"><Text size="xs">第 {row.line} 行 · {row.status === 'duplicate' ? '重复' : row.status === 'needs_totp' ? '资料待补' : '无效'}{row.identifier ? ` · ${row.identifier}` : ''}</Text>{row.status === 'needs_totp' && row.identifier ? <Button size="xs" variant="subtle" onClick={() => void repairTwoFactor(row.identifier!)}>补齐2FA</Button> : null}</Group>)}</Stack>
       <Group justify="flex-end">
         {importResult.invalid > 0 ? <Button variant="default" onClick={() => { const lines = text.split('\n'); startImport(importResult.rows.filter((row) => row.status === 'invalid').map((row) => lines[row.line - 1] ?? '').join('\n')); }}>修正未导入</Button> : null}
@@ -257,11 +268,13 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
     </Stack></Paper> : null}
     {view === 'import-preview' ? <Paper withBorder radius={12} p={{ base: 16, sm: 24 }}><Stack gap="md">
       <Group justify="space-between"><Text fw={600}>导入预览 · {importPreview.length} 行</Text><Button variant="default" disabled={pending} onClick={() => setView('import')}>返回修改</Button></Group>
+      <Group justify="space-between"><Text size="sm" role="status">完整 {importSummary.complete} · 2FA 待补 {importSummary.needsTwoFactor} · 文件内重复 {importSummary.duplicate} · 格式无效 {importSummary.invalid}</Text>{importSummary.issues.length > 0 ? <Button variant="subtle" size="xs" disabled={pending} onClick={() => { setShowImportIssues((value) => !value); setImportPage(1); }}>{showImportIssues ? '显示全部' : '查看待修正'}</Button> : null}</Group>
+      {!canImport ? <Text size="sm" c="error" role="status">没有可保存的账号，请返回修改。</Text> : importSummary.issues.length > 0 ? <Text size="sm" c="warning" role="status">缺少或无效 2FA 的账号将保存为待补资料；格式无效的行会跳过，其他账号正常导入。</Text> : null}
       <Table.ScrollContainer minWidth={480}><Table><Table.Thead><Table.Tr><Table.Th>行号</Table.Th><Table.Th className="account-identity-cell">账号</Table.Th><Table.Th>格式</Table.Th></Table.Tr></Table.Thead>
-        <Table.Tbody>{importPreview.slice((importPage - 1) * 20, importPage * 20).map((row) => <Table.Tr key={row.line}><Table.Td>{row.line}</Table.Td><Table.Td className="account-identity-cell">{row.identifier}</Table.Td><Table.Td><StatusBadge tone={!row.format ? 'error' : row.needsTwoFactor || row.duplicate ? 'warning' : 'gray'} label={!row.format ? '格式待修正' : row.needsTwoFactor ? '2FA 待修正' : row.duplicate ? '文件内重复' : '待导入'} /></Table.Td></Table.Tr>)}</Table.Tbody>
+        <Table.Tbody>{importRows.slice((importPage - 1) * 20, importPage * 20).map((row) => <Table.Tr key={row.line}><Table.Td>{row.line}</Table.Td><Table.Td className="account-identity-cell">{row.identifier}</Table.Td><Table.Td><StatusBadge tone={!row.format ? 'error' : row.needsTwoFactor || row.duplicate ? 'warning' : 'gray'} label={!row.format ? '格式待修正' : row.duplicate ? '文件内重复' : row.needsTwoFactor ? '2FA 待补' : '待导入'} /></Table.Td></Table.Tr>)}</Table.Tbody>
       </Table></Table.ScrollContainer>
-      <Pagination value={importPage} total={Math.max(1, Math.ceil(importPreview.length / 20))} onChange={setImportPage} />
-      <Group justify="flex-end"><Button loading={pending} disabled={importPreview.some((row) => !row.format || row.needsTwoFactor)} onClick={() => void saveImport()}>确认导入</Button></Group>
+      <Pagination value={importPage} total={Math.max(1, Math.ceil(importRows.length / 20))} onChange={setImportPage} disabled={pending} />
+      <Group justify="flex-end"><Button loading={pending} disabled={!canImport} onClick={() => void saveImport()}>确认导入</Button></Group>
     </Stack></Paper> : null}
     {view === 'list' ? <Paper withBorder radius={12} className="account-list-panel">
       <Group px="md" pt="sm" justify="flex-end"><TaskConcurrencyControl value={taskConcurrency.concurrency} limit={taskConcurrency.limit} disabled={!taskConcurrency.ready || probes.busy || accountLogin.busy} onChange={taskConcurrency.setConcurrency} /></Group>

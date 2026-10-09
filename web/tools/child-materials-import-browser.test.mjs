@@ -143,8 +143,61 @@ test('confirmed account import shows results without offering preview again', as
       await button('继续导入').click();
       importResult = { imported: 1, duplicate: 0, invalid: 0, rows: [{ line: 1, status: 'needs_totp', identifier: 'import1@example.test' }] };
       await preview(source.split('\n')[0]);
-      await result('已保存 1 · 重复 0 · 无效 0');
+      await result('已保存 1 · 重复 0 · 无效 0 · 2FA 待补 1');
       assert.equal(await button('补齐2FA').count(), 1);
+    });
+    await t.test('incomplete and malformed rows do not block importing other accounts', async () => {
+      await button('继续导入').click();
+      importResult = null;
+      const lines = Array.from({ length: 41 }, (_, index) => `check${index + 1}@example.test----fixture-password----JBSWY3DPEHPK3PXP`);
+      lines[20] = 'check21@example.test----fixture-password----';
+      lines[30] = 'check31@example.test----fixture-password----not-base32';
+      lines[39] = lines[0];
+      lines[40] = 'malformed';
+      await preview(lines.join('\n'));
+      const requests = imports.length;
+      assert.equal(await button('确认导入').isDisabled(), false, 'A missing 2FA beyond page one must not block valid accounts');
+      await page.getByText('完整 37 · 2FA 待补 2 · 文件内重复 1 · 格式无效 1', { exact: true }).waitFor();
+      await page.getByText('缺少或无效 2FA 的账号将保存为待补资料；格式无效的行会跳过，其他账号正常导入。', { exact: true }).waitFor();
+      await button('查看待修正').click();
+      assert.deepEqual(await page.locator('tbody tr td:first-child').allTextContents(), ['21', '31', '41']);
+      assert.equal(await button('确认导入').isDisabled(), false, 'Filtering must preserve the complete import scope');
+      assert.equal(imports.length, requests, 'Locating errors must not import any accounts');
+      for (const appearance of ['light', 'dark', 'narrow']) {
+        if (appearance === 'dark') await button('深色模式').click();
+        if (appearance === 'narrow') {
+          await button('浅色模式').click();
+          await page.setViewportSize({ width: 390, height: 844 });
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${appearance}: preview must fit the viewport`);
+        if (process.env.TSW_BROWSER_EVIDENCE) await page.screenshot({ path: `${process.env.TSW_BROWSER_EVIDENCE}/import-preview-${appearance}.png`, fullPage: true });
+      }
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await button('显示全部').click();
+      assert.equal(await page.locator('tbody tr td:first-child').first().innerText(), '1');
+      importResult = { imported: 39, duplicate: 1, invalid: 1, rows: lines.map((line, index) => ({ line: index + 1, status: index === 40 ? 'invalid' : index === 39 ? 'duplicate' : index === 20 || index === 30 ? 'needs_totp' : 'imported', identifier: index === 40 ? undefined : line.split('----')[0] })) };
+      await result('已保存 39 · 重复 1 · 无效 1 · 2FA 待补 2');
+      assert.equal(imports.at(-1), lines.join('\n'), 'Submit every original line once so the server preserves line numbers and statuses');
+      await page.getByText('第 21 行 · 资料待补 · check21@example.test', { exact: true }).waitFor();
+      await page.getByText('第 41 行 · 无效', { exact: true }).waitFor();
+      assert.equal(await button('补齐2FA').count(), 2);
+      await button('修正未导入').click();
+      assert.equal(await input().inputValue(), 'malformed');
+      await button('返回账号列表').click();
+      await button('导入账号').click();
+      importResult = null;
+      await preview('malformed');
+      assert.equal(await button('确认导入').isDisabled(), true, 'A file with no saveable account has nothing to import');
+      await page.getByText('没有可保存的账号，请返回修改。', { exact: true }).waitFor();
+      await button('返回修改').click();
+      lines[20] = 'check21@example.test----fixture-password----JBSWY3DPEHPK3PXP';
+      lines[30] = 'check31@example.test----fixture-password----JBSWY3DPEHPK3PXP';
+      lines[39] = 'check40@example.test----fixture-password----JBSWY3DPEHPK3PXP';
+      lines[40] = 'check41@example.test----fixture-password----JBSWY3DPEHPK3PXP';
+      await preview(lines.join('\n'));
+      assert.equal(await button('确认导入').isDisabled(), false);
+      assert.equal(await button('查看待修正').count(), 0);
+      await result('已保存 41 · 重复 0 · 无效 0');
     });
     assert.deepEqual(errors, []);
   } finally {
