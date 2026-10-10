@@ -60,16 +60,16 @@
 
 ## Product preview
 
-From account preparation to card delivery, keep each batch’s list, progress and results in one workspace.
+Choose the owning account, target workspace and source batch, then follow five steps through invitations, OAuth sign-in, card generation and batch results.
 
-<a href="docs/assets/account-management.png">
+<a href="docs/assets/readme/start-operation.png">
   <picture>
-    <source media="(max-width: 640px)" srcset="docs/assets/readme/product-mobile-en.png?v=a08da80ac9">
-    <img src="docs/assets/readme/product-en.png?v=6d9ad424aa" width="100%" alt="Actual account management interface with fictional accounts: status, filters, batch selection and row actions. Click for the full screenshot.">
+    <source media="(max-width: 640px)" srcset="docs/assets/readme/start-operation-mobile-en.png?v=7457712b91">
+    <img src="docs/assets/readme/start-operation-en.png?v=47ab55736b" width="100%" alt="Current Start Operation interface with fictional example data: five workflow steps, owning account, target workspace, source batch and planned removal time. Click for the original screenshot.">
   </picture>
 </a>
 
-<p align="center"><sub>Fictional example data. The application interface is currently primarily Chinese; this README and the deployment guide are bilingual.</sub></p>
+<p align="center"><sub>Current Start Operation page with fictional example data. The application interface is currently primarily Chinese; this README and the deployment guide are bilingual.</sub></p>
 
 - **Accounts & batches**: import, filter and check account status, then organize available accounts into clear batches.
 - **Workspaces & onboarding**: review subscriptions, members and seats, then invite, authorize and generate cards for the selected batch.

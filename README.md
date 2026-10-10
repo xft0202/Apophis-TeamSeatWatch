@@ -60,16 +60,16 @@
 
 ## 产品预览
 
-从账号准备到卡密交付，在同一个工作台查看名单、处理进度与交付结果。
+选定母号、目标空间与来源批次，沿着五步流程完成邀请、登录、卡密生成与本轮结果核对。
 
-<a href="docs/assets/account-management.png">
+<a href="docs/assets/readme/start-operation.png">
   <picture>
-    <source media="(max-width: 640px)" srcset="docs/assets/readme/product-mobile-zh.png?v=6bf5d7fee2">
-    <img src="docs/assets/readme/product-zh.png?v=077b7a8285" width="100%" alt="真实账号管理界面，使用虚构示例账号：查看状态、筛选账号、选中批量处理及执行行内操作。点击查看原图。">
+    <source media="(max-width: 640px)" srcset="docs/assets/readme/start-operation-mobile-zh.png?v=09433a9749">
+    <img src="docs/assets/readme/start-operation-zh.png?v=020319ee75" width="100%" alt="当前真实「开始操作」页面，使用虚构示例数据：五步操作流程、母号、目标空间、来源批次与计划清退时间。点击查看原图。">
   </picture>
 </a>
 
-<p align="center"><sub>截图使用虚构示例数据。应用界面目前以中文为主；README 与部署指南提供中英文。</sub></p>
+<p align="center"><sub>当前「开始操作」页面，使用虚构示例数据。应用界面目前以中文为主；README 与部署指南提供中英文。</sub></p>
 
 - **账号与批次**：导入、筛选、检查账号状态，将待用账号整理成明确批次。
 - **空间与接入**：查看订阅、成员与席位，按本轮名单完成邀请、授权登录和卡密生成。

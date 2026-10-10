@@ -20,7 +20,6 @@ docs/*
 !docs/deployment.en.md
 !docs/assets/
 docs/assets/*
-!docs/assets/account-management.png
 !docs/assets/readme/
 !docs/assets/readme/**
 CONTEXT.md
