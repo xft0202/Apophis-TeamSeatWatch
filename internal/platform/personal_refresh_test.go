@@ -450,40 +450,41 @@ func TestNormalizeAndParseSuppliedCookiesChunkingAndConflicts(t *testing.T) {
 	longVal := strings.Repeat("a", 5000)
 
 	// 1. Raw short token
-	s1, _, isDirect1, ok1 := parseSuppliedSessionMaterial(shortVal, "dev-1", "")
-	if !ok1 || isDirect1 || len(s1.Cookies) != 1 || s1.Cookies[0].Name != "__Secure-next-auth.session-token" || s1.Cookies[0].Value != shortVal {
+	s1, ok1 := parseSuppliedSessionMaterial(shortVal, "dev-1", "")
+	if !ok1 || len(s1.Cookies) != 1 || s1.Cookies[0].Name != "__Secure-next-auth.session-token" || s1.Cookies[0].Value != shortVal {
 		t.Fatalf("raw short cookie failed: ok=%v cookies=%+v", ok1, s1.Cookies)
 	}
 
 	// 2. Raw >3900 token auto-chunks
-	s2, _, isDirect2, ok2 := parseSuppliedSessionMaterial(longVal, "dev-1", "")
-	if !ok2 || isDirect2 || len(s2.Cookies) != 2 || s2.Cookies[0].Name != "__Secure-next-auth.session-token.0" || len(s2.Cookies[0].Value) != 3900 || s2.Cookies[1].Name != "__Secure-next-auth.session-token.1" || len(s2.Cookies[1].Value) != 1100 {
+	s2, ok2 := parseSuppliedSessionMaterial(longVal, "dev-1", "")
+	if !ok2 || len(s2.Cookies) != 2 || s2.Cookies[0].Name != "__Secure-next-auth.session-token.0" || len(s2.Cookies[0].Value) != 3900 || s2.Cookies[1].Name != "__Secure-next-auth.session-token.1" || len(s2.Cookies[1].Value) != 1100 {
 		t.Fatalf("raw long cookie auto-chunk failed: ok=%v cookies=%+v", ok2, s2.Cookies)
 	}
 
 	// 3. Key=value >3900 token auto-chunks
 	kvLong := "oai-did=123; __Secure-next-auth.session-token=" + longVal + "; _puid=user1"
-	s3, _, _, ok3 := parseSuppliedSessionMaterial(kvLong, "dev-1", "")
+	s3, ok3 := parseSuppliedSessionMaterial(kvLong, "dev-1", "")
 	if !ok3 || len(s3.Cookies) != 3 || s3.Cookies[0].Name != "__Secure-next-auth.session-token.0" || s3.Cookies[1].Name != "__Secure-next-auth.session-token.1" || s3.Cookies[2].Name != "_puid" {
 		t.Fatalf("key=value long cookie auto-chunk failed: ok=%v cookies=%+v", ok3, s3.Cookies)
 	}
 
 	// 4. JSON sessionToken >3900 auto-chunks
 	jsonLong, _ := json.Marshal(map[string]any{"sessionToken": longVal})
-	s4, _, _, ok4 := parseSuppliedSessionMaterial(string(jsonLong), "dev-1", "")
+	s4, ok4 := parseSuppliedSessionMaterial(string(jsonLong), "dev-1", "")
 	if !ok4 || len(s4.Cookies) != 2 || s4.Cookies[0].Name != "__Secure-next-auth.session-token.0" || s4.Cookies[1].Name != "__Secure-next-auth.session-token.1" {
 		t.Fatalf("JSON sessionToken long cookie auto-chunk failed: ok=%v cookies=%+v", ok4, s4.Cookies)
 	}
 
-	// 5. Missing chunk (.1 without .0) rejected
+	// 5. Missing chunk (.1 without .0), conflicts, or bare JWT accessTokens are rejected
 	for _, bad := range []string{
 		"__Secure-next-auth.session-token.1=only-chunk-1",
 		"__Secure-next-auth.session-token.0=chunk0; __Secure-next-auth.session-token.2=chunk2",
 		"__Secure-next-auth.session-token=whole; __Secure-next-auth.session-token.0=chunk0",
 		"__Secure-next-auth.session-token=dup1; __Secure-next-auth.session-token=dup2",
 		"__Secure-next-auth.session-token.0=dup1; __Secure-next-auth.session-token.0=dup2",
+		personalFixtureToken(time.Now(), nil),
 	} {
-		if _, _, _, ok := parseSuppliedSessionMaterial(bad, "dev-1", ""); ok {
+		if _, ok := parseSuppliedSessionMaterial(bad, "dev-1", ""); ok {
 			t.Fatalf("expected invalid/conflicting cookie input %q to be rejected", bad)
 		}
 	}
@@ -500,51 +501,98 @@ func TestSessionJSONImportAndIdentityMatching(t *testing.T) {
 		auth["chatgpt_user_id"] = "user-google123"
 		delete(c, "https://api.openai.com/mfa")
 	})
-	rawJSON, _ := json.Marshal(map[string]any{
+
+	// 1. Session JSON without cookies/sessionToken MUST be rejected (cannot fabricate ready without remote cookie verification)
+	cookieLessJSON, _ := json.Marshal(map[string]any{
 		"accessToken": token,
 		"expires":     exp.Format(time.RFC3339),
-		"user": map[string]any{
-			"email": "googleuser@gmail.com",
-			"id":    "user-google123",
-		},
+		"user":        map[string]any{"email": "googleuser@gmail.com", "id": "user-google123"},
 	})
-
-	// Matching identifier succeeds without needing browser network roundtrip when no cookies are in JSON
-	adapter := PersonalWebRefresher{
+	uncalledAdapter := PersonalWebRefresher{
 		Browser: fixturePersonalBrowser,
 		Client: func(context.Context) (*http.Client, func(), error) {
-			t.Fatal("direct JSON session without cookies should not acquire browser transport")
+			t.Fatal("cookieless JSON must be rejected before acquiring transport")
 			return nil, nil, nil
 		},
 	}
-	res, err := adapter.RefreshPersonal(t.Context(), MotherMaterial{
+	resNoCookie, err := uncalledAdapter.RefreshPersonal(t.Context(), MotherMaterial{
 		Environment:     fixtureEnvironment,
-		LoginIdentifier: "GoogleUser@gmail.com",
-		Password:        string(rawJSON),
+		LoginIdentifier: "googleuser@gmail.com",
+		Password:        string(cookieLessJSON),
 		TOTPSecret:      "cookie",
 	})
-	if err != nil || res.Status != "ready" || res.Session.AccessToken != token || !res.Session.SessionExpiresAt.Equal(exp) {
-		t.Fatalf("direct JSON import failed: res=%+v err=%v", res, err)
+	if err != nil || resNoCookie.Status != "invalid_login" {
+		t.Fatalf("cookieless JSON must fail closed as invalid_login: res=%+v err=%v", resNoCookie, err)
 	}
 
-	// Mismatched identifier is rejected as invalid_login
-	resMismatch, err := adapter.RefreshPersonal(t.Context(), MotherMaterial{
+	// 2. Valid Session JSON with sessionToken + matching metadata succeeds ONLY after remote /api/auth/session verification
+	validJSON, _ := json.Marshal(map[string]any{
+		"sessionToken": "jwe-session-cookie-secret",
+		"accessToken":  token,
+		"expires":      exp.Format(time.RFC3339),
+		"user":         map[string]any{"email": "googleuser@gmail.com", "id": "user-google123"},
+	})
+	fixture := &personalFlowFixture{
+		token:          token,
+		sessionExpires: exp,
+		sessionBody:    `{"accessToken":"` + token + `","expires":"` + exp.Format(time.RFC3339) + `","user":{"email":"googleuser@gmail.com","id":"user-google123"}}`,
+	}
+	client := &http.Client{Timeout: time.Second, Transport: accountsRoundTrip(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/api/auth/session" && !strings.Contains(req.Header.Get("Cookie"), "jwe-session-cookie-secret") {
+			t.Fatal("sessionToken from JSON was not sent to remote /api/auth/session")
+		}
+		return fixture.RoundTrip(req)
+	})}
+	verifiedAdapter := PersonalWebRefresher{
+		Browser: fixturePersonalBrowser,
+		Client:  func(context.Context) (*http.Client, func(), error) { return client, func() {}, nil },
+	}
+	res, err := verifiedAdapter.RefreshPersonal(t.Context(), MotherMaterial{
+		Environment:     fixtureEnvironment,
+		LoginIdentifier: "GoogleUser@gmail.com",
+		Password:        string(validJSON),
+		TOTPSecret:      "cookie",
+	})
+	if err != nil || res.Status != "ready" || res.Session.AccessToken != token || len(fixture.paths) != 1 || fixture.paths[0] != "GET chatgpt.com/api/auth/session" {
+		t.Fatalf("verified JSON import failed: res=%+v err=%v paths=%v", res, err, fixture.paths)
+	}
+
+	// 3. When remote /api/auth/session rejects or fails, RefreshPersonal MUST NOT fall back to local JSON claims
+	failingFixture := &personalFlowFixture{sessionStatus: http.StatusUnauthorized, sessionBody: `{}`}
+	failingClient := &http.Client{Timeout: time.Second, Transport: failingFixture}
+	failingAdapter := PersonalWebRefresher{
+		Browser: fixturePersonalBrowser,
+		Client:  func(context.Context) (*http.Client, func(), error) { return failingClient, func() {}, nil },
+	}
+	resRemoteFail, err := failingAdapter.RefreshPersonal(t.Context(), MotherMaterial{
+		Environment:     fixtureEnvironment,
+		LoginIdentifier: "googleuser@gmail.com",
+		Password:        string(validJSON),
+		TOTPSecret:      "cookie",
+	})
+	if err != nil || resRemoteFail.Status == "ready" || resRemoteFail.Session.AccessToken != "" {
+		t.Fatalf("remote verification failure fell back to local ready: res=%+v err=%v", resRemoteFail, err)
+	}
+
+	// 4. Mismatched identifier in JSON envelope is rejected before transport
+	resMismatch, err := uncalledAdapter.RefreshPersonal(t.Context(), MotherMaterial{
 		Environment:     fixtureEnvironment,
 		LoginIdentifier: "other@gmail.com",
-		Password:        string(rawJSON),
+		Password:        string(validJSON),
 		TOTPSecret:      "cookie",
 	})
 	if err != nil || resMismatch.Status != "invalid_login" {
 		t.Fatalf("mismatched identifier not rejected: res=%+v err=%v", resMismatch, err)
 	}
 
-	// Expired session JSON is rejected
+	// 5. Expired session JSON is rejected before transport
 	expiredJSON, _ := json.Marshal(map[string]any{
-		"accessToken": token,
-		"expires":     now.Add(-time.Minute).Format(time.RFC3339),
-		"user":        map[string]any{"email": "googleuser@gmail.com", "id": "user-google123"},
+		"sessionToken": "jwe-session-cookie-secret",
+		"accessToken":  token,
+		"expires":      now.Add(-time.Minute).Format(time.RFC3339),
+		"user":         map[string]any{"email": "googleuser@gmail.com", "id": "user-google123"},
 	})
-	resExpired, err := adapter.RefreshPersonal(t.Context(), MotherMaterial{
+	resExpired, err := uncalledAdapter.RefreshPersonal(t.Context(), MotherMaterial{
 		Environment:     fixtureEnvironment,
 		LoginIdentifier: "googleuser@gmail.com",
 		Password:        string(expiredJSON),
@@ -552,5 +600,67 @@ func TestSessionJSONImportAndIdentityMatching(t *testing.T) {
 	})
 	if err != nil || resExpired.Status != "invalid_login" {
 		t.Fatalf("expired JSON not rejected: res=%+v err=%v", resExpired, err)
+	}
+}
+
+func TestRenewPersonalPreservesFederatedWorkspacePolicyAndRejectsNativeWorkspace(t *testing.T) {
+	now := time.Now().UTC()
+	sessionExpiry := now.Add(14 * 24 * time.Hour).Truncate(time.Second)
+	renewedExpiry := now.Add(24 * time.Hour).Truncate(time.Second)
+
+	federatedTeamToken := func(exp time.Time) string {
+		return personalFixtureToken(now, func(c map[string]any) {
+			c["exp"] = exp.Unix()
+			c["sub"] = "google-oauth2|100875473432628400772"
+			c["email"] = "googleuser@gmail.com"
+			auth := c["https://api.openai.com/auth"].(map[string]any)
+			auth["amr"] = []string{"urn:openai:amr:google"}
+			auth["chatgpt_plan_type"] = "team"
+			delete(c, "https://api.openai.com/mfa")
+		})
+	}
+
+	// Saved federated workspace session with expired JWT can renew via RenewPersonal / AcquirePersonal
+	oldSaved := PersonalSession{
+		AccessToken:      federatedTeamToken(now.Add(-time.Minute)),
+		DeviceID:         "saved-device",
+		ExpiresAt:        now.Add(-time.Minute),
+		SessionExpiresAt: sessionExpiry,
+		Cookies:          []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "saved-federated-cookie", Host: "chatgpt.com"}},
+	}
+	freshToken := federatedTeamToken(renewedExpiry)
+	fixture := &personalFlowFixture{token: freshToken, sessionExpires: sessionExpiry}
+	client := &http.Client{Timeout: time.Second, Transport: fixture}
+	refresher := PersonalWebRefresher{
+		Browser: fixturePersonalBrowser,
+		Client:  func(context.Context) (*http.Client, func(), error) { return client, func() {}, nil },
+	}
+	renewed, err := AcquirePersonal(t.Context(), refresher, MotherMaterial{Environment: fixtureEnvironment}, oldSaved)
+	if err != nil || renewed.Status != "ready" || renewed.Session.AccessToken != freshToken || !renewed.Session.ExpiresAt.Equal(renewedExpiry) {
+		t.Fatalf("federated workspace session renewal failed: res=%+v err=%v", renewed, err)
+	}
+
+	// Native saved session MUST NOT accept a team-scoped token during RenewPersonal
+	nativeOld := PersonalSession{
+		AccessToken:      personalFixtureToken(now, func(c map[string]any) { c["exp"] = now.Add(-time.Minute).Unix(); c["sub"] = "auth0|native-user" }),
+		DeviceID:         "saved-device",
+		ExpiresAt:        now.Add(-time.Minute),
+		SessionExpiresAt: sessionExpiry,
+		Cookies:          []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "saved-native-cookie", Host: "chatgpt.com"}},
+	}
+	nativeTeamToken := personalFixtureToken(now, func(c map[string]any) {
+		c["exp"] = renewedExpiry.Unix()
+		c["sub"] = "auth0|native-user"
+		c["https://api.openai.com/auth"].(map[string]any)["chatgpt_plan_type"] = "team"
+	})
+	nativeFixture := &personalFlowFixture{token: nativeTeamToken, sessionExpires: sessionExpiry}
+	nativeClient := &http.Client{Timeout: time.Second, Transport: nativeFixture}
+	nativeRefresher := PersonalWebRefresher{
+		Browser: fixturePersonalBrowser,
+		Client:  func(context.Context) (*http.Client, func(), error) { return nativeClient, func() {}, nil },
+	}
+	nativeRenewed, err := nativeRefresher.RenewPersonal(t.Context(), nativeOld, fixtureEnvironment)
+	if err != nil || nativeRenewed.Status == "ready" {
+		t.Fatalf("native session renewal accepted team-scoped token: res=%+v err=%v", nativeRenewed, err)
 	}
 }
