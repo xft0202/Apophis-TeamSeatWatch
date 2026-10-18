@@ -608,27 +608,27 @@ func TestRenewPersonalPreservesFederatedWorkspacePolicyAndRejectsNativeWorkspace
 	sessionExpiry := now.Add(14 * 24 * time.Hour).Truncate(time.Second)
 	renewedExpiry := now.Add(24 * time.Hour).Truncate(time.Second)
 
-	federatedTeamToken := func(exp time.Time) string {
+	federatedToken := func(exp time.Time, plan string) string {
 		return personalFixtureToken(now, func(c map[string]any) {
 			c["exp"] = exp.Unix()
 			c["sub"] = "google-oauth2|100875473432628400772"
 			c["email"] = "googleuser@gmail.com"
 			auth := c["https://api.openai.com/auth"].(map[string]any)
 			auth["amr"] = []string{"urn:openai:amr:google"}
-			auth["chatgpt_plan_type"] = "team"
+			auth["chatgpt_plan_type"] = plan
 			delete(c, "https://api.openai.com/mfa")
 		})
 	}
 
-	// Saved federated workspace session with expired JWT can renew via RenewPersonal / AcquirePersonal
+	// 1. Saved federated workspace session with expired JWT can renew via RenewPersonal / AcquirePersonal
 	oldSaved := PersonalSession{
-		AccessToken:      federatedTeamToken(now.Add(-time.Minute)),
+		AccessToken:      federatedToken(now.Add(-time.Minute), "team"),
 		DeviceID:         "saved-device",
 		ExpiresAt:        now.Add(-time.Minute),
 		SessionExpiresAt: sessionExpiry,
 		Cookies:          []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "saved-federated-cookie", Host: "chatgpt.com"}},
 	}
-	freshToken := federatedTeamToken(renewedExpiry)
+	freshToken := federatedToken(renewedExpiry, "team")
 	fixture := &personalFlowFixture{token: freshToken, sessionExpires: sessionExpiry}
 	client := &http.Client{Timeout: time.Second, Transport: fixture}
 	refresher := PersonalWebRefresher{
@@ -638,6 +638,19 @@ func TestRenewPersonalPreservesFederatedWorkspacePolicyAndRejectsNativeWorkspace
 	renewed, err := AcquirePersonal(t.Context(), refresher, MotherMaterial{Environment: fixtureEnvironment}, oldSaved)
 	if err != nil || renewed.Status != "ready" || renewed.Session.AccessToken != freshToken || !renewed.Session.ExpiresAt.Equal(renewedExpiry) {
 		t.Fatalf("federated workspace session renewal failed: res=%+v err=%v", renewed, err)
+	}
+
+	// 2. Saved federated free session that upgraded to team/business plan renews cleanly (free -> team transition)
+	oldFreeSaved := PersonalSession{
+		AccessToken:      federatedToken(now.Add(-time.Minute), "free"),
+		DeviceID:         "saved-device",
+		ExpiresAt:        now.Add(-time.Minute),
+		SessionExpiresAt: sessionExpiry,
+		Cookies:          []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "saved-federated-cookie", Host: "chatgpt.com"}},
+	}
+	upgradedRenewed, err := AcquirePersonal(t.Context(), refresher, MotherMaterial{Environment: fixtureEnvironment}, oldFreeSaved)
+	if err != nil || upgradedRenewed.Status != "ready" || upgradedRenewed.Session.AccessToken != freshToken {
+		t.Fatalf("federated free -> team renewal failed: res=%+v err=%v", upgradedRenewed, err)
 	}
 
 	// Native saved session MUST NOT accept a team-scoped token during RenewPersonal

@@ -314,7 +314,7 @@ func parseSuppliedSessionMaterial(rawPassword, deviceID, expectedIdentifier stri
 	return session, validPersonalCookies(session)
 }
 
-func isSavedFederatedWorkspaceSession(saved PersonalSession) bool {
+func isSavedFederatedSession(saved PersonalSession) bool {
 	parts := strings.Split(strings.TrimSpace(saved.AccessToken), ".")
 	if len(parts) != 3 || len(parts[1]) == 0 {
 		return false
@@ -329,14 +329,7 @@ func isSavedFederatedWorkspaceSession(saved PersonalSession) bool {
 	}
 	authClaims, _ := claims["https://api.openai.com/auth"].(map[string]any)
 	sub, err := consistentPersonalClaim(claims, authClaims, "sub", false)
-	if err != nil || !isFederatedOAuthSubject(sub) {
-		return false
-	}
-	plan, err := consistentPersonalClaim(claims, authClaims, "chatgpt_plan_type", true)
-	if err != nil {
-		return false
-	}
-	return plan == "team" || plan == "business"
+	return err == nil && isFederatedOAuthSubject(sub)
 }
 
 // RefreshPersonal authenticates a fresh Personal-only session. Its first-party
@@ -485,7 +478,7 @@ func (p PersonalWebRefresher) RefreshPersonal(ctx context.Context, material Moth
 
 // RenewPersonal checks the saved session on the same fixed first-party endpoint.
 func (p PersonalWebRefresher) RenewPersonal(ctx context.Context, saved PersonalSession, environment browserenv.Environment) (PersonalRefreshResult, error) {
-	return p.renewPersonalWithIdentifier(ctx, saved, environment, "", isSavedFederatedWorkspaceSession(saved))
+	return p.renewPersonalWithIdentifier(ctx, saved, environment, "", isSavedFederatedSession(saved) || saved.AccessToken == "")
 }
 
 func (p PersonalWebRefresher) renewPersonalWithIdentifier(ctx context.Context, saved PersonalSession, environment browserenv.Environment, expectedIdentifier string, allowFederatedWorkspace bool) (PersonalRefreshResult, error) {
