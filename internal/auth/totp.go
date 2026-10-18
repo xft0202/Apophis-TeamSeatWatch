@@ -48,11 +48,17 @@ func VerifyTOTP(secret, code string, now time.Time) bool {
 	return false
 }
 
+// IsSessionMaterialMarker reports whether the 2FA field explicitly designates
+// a Cookie / federated OAuth session material rather than a Base32 TOTP secret.
+func IsSessionMaterialMarker(secret string) bool {
+	s := strings.ToLower(strings.TrimSpace(secret))
+	return s == "cookie" || s == "google" || s == "session" || s == "none"
+}
+
 // CompleteMaterial reports whether the 2FA field is a valid Base32 TOTP secret
 // or an explicit Cookie/Google session login marker.
 func CompleteMaterial(secret string, now time.Time) bool {
-	s := strings.ToLower(strings.TrimSpace(secret))
-	if s == "cookie" || s == "google" || s == "session" || s == "none" {
+	if IsSessionMaterialMarker(secret) {
 		return true
 	}
 	_, err := TOTPCode(secret, now)

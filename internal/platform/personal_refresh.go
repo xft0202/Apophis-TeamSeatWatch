@@ -104,15 +104,20 @@ func (g personalHostGuard) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func isCookieMaterial(password, totp string) bool {
-	s := strings.ToLower(strings.TrimSpace(totp))
-	if s == "cookie" || s == "google" || s == "session" || s == "none" {
+	if auth.IsSessionMaterialMarker(totp) {
 		return true
 	}
+	// If a valid TOTP secret is provided, only treat password as cookie material
+	// when it carries an explicit session cookie name or JSON session envelope.
+	// Never guess cookie mode from dot counts or length of a normal password.
 	p := strings.TrimSpace(password)
-	return strings.Contains(p, "__Secure-next-auth.session-token") ||
-		strings.Contains(p, "\"sessionToken\"") ||
-		strings.Contains(p, "\"cookies\"") ||
-		strings.Count(p, ".") == 4 && len(p) > 100
+	if strings.Contains(p, "__Secure-next-auth.session-token") {
+		return true
+	}
+	if strings.HasPrefix(p, "{") && (strings.Contains(p, "\"sessionToken\"") || strings.Contains(p, "\"cookies\"")) {
+		return true
+	}
+	return false
 }
 
 const nextAuthChunkSize = 3900
@@ -193,34 +198,60 @@ func normalizeSuppliedCookies(input []SessionCookie) ([]SessionCookie, bool) {
 	return out, true
 }
 
-func validateSuppliedSessionEnvelope(accessToken, expiresRaw, userEmail, userID, deviceID, expectedIdentifier string, cookies []SessionCookie) bool {
-	now := time.Now().UTC()
+func validateSuppliedSessionEnvelope(accessToken, expiresRaw, userEmail, userID, expectedIdentifier string) bool {
 	if strings.TrimSpace(expiresRaw) != "" {
-		parsed, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(expiresRaw))
-		if parseErr != nil {
-			parsed, parseErr = time.Parse(time.RFC3339, strings.TrimSpace(expiresRaw))
-		}
-		if parseErr != nil || !parsed.After(now.Add(time.Minute)) {
-			return false
+		if _, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(expiresRaw)); err != nil {
+			if _, err = time.Parse(time.RFC3339, strings.TrimSpace(expiresRaw)); err != nil {
+				return false
+			}
 		}
 	}
+	// Do not reject a valid browser session cookie merely because a pasted JSON
+	// snapshot contains an older/expired accessToken; remote /api/auth/session
+	// is the authoritative source of token freshness and scope. Still verify
+	// that any supplied snapshot identity claims are internally consistent and
+	// match expectedIdentifier.
 	if strings.TrimSpace(accessToken) != "" {
-		tokenExpiry, err := personalTokenExpiry(strings.TrimSpace(accessToken), now, true)
+		parts := strings.Split(strings.TrimSpace(accessToken), ".")
+		if len(parts) != 3 || len(parts[1]) == 0 {
+			return false
+		}
+		body, err := base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil || len(body) > 16384 {
+			return false
+		}
+		var claims map[string]any
+		if json.Unmarshal(body, &claims) != nil {
+			return false
+		}
+		authClaims, _ := claims["https://api.openai.com/auth"].(map[string]any)
+		profileClaims, _ := claims["https://api.openai.com/profile"].(map[string]any)
+		email, err := consistentPersonalClaim(claims, profileClaims, "email", true)
 		if err != nil {
 			return false
 		}
-		probe := PersonalSession{
-			AccessToken: strings.TrimSpace(accessToken),
-			Cookies:     cookies,
-			DeviceID:    deviceID,
-			ExpiresAt:   tokenExpiry,
-		}
-		identity, idErr := personalBearerIdentityWithPolicy(probe, userEmail, userID, now, true)
-		if idErr != nil {
+		userClaim, err := consistentPersonalClaim(claims, authClaims, "chatgpt_user_id", false)
+		if err != nil {
 			return false
 		}
-		if expectedIdentifier != "" && !strings.EqualFold(identity.Identifier, strings.TrimSpace(expectedIdentifier)) {
+		subClaim, err := consistentPersonalClaim(claims, authClaims, "sub", false)
+		if err != nil {
 			return false
+		}
+		if strings.TrimSpace(userEmail) != "" && email != "" && !strings.EqualFold(strings.TrimSpace(userEmail), email) {
+			return false
+		}
+		if strings.TrimSpace(userID) != "" && userClaim != "" && strings.TrimSpace(userID) != userClaim && strings.TrimSpace(userID) != subClaim {
+			return false
+		}
+		if expectedIdentifier != "" {
+			candidate := email
+			if candidate == "" {
+				candidate = strings.TrimSpace(userEmail)
+			}
+			if candidate != "" && !strings.EqualFold(candidate, strings.TrimSpace(expectedIdentifier)) {
+				return false
+			}
 		}
 	} else if strings.TrimSpace(userEmail) != "" && expectedIdentifier != "" {
 		if !strings.EqualFold(strings.TrimSpace(userEmail), strings.TrimSpace(expectedIdentifier)) {
@@ -264,7 +295,7 @@ func parseSuppliedSessionMaterial(rawPassword, deviceID, expectedIdentifier stri
 		if !ok {
 			return PersonalSession{}, false
 		}
-		if !validateSuppliedSessionEnvelope(snap.AccessToken, snap.Expires, snap.User.Email, snap.User.ID, deviceID, expectedIdentifier, normalized) {
+		if !validateSuppliedSessionEnvelope(snap.AccessToken, snap.Expires, snap.User.Email, snap.User.ID, expectedIdentifier) {
 			return PersonalSession{}, false
 		}
 		session.Cookies = normalized
@@ -348,7 +379,7 @@ func (p PersonalWebRefresher) RefreshPersonal(ctx context.Context, material Moth
 		if !ok {
 			return PersonalRefreshResult{Status: "invalid_login"}, nil
 		}
-		return p.renewPersonalWithIdentifier(ctx, supplied, material.Environment, material.LoginIdentifier, true)
+		return p.renewPersonalWithIdentifier(ctx, supplied, material.Environment, material.LoginIdentifier, material.AllowFederatedWorkspace)
 	}
 	if _, err := auth.TOTPCode(material.TOTPSecret, time.Now()); err != nil {
 		return failed, nil
@@ -477,8 +508,10 @@ func (p PersonalWebRefresher) RefreshPersonal(ctx context.Context, material Moth
 }
 
 // RenewPersonal checks the saved session on the same fixed first-party endpoint.
+// Direct RenewPersonal enforces strict Personal-only token boundaries; mother
+// workspace discovery uses MotherMaterial{AllowFederatedWorkspace: true} via AcquirePersonal.
 func (p PersonalWebRefresher) RenewPersonal(ctx context.Context, saved PersonalSession, environment browserenv.Environment) (PersonalRefreshResult, error) {
-	return p.renewPersonalWithIdentifier(ctx, saved, environment, "", isSavedFederatedSession(saved) || saved.AccessToken == "")
+	return p.renewPersonalWithIdentifier(ctx, saved, environment, "", false)
 }
 
 func (p PersonalWebRefresher) renewPersonalWithIdentifier(ctx context.Context, saved PersonalSession, environment browserenv.Environment, expectedIdentifier string, allowFederatedWorkspace bool) (PersonalRefreshResult, error) {

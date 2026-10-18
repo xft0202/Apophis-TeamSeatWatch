@@ -49,10 +49,11 @@ type DiscoveryAdapter interface {
 }
 
 type MotherMaterial struct {
-	Environment     browserenv.Environment
-	LoginIdentifier string
-	Password        string
-	TOTPSecret      string
+	Environment             browserenv.Environment
+	LoginIdentifier         string
+	Password                string
+	TOTPSecret              string
+	AllowFederatedWorkspace bool
 }
 
 type DiscoveredWorkspace struct {

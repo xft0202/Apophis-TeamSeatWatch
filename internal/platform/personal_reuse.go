@@ -19,16 +19,26 @@ func AcquirePersonal(ctx context.Context, adapter PersonalSessionRefresher, mate
 		return PersonalRefreshResult{Status: "ready", Session: saved}, nil
 	}
 	if validPersonalCookies(saved) && (saved.SessionExpiresAt.IsZero() || saved.SessionExpiresAt.After(time.Now())) {
-		renewer, ok := adapter.(PersonalSessionRenewer)
-		if !ok {
-			return PersonalRefreshResult{Status: "refresh_failed"}, ErrPersonalRefreshUnavailable
-		}
-		result, err := renewer.RenewPersonal(ctx, saved, material.Environment)
-		if err != nil || result.Status != "invalid_login" {
-			return result, err
-		}
-		if !ValidatePersonalRefresh(result, time.Now()) {
-			return PersonalRefreshResult{Status: "refresh_failed"}, nil
+		if p, ok := adapter.(PersonalWebRefresher); ok {
+			result, err := p.renewPersonalWithIdentifier(ctx, saved, material.Environment, "", material.AllowFederatedWorkspace && (isSavedFederatedSession(saved) || saved.AccessToken == ""))
+			if err != nil || result.Status != "invalid_login" {
+				return result, err
+			}
+			if !ValidatePersonalRefresh(result, time.Now()) {
+				return PersonalRefreshResult{Status: "refresh_failed"}, nil
+			}
+		} else {
+			renewer, ok := adapter.(PersonalSessionRenewer)
+			if !ok {
+				return PersonalRefreshResult{Status: "refresh_failed"}, ErrPersonalRefreshUnavailable
+			}
+			result, err := renewer.RenewPersonal(ctx, saved, material.Environment)
+			if err != nil || result.Status != "invalid_login" {
+				return result, err
+			}
+			if !ValidatePersonalRefresh(result, time.Now()) {
+				return PersonalRefreshResult{Status: "refresh_failed"}, nil
+			}
 		}
 	}
 	return adapter.RefreshPersonal(ctx, material)

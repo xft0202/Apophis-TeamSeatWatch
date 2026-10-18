@@ -585,21 +585,44 @@ func TestSessionJSONImportAndIdentityMatching(t *testing.T) {
 		t.Fatalf("mismatched identifier not rejected: res=%+v err=%v", resMismatch, err)
 	}
 
-	// 5. Expired session JSON is rejected before transport
-	expiredJSON, _ := json.Marshal(map[string]any{
+	// 5. Session JSON with an expired snapshot accessToken/expires STILL succeeds when the cookie obtains a fresh remote session
+	expiredSnapshotToken := personalFixtureToken(now, func(c map[string]any) {
+		c["exp"] = now.Add(-time.Hour).Unix()
+		c["sub"] = "google-oauth2|100875473432628400772"
+		c["email"] = "googleuser@gmail.com"
+		auth := c["https://api.openai.com/auth"].(map[string]any)
+		auth["amr"] = []string{"urn:openai:amr:google"}
+		auth["chatgpt_user_id"] = "user-google123"
+		delete(c, "https://api.openai.com/mfa")
+	})
+	staleSnapshotJSON, _ := json.Marshal(map[string]any{
 		"sessionToken": "jwe-session-cookie-secret",
-		"accessToken":  token,
+		"accessToken":  expiredSnapshotToken,
 		"expires":      now.Add(-time.Minute).Format(time.RFC3339),
 		"user":         map[string]any{"email": "googleuser@gmail.com", "id": "user-google123"},
 	})
-	resExpired, err := uncalledAdapter.RefreshPersonal(t.Context(), MotherMaterial{
+	resStaleRecovered, err := verifiedAdapter.RefreshPersonal(t.Context(), MotherMaterial{
 		Environment:     fixtureEnvironment,
 		LoginIdentifier: "googleuser@gmail.com",
-		Password:        string(expiredJSON),
+		Password:        string(staleSnapshotJSON),
 		TOTPSecret:      "cookie",
 	})
-	if err != nil || resExpired.Status != "invalid_login" {
-		t.Fatalf("expired JSON not rejected: res=%+v err=%v", resExpired, err)
+	if err != nil || resStaleRecovered.Status != "ready" || resStaleRecovered.Session.AccessToken != token {
+		t.Fatalf("stale JSON snapshot blocked valid cookie recovery: res=%+v err=%v", resStaleRecovered, err)
+	}
+}
+
+func TestIsCookieMaterialDoesNotMisclassifyLongPasswordWithFourDots(t *testing.T) {
+	// A legitimate password >100 chars with 4 dots and a valid Base32 TOTP secret must NOT be treated as a cookie
+	longPasswordFourDots := strings.Repeat("a", 30) + "." + strings.Repeat("b", 25) + "." + strings.Repeat("c", 25) + "." + strings.Repeat("d", 25) + "." + strings.Repeat("e", 20)
+	if isCookieMaterial(longPasswordFourDots, "JBSWY3DPEHPK3PXP") {
+		t.Fatalf("expected long password with 4 dots and valid TOTP to use normal password+TOTP flow")
+	}
+	// Explicit session markers always select cookie mode
+	for _, marker := range []string{"cookie", "google", "session", "none"} {
+		if !isCookieMaterial(longPasswordFourDots, marker) {
+			t.Fatalf("expected marker %q to select cookie mode", marker)
+		}
 	}
 }
 
@@ -620,7 +643,7 @@ func TestRenewPersonalPreservesFederatedWorkspacePolicyAndRejectsNativeWorkspace
 		})
 	}
 
-	// 1. Saved federated workspace session with expired JWT can renew via RenewPersonal / AcquirePersonal
+	// 1. Mother account (AllowFederatedWorkspace=true) with saved federated workspace session renews via AcquirePersonal
 	oldSaved := PersonalSession{
 		AccessToken:      federatedToken(now.Add(-time.Minute), "team"),
 		DeviceID:         "saved-device",
@@ -635,12 +658,12 @@ func TestRenewPersonalPreservesFederatedWorkspacePolicyAndRejectsNativeWorkspace
 		Browser: fixturePersonalBrowser,
 		Client:  func(context.Context) (*http.Client, func(), error) { return client, func() {}, nil },
 	}
-	renewed, err := AcquirePersonal(t.Context(), refresher, MotherMaterial{Environment: fixtureEnvironment}, oldSaved)
+	renewed, err := AcquirePersonal(t.Context(), refresher, MotherMaterial{Environment: fixtureEnvironment, AllowFederatedWorkspace: true}, oldSaved)
 	if err != nil || renewed.Status != "ready" || renewed.Session.AccessToken != freshToken || !renewed.Session.ExpiresAt.Equal(renewedExpiry) {
-		t.Fatalf("federated workspace session renewal failed: res=%+v err=%v", renewed, err)
+		t.Fatalf("mother federated workspace session renewal failed: res=%+v err=%v", renewed, err)
 	}
 
-	// 2. Saved federated free session that upgraded to team/business plan renews cleanly (free -> team transition)
+	// 2. Mother account (AllowFederatedWorkspace=true) saved free session that upgraded to team/business renews cleanly (free -> team transition)
 	oldFreeSaved := PersonalSession{
 		AccessToken:      federatedToken(now.Add(-time.Minute), "free"),
 		DeviceID:         "saved-device",
@@ -648,9 +671,25 @@ func TestRenewPersonalPreservesFederatedWorkspacePolicyAndRejectsNativeWorkspace
 		SessionExpiresAt: sessionExpiry,
 		Cookies:          []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "saved-federated-cookie", Host: "chatgpt.com"}},
 	}
-	upgradedRenewed, err := AcquirePersonal(t.Context(), refresher, MotherMaterial{Environment: fixtureEnvironment}, oldFreeSaved)
+	upgradedRenewed, err := AcquirePersonal(t.Context(), refresher, MotherMaterial{Environment: fixtureEnvironment, AllowFederatedWorkspace: true}, oldFreeSaved)
 	if err != nil || upgradedRenewed.Status != "ready" || upgradedRenewed.Session.AccessToken != freshToken {
-		t.Fatalf("federated free -> team renewal failed: res=%+v err=%v", upgradedRenewed, err)
+		t.Fatalf("mother federated free -> team renewal failed: res=%+v err=%v", upgradedRenewed, err)
+	}
+
+	// 3. Target/child account (AllowFederatedWorkspace=false) MUST reject team/business tokens during both initial Cookie login and renewal
+	childInitial, err := refresher.RefreshPersonal(t.Context(), MotherMaterial{
+		Environment:             fixtureEnvironment,
+		LoginIdentifier:         "googleuser@gmail.com",
+		Password:                "saved-federated-cookie",
+		TOTPSecret:              "cookie",
+		AllowFederatedWorkspace: false,
+	})
+	if err != nil || childInitial.Status == "ready" {
+		t.Fatalf("child account Cookie login accepted team-scoped token: res=%+v err=%v", childInitial, err)
+	}
+	childRenewed, err := AcquirePersonal(t.Context(), refresher, MotherMaterial{Environment: fixtureEnvironment, AllowFederatedWorkspace: false}, oldFreeSaved)
+	if err != nil || childRenewed.Status == "ready" {
+		t.Fatalf("child account renewal accepted team-scoped token: res=%+v err=%v", childRenewed, err)
 	}
 
 	// Native saved session MUST NOT accept a team-scoped token during RenewPersonal

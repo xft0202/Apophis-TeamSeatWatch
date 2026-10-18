@@ -75,6 +75,7 @@ func (h *OwnerAuthHandler) reservePersonalRefresh(ctx context.Context, id uuid.U
 		return attempt, active, openErr
 	}
 	attempt.material.Password, attempt.material.TOTPSecret = string(plainPassword), string(plainTOTP)
+	attempt.material.AllowFederatedWorkspace = true
 	clear(plainPassword)
 	clear(plainTOTP)
 	err = tx.QueryRow(ctx, `INSERT INTO tsw_mother_personal_access(mother_account_id,secret_revision,status) VALUES ($1,$2,'verifying') ON CONFLICT(mother_account_id) DO UPDATE SET secret_revision=EXCLUDED.secret_revision,attempt=tsw_mother_personal_access.attempt+1,status='verifying',failure=NULL,checked_at=now() RETURNING attempt`, id, attempt.revision).Scan(&attempt.attempt)
