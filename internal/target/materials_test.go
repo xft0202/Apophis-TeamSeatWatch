@@ -41,8 +41,8 @@ func TestCompleteTOTPSeparatesRepairableMaterial(t *testing.T) {
 	if CompleteTOTP("") || CompleteTOTP("not-base32") {
 		t.Fatal("invalid TOTP was marked complete")
 	}
-	if !CompleteTOTP("JBSWY3DPEHPK3PXP") {
-		t.Fatal("valid TOTP was not marked complete")
+	if !CompleteTOTP("JBSWY3DPEHPK3PXP") || !CompleteTOTP("cookie") || !CompleteTOTP("google") {
+		t.Fatal("valid TOTP or session marker was not marked complete")
 	}
 	var _ auth.KeyRing = materialsTestRing{}
 }

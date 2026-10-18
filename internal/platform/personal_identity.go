@@ -124,8 +124,12 @@ func IdentityAfterPersonalProbe(s PersonalSession, evidence PersonalProbeEvidenc
 }
 
 func personalBearerIdentity(s PersonalSession, snapshotEmail, snapshotID string, now time.Time) (PersonalIdentity, error) {
+	return personalBearerIdentityWithPolicy(s, snapshotEmail, snapshotID, now, false)
+}
+
+func personalBearerIdentityWithPolicy(s PersonalSession, snapshotEmail, snapshotID string, now time.Time, allowFederatedWorkspace bool) (PersonalIdentity, error) {
 	fail := func() (PersonalIdentity, error) { return PersonalIdentity{}, ErrPersonalIdentityUnavailable }
-	expiry, err := postTOTPPersonalExpiry(s.AccessToken, now)
+	expiry, err := personalTokenExpiry(s.AccessToken, now, allowFederatedWorkspace)
 	if err != nil {
 		return fail()
 	}

@@ -379,8 +379,10 @@ func (h *OwnerAuthHandler) updateTargetAccount(w http.ResponseWriter, r *http.Re
 		return
 	}
 	secretRotation := request.Password != nil || request.TotpSecret != nil || request.RecoverySecret != nil
-	if (request.Password != nil && stringValue(request.Password) == "") ||
-		(request.RecoverySecret != nil && stringValue(request.RecoverySecret) == "") {
+	if (request.Password != nil && !validLength(stringValue(request.Password), 1, 16384)) ||
+		(request.TotpSecret != nil && !optionalLength(request.TotpSecret, 1024)) ||
+		(request.RecoverySecret != nil && !validLength(stringValue(request.RecoverySecret), 1, 4096)) ||
+		!optionalLength(request.PlatformSubjectId, 255) {
 		h.rejectOwnerMutation(w, r, owner, "target_account.update", "invalid_request", 422, "invalid_target_account", "Invalid Target Account", "Secret material cannot be empty")
 		return
 	}

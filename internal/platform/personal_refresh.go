@@ -113,15 +113,17 @@ func isCookieMaterial(password, totp string) bool {
 		strings.Count(p, ".") == 2 && len(p) > 100
 }
 
+const nextAuthChunkSize = 3900
+
 func appendSessionTokenCookie(cookies []SessionCookie, raw string) []SessionCookie {
 	if raw == "" {
 		return cookies
 	}
-	if len(raw) <= 3900 {
+	if len(raw) <= nextAuthChunkSize {
 		return append(cookies, SessionCookie{Name: "__Secure-next-auth.session-token", Value: raw, Host: "chatgpt.com"})
 	}
-	for i, start := 0, 0; start < len(raw); i, start = i+1, start+3900 {
-		end := start + 3900
+	for i, start := 0, 0; start < len(raw); i, start = i+1, start+nextAuthChunkSize {
+		end := start + nextAuthChunkSize
 		if end > len(raw) {
 			end = len(raw)
 		}
@@ -132,6 +134,107 @@ func appendSessionTokenCookie(cookies []SessionCookie, raw string) []SessionCook
 		})
 	}
 	return cookies
+}
+
+// normalizeSuppliedCookies enforces canonical NextAuth chunking and rejects
+// duplicate, conflicting, or mixed whole+chunked session cookies.
+func normalizeSuppliedCookies(input []SessionCookie) ([]SessionCookie, bool) {
+	const sessionName = "__Secure-next-auth.session-token"
+	var out []SessionCookie
+	seen := make(map[string]bool)
+	hasWhole := false
+	hasChunks := false
+	for _, c := range input {
+		host := strings.TrimSpace(c.Host)
+		if host == "" {
+			host = "chatgpt.com"
+		}
+		if host != "chatgpt.com" && host != "auth.openai.com" {
+			return nil, false
+		}
+		name := strings.TrimSpace(c.Name)
+		val := strings.TrimSpace(c.Value)
+		if name == "" || val == "" || c.Name != name || len(name) > 128 || len(val) > 16384 || strings.ContainsAny(name+val, "\r\n	;\x00") {
+			return nil, false
+		}
+		if (&http.Cookie{Name: name, Value: val}).Valid() != nil {
+			return nil, false
+		}
+		key := host + "/" + name
+		if seen[key] {
+			return nil, false
+		}
+		seen[key] = true
+		if host == "chatgpt.com" && name == sessionName {
+			if hasWhole || hasChunks {
+				return nil, false
+			}
+			hasWhole = true
+			if len(val) > nextAuthChunkSize {
+				out = appendSessionTokenCookie(out, val)
+			} else {
+				out = append(out, SessionCookie{Name: name, Value: val, Host: host})
+			}
+			continue
+		}
+		if host == "chatgpt.com" && strings.HasPrefix(name, sessionName+".") {
+			if hasWhole {
+				return nil, false
+			}
+			hasChunks = true
+		}
+		out = append(out, SessionCookie{Name: name, Value: val, Host: host})
+	}
+	if !hasBrowserSessionCookie(out) {
+		return nil, false
+	}
+	return out, true
+}
+
+func validateDirectSessionMaterial(accessToken, expiresRaw, userEmail, userID, deviceID, expectedIdentifier string, cookies []SessionCookie) (PersonalRefreshResult, bool) {
+	now := time.Now().UTC()
+	tokenExpiry, err := personalTokenExpiry(accessToken, now, true)
+	if err != nil {
+		return PersonalRefreshResult{}, false
+	}
+	sessionExpiry := tokenExpiry
+	if strings.TrimSpace(expiresRaw) != "" {
+		parsed, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(expiresRaw))
+		if parseErr != nil {
+			parsed, parseErr = time.Parse(time.RFC3339, strings.TrimSpace(expiresRaw))
+		}
+		if parseErr != nil || !parsed.After(now.Add(time.Minute)) {
+			return PersonalRefreshResult{}, false
+		}
+		sessionExpiry = parsed.UTC()
+	}
+	if sessionExpiry.Before(tokenExpiry) {
+		tokenExpiry = sessionExpiry
+	}
+	if len(cookies) == 0 {
+		cookies = appendSessionTokenCookie(nil, accessToken)
+	}
+	direct := PersonalRefreshResult{
+		Status: "ready",
+		Session: PersonalSession{
+			AccessToken:      accessToken,
+			Cookies:          cookies,
+			DeviceID:         deviceID,
+			ExpiresAt:        tokenExpiry,
+			SessionExpiresAt: sessionExpiry,
+		},
+	}
+	if !ValidatePersonalRefresh(direct, now) {
+		return PersonalRefreshResult{}, false
+	}
+	identity, idErr := personalBearerIdentityWithPolicy(direct.Session, userEmail, userID, now, true)
+	if idErr != nil {
+		return PersonalRefreshResult{}, false
+	}
+	if expectedIdentifier != "" && !strings.EqualFold(identity.Identifier, strings.TrimSpace(expectedIdentifier)) {
+		return PersonalRefreshResult{}, false
+	}
+	return direct, true
 }
 
 func parseSuppliedSessionMaterial(rawPassword, deviceID, expectedIdentifier string) (PersonalSession, PersonalRefreshResult, bool, bool) {
@@ -153,113 +256,75 @@ func parseSuppliedSessionMaterial(rawPassword, deviceID, expectedIdentifier stri
 				ID    string `json:"id"`
 			} `json:"user"`
 		}
-		if json.Unmarshal([]byte(raw), &snap) == nil {
-			if len(snap.Cookies) > 0 {
-				session.Cookies = snap.Cookies
-			}
-			if snap.SessionToken != "" {
-				session.Cookies = appendSessionTokenCookie(session.Cookies, snap.SessionToken)
-			}
-			// If the user pasted the JSON output of https://chatgpt.com/api/auth/session directly:
-			if snap.AccessToken != "" {
-				now := time.Now().UTC()
-				tokenExpiry, err := postTOTPPersonalExpiry(snap.AccessToken, now)
-				if err == nil {
-					sessionExpiry := tokenExpiry
-					if snap.Expires != "" {
-						if parsed, parseErr := time.Parse(time.RFC3339, snap.Expires); parseErr == nil && parsed.After(now.Add(time.Minute)) {
-							sessionExpiry = parsed
-						}
-					}
-					if sessionExpiry.Before(tokenExpiry) {
-						tokenExpiry = sessionExpiry
-					}
-					if len(session.Cookies) == 0 {
-						session.Cookies = []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: snap.AccessToken, Host: "chatgpt.com"}}
-					}
-					direct := PersonalRefreshResult{
-						Status: "ready",
-						Session: PersonalSession{
-							AccessToken:      snap.AccessToken,
-							Cookies:          session.Cookies,
-							DeviceID:         deviceID,
-							ExpiresAt:        tokenExpiry,
-							SessionExpiresAt: sessionExpiry,
-						},
-					}
-					if ValidatePersonalRefresh(direct, now) {
-						if expectedIdentifier == "" {
-							return PersonalSession{}, direct, true, true
-						}
-						if identity, idErr := personalBearerIdentity(direct.Session, snap.User.Email, snap.User.ID, now); idErr == nil && strings.EqualFold(identity.Identifier, strings.TrimSpace(expectedIdentifier)) {
-							return PersonalSession{}, direct, true, true
-						}
-					}
-				}
-			}
+		if json.Unmarshal([]byte(raw), &snap) != nil {
+			return PersonalSession{}, PersonalRefreshResult{}, false, false
 		}
+		var rawCookies []SessionCookie
+		if len(snap.Cookies) > 0 {
+			rawCookies = append(rawCookies, snap.Cookies...)
+		}
+		if strings.TrimSpace(snap.SessionToken) != "" {
+			rawCookies = append(rawCookies, SessionCookie{Name: "__Secure-next-auth.session-token", Value: strings.TrimSpace(snap.SessionToken), Host: "chatgpt.com"})
+		}
+		if len(rawCookies) > 0 {
+			normalized, ok := normalizeSuppliedCookies(rawCookies)
+			if !ok {
+				return PersonalSession{}, PersonalRefreshResult{}, false, false
+			}
+			session.Cookies = normalized
+		}
+		if strings.TrimSpace(snap.AccessToken) != "" {
+			direct, ok := validateDirectSessionMaterial(strings.TrimSpace(snap.AccessToken), snap.Expires, snap.User.Email, snap.User.ID, deviceID, expectedIdentifier, session.Cookies)
+			if !ok {
+				return PersonalSession{}, PersonalRefreshResult{}, false, false
+			}
+			return session, direct, true, true
+		}
+		return session, PersonalRefreshResult{}, false, validPersonalCookies(session)
 	}
 	// 2. Check if semicolon-separated cookie header or key=value pairs (e.g. Cookie: a=b; c=d)
-	if len(session.Cookies) == 0 {
-		cleaned := raw
-		if strings.HasPrefix(strings.ToLower(cleaned), "cookie:") {
-			cleaned = strings.TrimSpace(cleaned[len("cookie:"):])
-		}
-		if strings.Contains(cleaned, "__Secure-next-auth.session-token") || strings.Contains(cleaned, ";") {
-			seen := make(map[string]bool)
-			for _, part := range strings.Split(cleaned, ";") {
-				part = strings.TrimSpace(part)
-				if part == "" {
-					continue
-				}
-				eq := strings.IndexByte(part, '=')
-				if eq <= 0 {
-					continue
-				}
-				name := strings.TrimSpace(part[:eq])
-				val := strings.TrimSpace(part[eq+1:])
-				if name == "" || val == "" || len(name) > 128 || len(val) > 16384 || strings.ContainsAny(name+val, "\r\n	;\x00") || seen[name] {
-					continue
-				}
-				if name == "__Secure-next-auth.session-token" && len(val) > 3900 {
-					session.Cookies = appendSessionTokenCookie(session.Cookies, val)
-					seen[name] = true
-					continue
-				}
-				if name == "__Secure-next-auth.session-token" || strings.HasPrefix(name, "__Secure-next-auth.session-token.") || name == "_puid" || name == "oai-sc" || name == "_account" || name == "oai-workspace" {
-					session.Cookies = append(session.Cookies, SessionCookie{Name: name, Value: val, Host: "chatgpt.com"})
-					seen[name] = true
-				}
+	cleaned := raw
+	if strings.HasPrefix(strings.ToLower(cleaned), "cookie:") {
+		cleaned = strings.TrimSpace(cleaned[len("cookie:"):])
+	}
+	if strings.Contains(cleaned, "=") || strings.Contains(cleaned, ";") {
+		var rawCookies []SessionCookie
+		for _, part := range strings.Split(cleaned, ";") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			eq := strings.IndexByte(part, '=')
+			if eq <= 0 {
+				return PersonalSession{}, PersonalRefreshResult{}, false, false
+			}
+			name := strings.TrimSpace(part[:eq])
+			val := strings.TrimSpace(part[eq+1:])
+			if name == "__Secure-next-auth.session-token" || strings.HasPrefix(name, "__Secure-next-auth.session-token.") || name == "_puid" || name == "oai-sc" || name == "_account" || name == "oai-workspace" {
+				rawCookies = append(rawCookies, SessionCookie{Name: name, Value: val, Host: "chatgpt.com"})
 			}
 		}
+		normalized, ok := normalizeSuppliedCookies(rawCookies)
+		if !ok {
+			return PersonalSession{}, PersonalRefreshResult{}, false, false
+		}
+		session.Cookies = normalized
+		return session, PersonalRefreshResult{}, false, validPersonalCookies(session)
 	}
 	// 3. Check if raw is a direct JWT accessToken (3 base64url segments)
-	if len(session.Cookies) == 0 && strings.Count(raw, ".") == 2 && !strings.ContainsAny(raw, " 	\r\n;") {
-		now := time.Now().UTC()
-		if tokenExpiry, err := postTOTPPersonalExpiry(raw, now); err == nil {
-			direct := PersonalRefreshResult{
-				Status: "ready",
-				Session: PersonalSession{
-					AccessToken:      raw,
-					Cookies:          []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: raw, Host: "chatgpt.com"}},
-					DeviceID:         deviceID,
-					ExpiresAt:        tokenExpiry,
-					SessionExpiresAt: tokenExpiry,
-				},
-			}
-			if ValidatePersonalRefresh(direct, now) {
-				if expectedIdentifier == "" {
-					return PersonalSession{}, direct, true, true
-				}
-				if identity, idErr := personalBearerIdentity(direct.Session, "", "", now); idErr == nil && strings.EqualFold(identity.Identifier, strings.TrimSpace(expectedIdentifier)) {
-					return PersonalSession{}, direct, true, true
-				}
-			}
+	if strings.Count(raw, ".") == 2 && !strings.ContainsAny(raw, " 	\r\n;") {
+		if direct, ok := validateDirectSessionMaterial(raw, "", "", "", deviceID, expectedIdentifier, nil); ok {
+			return PersonalSession{}, direct, true, true
 		}
+		return PersonalSession{}, PersonalRefreshResult{}, false, false
 	}
 	// 4. Otherwise treat raw string as __Secure-next-auth.session-token value directly
-	if len(session.Cookies) == 0 && !strings.ContainsAny(raw, " 	\r\n;") {
-		session.Cookies = appendSessionTokenCookie(nil, raw)
+	if !strings.ContainsAny(raw, " 	\r\n;") {
+		normalized, ok := normalizeSuppliedCookies([]SessionCookie{{Name: "__Secure-next-auth.session-token", Value: raw, Host: "chatgpt.com"}})
+		if !ok {
+			return PersonalSession{}, PersonalRefreshResult{}, false, false
+		}
+		session.Cookies = normalized
 	}
 	return session, PersonalRefreshResult{}, false, validPersonalCookies(session)
 }
@@ -283,7 +348,7 @@ func (p PersonalWebRefresher) RefreshPersonal(ctx context.Context, material Moth
 		if isDirect && len(supplied.Cookies) == 0 {
 			return direct, nil
 		}
-		res, err := p.renewPersonalWithIdentifier(ctx, supplied, material.Environment, material.LoginIdentifier)
+		res, err := p.renewPersonalWithIdentifier(ctx, supplied, material.Environment, material.LoginIdentifier, true)
 		if (err != nil || res.Status != "ready") && isDirect {
 			return direct, nil
 		}
@@ -347,7 +412,7 @@ func (p PersonalWebRefresher) RefreshPersonal(ctx context.Context, material Moth
 		return personalRequestFailure(err), nil
 	}
 	if authorization.completedAt(pageURL) {
-		return r.readPersonalSession(ctx, jar, deviceID, false, material.LoginIdentifier)
+		return r.readPersonalSession(ctx, jar, deviceID, false, material.LoginIdentifier, false)
 	}
 	if !strings.Contains(strings.ToLower(pageURL+" "+string(page)), "log-in/password") {
 		pageURL, page, err = r.followBrowserRedirect(ctx, jar, officialAuthBase+"/log-in/password", pageURL)
@@ -412,15 +477,15 @@ func (p PersonalWebRefresher) RefreshPersonal(ctx context.Context, material Moth
 	if err = r.finishPersonalChoice(ctx, jar, pageURL); err != nil {
 		return personalRequestFailure(err), nil
 	}
-	return r.readPersonalSession(ctx, jar, deviceID, false, "")
+	return r.readPersonalSession(ctx, jar, deviceID, false, "", false)
 }
 
 // RenewPersonal checks the saved session on the same fixed first-party endpoint.
 func (p PersonalWebRefresher) RenewPersonal(ctx context.Context, saved PersonalSession, environment browserenv.Environment) (PersonalRefreshResult, error) {
-	return p.renewPersonalWithIdentifier(ctx, saved, environment, "")
+	return p.renewPersonalWithIdentifier(ctx, saved, environment, "", false)
 }
 
-func (p PersonalWebRefresher) renewPersonalWithIdentifier(ctx context.Context, saved PersonalSession, environment browserenv.Environment, expectedIdentifier string) (PersonalRefreshResult, error) {
+func (p PersonalWebRefresher) renewPersonalWithIdentifier(ctx context.Context, saved PersonalSession, environment browserenv.Environment, expectedIdentifier string, allowFederatedWorkspace bool) (PersonalRefreshResult, error) {
 	failed := PersonalRefreshResult{Status: "refresh_failed"}
 	if err := environment.Validate(); err != nil {
 		return failed, err
@@ -460,7 +525,7 @@ func (p PersonalWebRefresher) renewPersonalWithIdentifier(ctx context.Context, s
 	}
 	client.Transport = personalHostGuard{next: transport}
 	client.Jar = jar
-	return (&HTTPReader{client: &client}).readPersonalSession(ctx, jar, environment.DeviceID, true, expectedIdentifier)
+	return (&HTTPReader{client: &client}).readPersonalSession(ctx, jar, environment.DeviceID, true, expectedIdentifier, allowFederatedWorkspace)
 }
 
 func personalCookieJar(saved PersonalSession) (http.CookieJar, error) {
@@ -481,7 +546,7 @@ func personalCookieJar(saved PersonalSession) (http.CookieJar, error) {
 	return jar, nil
 }
 
-func (r *HTTPReader) readPersonalSession(ctx context.Context, jar http.CookieJar, deviceID string, renewal bool, expectedIdentifier string) (PersonalRefreshResult, error) {
+func (r *HTTPReader) readPersonalSession(ctx context.Context, jar http.CookieJar, deviceID string, renewal bool, expectedIdentifier string, allowFederatedWorkspace bool) (PersonalRefreshResult, error) {
 	failed := PersonalRefreshResult{Status: "refresh_failed"}
 	sessionBody, err := r.authJSONWithJar(ctx, jar, http.MethodGet, officialChatBase+"/api/auth/session", nil, officialChatBase+"/")
 	if err != nil {
@@ -511,7 +576,7 @@ func (r *HTTPReader) readPersonalSession(ctx context.Context, jar http.CookieJar
 		return failed, nil
 	}
 	now := time.Now().UTC()
-	tokenExpiry, err := postTOTPPersonalExpiry(snapshot.AccessToken, now)
+	tokenExpiry, err := personalTokenExpiry(snapshot.AccessToken, now, allowFederatedWorkspace)
 	if err != nil {
 		return failed, nil
 	}
@@ -534,7 +599,7 @@ func (r *HTTPReader) readPersonalSession(ctx context.Context, jar http.CookieJar
 		return failed, nil
 	}
 	if expectedIdentifier != "" {
-		identity, err := personalBearerIdentity(result.Session, snapshot.User.Email, snapshot.User.ID, now)
+		identity, err := personalBearerIdentityWithPolicy(result.Session, snapshot.User.Email, snapshot.User.ID, now, allowFederatedWorkspace)
 		if err != nil || !strings.EqualFold(identity.Identifier, strings.TrimSpace(expectedIdentifier)) {
 			return failed, nil
 		}

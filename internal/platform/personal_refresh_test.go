@@ -354,3 +354,203 @@ func TestPersonalGuardRejectionDoesNotReportNetworkFailure(t *testing.T) {
 		t.Fatalf("local scope rejection classified as network: result=%+v err=%v", result, err)
 	}
 }
+
+func TestNativeAccountRequiresStrictPostTOTPClaims(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{"password_amr", func(c map[string]any) {
+			c["sub"] = "auth0|native-user"
+			c["https://api.openai.com/auth"].(map[string]any)["amr"] = []string{"urn:openai:amr:password"}
+		}},
+		{"email_otp_amr", func(c map[string]any) {
+			c["sub"] = "auth0|native-user"
+			c["https://api.openai.com/auth"].(map[string]any)["amr"] = []string{"urn:openai:amr:email_otp"}
+		}},
+		{"google_amr_on_native_sub", func(c map[string]any) {
+			c["sub"] = "auth0|native-user"
+			c["https://api.openai.com/auth"].(map[string]any)["amr"] = []string{"urn:openai:amr:google"}
+		}},
+		{"missing_mfa_on_native_sub", func(c map[string]any) {
+			c["sub"] = "auth0|native-user"
+			delete(c, "https://api.openai.com/mfa")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			token := personalFixtureToken(now, tc.mutate)
+			if _, err := postTOTPPersonalExpiry(token, now); err == nil {
+				t.Fatalf("native non-TOTP token was accepted: %s", tc.name)
+			}
+			if _, err := personalTokenExpiry(token, now, true); err == nil {
+				t.Fatalf("native non-TOTP token was accepted under federated policy: %s", tc.name)
+			}
+		})
+	}
+}
+
+func TestFederatedOAuthAndWorkspaceTokenBoundaries(t *testing.T) {
+	now := time.Now()
+	federatedPersonal := personalFixtureToken(now, func(c map[string]any) {
+		c["sub"] = "google-oauth2|100875473432628400772"
+		c["email"] = "googleuser@gmail.com"
+		auth := c["https://api.openai.com/auth"].(map[string]any)
+		auth["amr"] = []string{"urn:openai:amr:google"}
+		auth["chatgpt_plan_type"] = "free"
+		delete(c, "https://api.openai.com/mfa")
+	})
+	if _, err := postTOTPPersonalExpiry(federatedPersonal, now); err != nil {
+		t.Fatalf("federated Personal token rejected: %v", err)
+	}
+	federatedSess := PersonalSession{
+		AccessToken: federatedPersonal,
+		DeviceID:    "fixture-device",
+		Cookies:     []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "fixture-cookie"}},
+		ExpiresAt:   now.Add(time.Hour),
+	}
+	if !validRotationJoinSession(federatedSess, now) {
+		t.Fatal("federated Personal session rejected by validRotationJoinSession")
+	}
+
+	// A federated token with chatgpt_plan_type=team is rejected at Personal/candidate boundaries,
+	// and only admitted when explicitly evaluating federated workspace-default session renewal.
+	federatedTeam := personalFixtureToken(now, func(c map[string]any) {
+		c["sub"] = "google-oauth2|100875473432628400772"
+		c["email"] = "googleuser@gmail.com"
+		auth := c["https://api.openai.com/auth"].(map[string]any)
+		auth["amr"] = []string{"urn:openai:amr:google"}
+		auth["chatgpt_plan_type"] = "team"
+		delete(c, "https://api.openai.com/mfa")
+	})
+	if _, err := postTOTPPersonalExpiry(federatedTeam, now); err == nil {
+		t.Fatal("federated team-scoped token must be rejected by strict postTOTPPersonalExpiry")
+	}
+	federatedTeamSess := federatedSess
+	federatedTeamSess.AccessToken = federatedTeam
+	if validRotationJoinSession(federatedTeamSess, now) {
+		t.Fatal("federated team-scoped token must be rejected by validRotationJoinSession")
+	}
+	if _, err := personalTokenExpiry(federatedTeam, now, true); err != nil {
+		t.Fatalf("federated team-scoped token rejected when allowFederatedWorkspace=true: %v", err)
+	}
+
+	// Native account with team plan is rejected even when allowFederatedWorkspace=true.
+	nativeTeam := personalFixtureToken(now, func(c map[string]any) {
+		c["sub"] = "auth0|native-user"
+		c["https://api.openai.com/auth"].(map[string]any)["chatgpt_plan_type"] = "team"
+	})
+	if _, err := personalTokenExpiry(nativeTeam, now, true); err == nil {
+		t.Fatal("native team-scoped token must be rejected even with allowFederatedWorkspace=true")
+	}
+}
+
+func TestNormalizeAndParseSuppliedCookiesChunkingAndConflicts(t *testing.T) {
+	shortVal := "short-session-token"
+	longVal := strings.Repeat("a", 5000)
+
+	// 1. Raw short token
+	s1, _, isDirect1, ok1 := parseSuppliedSessionMaterial(shortVal, "dev-1", "")
+	if !ok1 || isDirect1 || len(s1.Cookies) != 1 || s1.Cookies[0].Name != "__Secure-next-auth.session-token" || s1.Cookies[0].Value != shortVal {
+		t.Fatalf("raw short cookie failed: ok=%v cookies=%+v", ok1, s1.Cookies)
+	}
+
+	// 2. Raw >3900 token auto-chunks
+	s2, _, isDirect2, ok2 := parseSuppliedSessionMaterial(longVal, "dev-1", "")
+	if !ok2 || isDirect2 || len(s2.Cookies) != 2 || s2.Cookies[0].Name != "__Secure-next-auth.session-token.0" || len(s2.Cookies[0].Value) != 3900 || s2.Cookies[1].Name != "__Secure-next-auth.session-token.1" || len(s2.Cookies[1].Value) != 1100 {
+		t.Fatalf("raw long cookie auto-chunk failed: ok=%v cookies=%+v", ok2, s2.Cookies)
+	}
+
+	// 3. Key=value >3900 token auto-chunks
+	kvLong := "oai-did=123; __Secure-next-auth.session-token=" + longVal + "; _puid=user1"
+	s3, _, _, ok3 := parseSuppliedSessionMaterial(kvLong, "dev-1", "")
+	if !ok3 || len(s3.Cookies) != 3 || s3.Cookies[0].Name != "__Secure-next-auth.session-token.0" || s3.Cookies[1].Name != "__Secure-next-auth.session-token.1" || s3.Cookies[2].Name != "_puid" {
+		t.Fatalf("key=value long cookie auto-chunk failed: ok=%v cookies=%+v", ok3, s3.Cookies)
+	}
+
+	// 4. JSON sessionToken >3900 auto-chunks
+	jsonLong, _ := json.Marshal(map[string]any{"sessionToken": longVal})
+	s4, _, _, ok4 := parseSuppliedSessionMaterial(string(jsonLong), "dev-1", "")
+	if !ok4 || len(s4.Cookies) != 2 || s4.Cookies[0].Name != "__Secure-next-auth.session-token.0" || s4.Cookies[1].Name != "__Secure-next-auth.session-token.1" {
+		t.Fatalf("JSON sessionToken long cookie auto-chunk failed: ok=%v cookies=%+v", ok4, s4.Cookies)
+	}
+
+	// 5. Missing chunk (.1 without .0) rejected
+	for _, bad := range []string{
+		"__Secure-next-auth.session-token.1=only-chunk-1",
+		"__Secure-next-auth.session-token.0=chunk0; __Secure-next-auth.session-token.2=chunk2",
+		"__Secure-next-auth.session-token=whole; __Secure-next-auth.session-token.0=chunk0",
+		"__Secure-next-auth.session-token=dup1; __Secure-next-auth.session-token=dup2",
+		"__Secure-next-auth.session-token.0=dup1; __Secure-next-auth.session-token.0=dup2",
+	} {
+		if _, _, _, ok := parseSuppliedSessionMaterial(bad, "dev-1", ""); ok {
+			t.Fatalf("expected invalid/conflicting cookie input %q to be rejected", bad)
+		}
+	}
+}
+
+func TestSessionJSONImportAndIdentityMatching(t *testing.T) {
+	now := time.Now().UTC()
+	exp := now.Add(2 * time.Hour).Truncate(time.Second)
+	token := personalFixtureToken(now, func(c map[string]any) {
+		c["sub"] = "google-oauth2|100875473432628400772"
+		c["email"] = "googleuser@gmail.com"
+		auth := c["https://api.openai.com/auth"].(map[string]any)
+		auth["amr"] = []string{"urn:openai:amr:google"}
+		auth["chatgpt_user_id"] = "user-google123"
+		delete(c, "https://api.openai.com/mfa")
+	})
+	rawJSON, _ := json.Marshal(map[string]any{
+		"accessToken": token,
+		"expires":     exp.Format(time.RFC3339),
+		"user": map[string]any{
+			"email": "googleuser@gmail.com",
+			"id":    "user-google123",
+		},
+	})
+
+	// Matching identifier succeeds without needing browser network roundtrip when no cookies are in JSON
+	adapter := PersonalWebRefresher{
+		Browser: fixturePersonalBrowser,
+		Client: func(context.Context) (*http.Client, func(), error) {
+			t.Fatal("direct JSON session without cookies should not acquire browser transport")
+			return nil, nil, nil
+		},
+	}
+	res, err := adapter.RefreshPersonal(t.Context(), MotherMaterial{
+		Environment:     fixtureEnvironment,
+		LoginIdentifier: "GoogleUser@gmail.com",
+		Password:        string(rawJSON),
+		TOTPSecret:      "cookie",
+	})
+	if err != nil || res.Status != "ready" || res.Session.AccessToken != token || !res.Session.SessionExpiresAt.Equal(exp) {
+		t.Fatalf("direct JSON import failed: res=%+v err=%v", res, err)
+	}
+
+	// Mismatched identifier is rejected as invalid_login
+	resMismatch, err := adapter.RefreshPersonal(t.Context(), MotherMaterial{
+		Environment:     fixtureEnvironment,
+		LoginIdentifier: "other@gmail.com",
+		Password:        string(rawJSON),
+		TOTPSecret:      "cookie",
+	})
+	if err != nil || resMismatch.Status != "invalid_login" {
+		t.Fatalf("mismatched identifier not rejected: res=%+v err=%v", resMismatch, err)
+	}
+
+	// Expired session JSON is rejected
+	expiredJSON, _ := json.Marshal(map[string]any{
+		"accessToken": token,
+		"expires":     now.Add(-time.Minute).Format(time.RFC3339),
+		"user":        map[string]any{"email": "googleuser@gmail.com", "id": "user-google123"},
+	})
+	resExpired, err := adapter.RefreshPersonal(t.Context(), MotherMaterial{
+		Environment:     fixtureEnvironment,
+		LoginIdentifier: "googleuser@gmail.com",
+		Password:        string(expiredJSON),
+		TOTPSecret:      "cookie",
+	})
+	if err != nil || resExpired.Status != "invalid_login" {
+		t.Fatalf("expired JSON not rejected: res=%+v err=%v", resExpired, err)
+	}
+}

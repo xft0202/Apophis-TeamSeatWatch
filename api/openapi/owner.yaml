@@ -4198,7 +4198,7 @@ components:
         password:
           type: string
           minLength: 1
-          maxLength: 1024
+          maxLength: 16384
         totpSecret:
           type: string
           maxLength: 1024
@@ -4287,7 +4287,7 @@ components:
         password:
           type: string
           minLength: 1
-          maxLength: 1024
+          maxLength: 16384
         totpSecret:
           type: string
           maxLength: 1024
@@ -5213,7 +5213,7 @@ components:
         password:
           type: string
           minLength: 1
-          maxLength: 1024
+          maxLength: 16384
         totpSecret:
           type: string
           maxLength: 1024
@@ -5242,7 +5242,7 @@ components:
         password:
           type: string
           minLength: 1
-          maxLength: 1024
+          maxLength: 16384
         totpSecret:
           type: string
           maxLength: 1024

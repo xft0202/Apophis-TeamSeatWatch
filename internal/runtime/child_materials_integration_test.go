@@ -265,6 +265,101 @@ func TestChildMaterialsOwnerContractIntegration(t *testing.T) {
 	if _, err = store.JoinTarget(ctx, task.Task{ID: joinTaskID}); err == nil {
 		t.Fatal("corrected materials alone authorized an operation without premium-seat scope")
 	}
+	// Long credentials (1024–16384 chars) and session markers work for import, create, and update.
+	longCred := strings.Repeat("k", 5200)
+	overCred := strings.Repeat("z", 16385)
+	longImported := invoke("POST", "/api/owner/v1/child-materials/import", map[string]string{"content": "longchild@example.com----" + longCred + "----cookie\n"}, rotated, true)
+	if longImported.Code != 200 {
+		t.Fatalf("long child import=%d %s", longImported.Code, longImported.Body.String())
+	}
+	for _, cookie := range longImported.Result().Cookies() {
+		if cookie.Name == auth.SessionCookieName {
+			rotated = cookie.Value
+		}
+	}
+	createBody, _ := json.Marshal(map[string]string{"identifier": "createdlong@example.com", "displayLabel": "createdlong@example.com", "password": strings.Repeat("p", 8000), "totpSecret": "google"})
+	createReq := httptest.NewRequest("POST", "/api/owner/v1/target-accounts", bytes.NewReader(createBody))
+	createReq.Header.Set("Origin", "https://owner.test")
+	createReq.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: csrf})
+	createReq.Header.Set(auth.CSRFHeaderName, csrf)
+	createReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: rotated})
+	createdRec := httptest.NewRecorder()
+	handler.createTargetAccount(createdRec, createReq)
+	if createdRec.Code != 201 {
+		t.Fatalf("createTargetAccount long password=%d %s", createdRec.Code, createdRec.Body.String())
+	}
+	for _, cookie := range createdRec.Result().Cookies() {
+		if cookie.Name == auth.SessionCookieName {
+			rotated = cookie.Value
+		}
+	}
+	var createdItem ownerapi.TargetAccount
+	if err = json.Unmarshal(createdRec.Body.Bytes(), &createdItem); err != nil || createdItem.MaterialStatus != "complete" {
+		t.Fatalf("created long target account=%+v err=%v", createdItem, err)
+	}
+	updateLongBody, _ := json.Marshal(map[string]string{"displayLabel": "createdlong@example.com", "status": "active", "password": strings.Repeat("u", 16384), "totpSecret": "cookie"})
+	updateLongReq := httptest.NewRequest("PATCH", "/api/owner/v1/target-accounts/"+createdItem.Id.String(), bytes.NewReader(updateLongBody))
+	updateLongReq.SetPathValue("targetAccountId", createdItem.Id.String())
+	updateLongReq.Header.Set("Origin", "https://owner.test")
+	updateLongReq.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: csrf})
+	updateLongReq.Header.Set(auth.CSRFHeaderName, csrf)
+	updateLongReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: rotated})
+	updatedLongRec := httptest.NewRecorder()
+	handler.updateTargetAccount(updatedLongRec, updateLongReq, ownerapi.UpdateTargetAccountParams{IfMatch: `"1"`})
+	if updatedLongRec.Code != 200 {
+		t.Fatalf("updateTargetAccount 16384 password=%d %s", updatedLongRec.Code, updatedLongRec.Body.String())
+	}
+	for _, cookie := range updatedLongRec.Result().Cookies() {
+		if cookie.Name == auth.SessionCookieName {
+			rotated = cookie.Value
+		}
+	}
+	updateOverBody, _ := json.Marshal(map[string]string{"displayLabel": "createdlong@example.com", "status": "active", "password": overCred})
+	updateOverReq := httptest.NewRequest("PATCH", "/api/owner/v1/target-accounts/"+createdItem.Id.String(), bytes.NewReader(updateOverBody))
+	updateOverReq.SetPathValue("targetAccountId", createdItem.Id.String())
+	updateOverReq.Header.Set("Origin", "https://owner.test")
+	updateOverReq.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: csrf})
+	updateOverReq.Header.Set(auth.CSRFHeaderName, csrf)
+	updateOverReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: rotated})
+	updatedOverRec := httptest.NewRecorder()
+	handler.updateTargetAccount(updatedOverRec, updateOverReq, ownerapi.UpdateTargetAccountParams{IfMatch: `"2"`})
+	if updatedOverRec.Code != 422 {
+		t.Fatalf("updateTargetAccount >16384 password expected 422, got=%d", updatedOverRec.Code)
+	}
+	// Also test mother create & update with 1024–16384 credentials
+	motherCreateBody, _ := json.Marshal(map[string]string{"displayName": "Long Mother", "loginIdentifier": "longmother@example.com", "password": strings.Repeat("m", 6000), "totpSecret": "google"})
+	motherCreateReq := httptest.NewRequest("POST", "/api/owner/v1/mother-accounts", bytes.NewReader(motherCreateBody))
+	motherCreateReq.Header.Set("Origin", "https://owner.test")
+	motherCreateReq.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: csrf})
+	motherCreateReq.Header.Set(auth.CSRFHeaderName, csrf)
+	motherCreateReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: rotated})
+	motherCreateRec := httptest.NewRecorder()
+	handler.createMotherAccount(motherCreateRec, motherCreateReq)
+	if motherCreateRec.Code != 201 {
+		t.Fatalf("createMotherAccount long password=%d %s", motherCreateRec.Code, motherCreateRec.Body.String())
+	}
+	for _, cookie := range motherCreateRec.Result().Cookies() {
+		if cookie.Name == auth.SessionCookieName {
+			rotated = cookie.Value
+		}
+	}
+	var createdMother ownerapi.MotherAccount
+	if err = json.Unmarshal(motherCreateRec.Body.Bytes(), &createdMother); err != nil || createdMother.MaterialStatus != ownerapi.MotherAccountMaterialStatusComplete {
+		t.Fatalf("createdMother=%+v err=%v", createdMother, err)
+	}
+	motherUpdateBody, _ := json.Marshal(map[string]string{"displayName": "Long Mother", "status": "active", "password": strings.Repeat("n", 16384), "totpSecret": "cookie"})
+	motherUpdateReq := httptest.NewRequest("PATCH", "/api/owner/v1/mother-accounts/"+createdMother.Id.String(), bytes.NewReader(motherUpdateBody))
+	motherUpdateReq.SetPathValue("accountId", createdMother.Id.String())
+	motherUpdateReq.Header.Set("Origin", "https://owner.test")
+	motherUpdateReq.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: csrf})
+	motherUpdateReq.Header.Set(auth.CSRFHeaderName, csrf)
+	motherUpdateReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: rotated})
+	motherUpdateRec := httptest.NewRecorder()
+	handler.updateMotherAccount(motherUpdateRec, motherUpdateReq, ownerapi.UpdateMotherAccountParams{IfMatch: `"1"`})
+	if motherUpdateRec.Code != 200 {
+		t.Fatalf("updateMotherAccount 16384 password=%d %s", motherUpdateRec.Code, motherUpdateRec.Body.String())
+	}
+
 	if _, err = pool.Exec(ctx, `UPDATE tsw_target_credentials SET password_secret='tampered',secret_revision=secret_revision+1,version=version+1 WHERE target_account_id=$1`, waitingID); err != nil {
 		t.Fatal(err)
 	}

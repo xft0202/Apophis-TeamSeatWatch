@@ -16,6 +16,10 @@ const personalWebScopes = "openid email profile offline_access model.request mod
 // Token claims are an admission hint, not signature verification. A fresh
 // authenticated /api/auth/session response must supply this same token.
 func postTOTPPersonalExpiry(token string, now time.Time) (time.Time, error) {
+	return personalTokenExpiry(token, now, false)
+}
+
+func personalTokenExpiry(token string, now time.Time, allowFederatedWorkspace bool) (time.Time, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 || len(parts[1]) == 0 {
 		return time.Time{}, errors.New("personal token is not a JWT")
@@ -42,14 +46,17 @@ func postTOTPPersonalExpiry(token string, now time.Time) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
+	sub, err := consistentPersonalClaim(claims, authClaims, "sub", false)
+	if err != nil {
+		return time.Time{}, err
+	}
+	isFederated := isFederatedOAuthSubject(sub)
 	// A Workspace-scoped flat claim overrides nested claims in the sourced
 	// classifier. Reject disagreement instead of choosing either representation.
-	isGoogleOrFederated := false
-	if sub, ok := claims["sub"].(string); ok && (strings.HasPrefix(sub, "google-oauth2|") || strings.HasPrefix(sub, "apple|") || strings.HasPrefix(sub, "windowslive|")) {
-		isGoogleOrFederated = true
-	}
+	// Only an explicit federated mother/discovery check may admit a default
+	// workspace plan; candidate Personal seams always require a Personal plan.
 	validPlan := plan == "free" || plan == "plus" || plan == "pro" || plan == "personal" || plan == "default" ||
-		(isGoogleOrFederated && (plan == "team" || plan == "business"))
+		(allowFederatedWorkspace && isFederated && (plan == "team" || plan == "business"))
 	if clientID != personalWebClientID || accountID == "" || !validPlan {
 		return time.Time{}, errors.New("personal token scope invalid")
 	}
@@ -76,27 +83,47 @@ func postTOTPPersonalExpiry(token string, now time.Time) (time.Time, error) {
 			return time.Time{}, errors.New("personal token scopes incomplete")
 		}
 	}
+	if isFederated {
+		if err := verifyFederatedAuthClaims(claims, authClaims, mfaClaims); err != nil {
+			return time.Time{}, err
+		}
+	} else {
+		if err := verifyNativePostTOTPClaims(claims, authClaims, mfaClaims); err != nil {
+			return time.Time{}, err
+		}
+	}
+	exp, ok := claims["exp"].(float64)
+	if !ok || exp <= 0 {
+		return time.Time{}, errors.New("personal token expiration missing")
+	}
+	expires := time.Unix(int64(exp), 0).UTC()
+	if !expires.After(now.Add(time.Minute)) {
+		return time.Time{}, errors.New("personal token expiration invalid")
+	}
+	return expires, nil
+}
+
+func isFederatedOAuthSubject(sub string) bool {
+	return strings.HasPrefix(sub, "google-oauth2|") && len(sub) > len("google-oauth2|") ||
+		strings.HasPrefix(sub, "apple|") && len(sub) > len("apple|") ||
+		strings.HasPrefix(sub, "windowslive|") && len(sub) > len("windowslive|")
+}
+
+func verifyNativePostTOTPClaims(claims, authClaims, mfaClaims map[string]any) error {
 	foundAMR := false
 	for _, candidate := range []any{claims["amr"], authClaims["amr"], claims["https://api.openai.com/auth.amr"]} {
 		if candidate == nil {
 			continue
 		}
 		foundAMR = true
-		foundAuthMethod := false
+		foundTOTP := false
 		for _, value := range personalClaimStrings(candidate) {
-			v := strings.ToLower(strings.TrimSpace(value))
-			if v == "urn:openai:amr:otp_totp" ||
-				strings.HasPrefix(v, "urn:openai:amr:") ||
-				strings.Contains(v, "google") ||
-				strings.Contains(v, "oauth") ||
-				strings.Contains(v, "federated") ||
-				strings.Contains(v, "social") ||
-				v == "mfa" || v == "otp" || v == "totp" {
-				foundAuthMethod = true
+			if strings.EqualFold(value, "urn:openai:amr:otp_totp") {
+				foundTOTP = true
 			}
 		}
-		if !foundAuthMethod {
-			return time.Time{}, errors.New("post-TOTP proof conflicts")
+		if !foundTOTP {
+			return errors.New("post-TOTP proof conflicts")
 		}
 	}
 	foundMFA := false
@@ -111,23 +138,48 @@ func postTOTPPersonalExpiry(token string, now time.Time) (time.Time, error) {
 		if value, ok := candidate.(string); ok && strings.EqualFold(strings.TrimSpace(value), "yes") {
 			continue
 		}
-		if isGoogleOrFederated {
+		return errors.New("post-TOTP MFA proof conflicts")
+	}
+	if !foundAMR || !foundMFA {
+		return errors.New("post-TOTP proof missing")
+	}
+	return nil
+}
+
+func verifyFederatedAuthClaims(claims, authClaims, mfaClaims map[string]any) error {
+	foundAMR := false
+	for _, candidate := range []any{claims["amr"], authClaims["amr"], claims["https://api.openai.com/auth.amr"]} {
+		if candidate == nil {
 			continue
 		}
-		return time.Time{}, errors.New("post-TOTP MFA proof conflicts")
+		foundAMR = true
+		foundFederated := false
+		for _, value := range personalClaimStrings(candidate) {
+			switch strings.ToLower(strings.TrimSpace(value)) {
+			case "urn:openai:amr:google", "urn:openai:amr:apple", "urn:openai:amr:microsoft", "urn:openai:amr:windowslive", "urn:openai:amr:otp_totp":
+				foundFederated = true
+			}
+		}
+		if !foundFederated {
+			return errors.New("federated AMR proof conflicts")
+		}
 	}
-	if (!foundAMR || !foundMFA) && !isGoogleOrFederated {
-		return time.Time{}, errors.New("post-TOTP proof missing")
+	if !foundAMR {
+		return errors.New("federated AMR proof missing")
 	}
-	exp, ok := claims["exp"].(float64)
-	if !ok || exp <= 0 {
-		return time.Time{}, errors.New("personal token expiration missing")
+	for _, candidate := range []any{mfaClaims["required"], claims["required"], claims["https://api.openai.com/mfa.required"]} {
+		if candidate == nil {
+			continue
+		}
+		if candidate == true {
+			continue
+		}
+		if value, ok := candidate.(string); ok && strings.EqualFold(strings.TrimSpace(value), "yes") {
+			continue
+		}
+		return errors.New("post-TOTP MFA proof conflicts")
 	}
-	expires := time.Unix(int64(exp), 0).UTC()
-	if !expires.After(now.Add(time.Minute)) {
-		return time.Time{}, errors.New("personal token expiration invalid")
-	}
-	return expires, nil
+	return nil
 }
 
 func consistentPersonalClaim(raw, nested map[string]any, key string, foldCase bool) (string, error) {

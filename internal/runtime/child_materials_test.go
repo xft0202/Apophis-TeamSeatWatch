@@ -50,3 +50,34 @@ func TestParseChildMaterialsReportsEveryLineWithoutSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestParseChildMaterialsAndValidTargetInputSupport1024To16384Credentials(t *testing.T) {
+	longCookie := strings.Repeat("s", 5200)
+	maxCookie := strings.Repeat("m", 16384)
+	overCookie := strings.Repeat("x", 16385)
+	content := "child1@example.com----" + longCookie + "----cookie\n" +
+		"child2@example.com----" + maxCookie + "----google\n" +
+		"child3@example.com----" + overCookie + "----cookie\n"
+	materials, rows := parseChildMaterials(content)
+	if len(rows) != 3 || len(materials) != 3 {
+		t.Fatalf("got rows=%d materials=%d", len(rows), len(materials))
+	}
+	if rows[0].Status != ownerapi.ChildMaterialsImportRowStatusImported || materials[0].password != longCookie {
+		t.Fatalf("5200-char child cookie rejected: %+v", rows[0])
+	}
+	if rows[1].Status != ownerapi.ChildMaterialsImportRowStatusImported || materials[1].password != maxCookie {
+		t.Fatalf("16384-char child cookie rejected: %+v", rows[1])
+	}
+	if rows[2].Status != ownerapi.ChildMaterialsImportRowStatusInvalid {
+		t.Fatalf("16385-char child cookie should be invalid: %+v", rows[2])
+	}
+	if !validTargetInput("child1@example.com", "child1@example.com", longCookie, "cookie", "", "") {
+		t.Fatal("validTargetInput rejected 5200-char credential")
+	}
+	if !validTargetInput("child1@example.com", "child1@example.com", maxCookie, "google", "", "") {
+		t.Fatal("validTargetInput rejected 16384-char credential")
+	}
+	if validTargetInput("child1@example.com", "child1@example.com", overCookie, "cookie", "", "") {
+		t.Fatal("validTargetInput accepted 16385-char credential")
+	}
+}
