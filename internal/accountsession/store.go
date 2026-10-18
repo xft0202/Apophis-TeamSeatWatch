@@ -147,7 +147,7 @@ func (s Store) reserve(ctx context.Context, id uuid.UUID, fresh bool) (reservati
 			r.saved = saved
 		}
 	}
-	if !fresh && !invalid && current && status != nil && *status == "ready" && platform.ValidatePersonalRefresh(platform.PersonalRefreshResult{Status: "ready", Session: r.saved}, time.Now()) {
+	if !fresh && !invalid && current && status != nil && *status == "ready" && platform.ValidateSavedPersonalPolicy(r.saved, time.Now(), false) {
 		r.existing = "ready"
 		return r, tx.Commit(ctx)
 	}

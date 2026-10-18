@@ -514,6 +514,12 @@ func (p PersonalWebRefresher) RenewPersonal(ctx context.Context, saved PersonalS
 	return p.renewPersonalWithIdentifier(ctx, saved, environment, "", false)
 }
 
+// RenewPersonalWithPolicy renews a saved session using the caller's explicit
+// federated-workspace policy, supporting both value and pointer receivers.
+func (p PersonalWebRefresher) RenewPersonalWithPolicy(ctx context.Context, saved PersonalSession, environment browserenv.Environment, allowFederatedWorkspace bool) (PersonalRefreshResult, error) {
+	return p.renewPersonalWithIdentifier(ctx, saved, environment, "", allowFederatedWorkspace)
+}
+
 func (p PersonalWebRefresher) renewPersonalWithIdentifier(ctx context.Context, saved PersonalSession, environment browserenv.Environment, expectedIdentifier string, allowFederatedWorkspace bool) (PersonalRefreshResult, error) {
 	failed := PersonalRefreshResult{Status: "refresh_failed"}
 	if err := environment.Validate(); err != nil {

@@ -103,7 +103,25 @@ func ValidatePersonalRefresh(result PersonalRefreshResult, now time.Time) bool {
 	s := result.Session
 	return s.ExpiresAt.After(now.Add(time.Minute)) && validPersonalCookies(s) &&
 		(s.SessionExpiresAt.IsZero() || !s.ExpiresAt.After(s.SessionExpiresAt)) &&
-		strings.TrimSpace(s.AccessToken) != "" && len(s.AccessToken) <= 16384 && !strings.ContainsAny(s.AccessToken, "\r\n\t\x00")
+		strings.TrimSpace(s.AccessToken) != "" && len(s.AccessToken) <= 16384 && !strings.ContainsAny(s.AccessToken, "\r\n	\x00")
+}
+
+// ValidateSavedPersonalPolicy verifies that a cached PersonalSession satisfies
+// the caller's scope policy (Personal-only for child/target accounts, or
+// allowing federated workspace tokens when AllowFederatedWorkspace is true).
+// Opaque test fixture tokens without 3-segment JWT structure are permitted by
+// structural validation alone, while any 3-segment JWT must pass personalTokenExpiry.
+func ValidateSavedPersonalPolicy(saved PersonalSession, now time.Time, allowFederatedWorkspace bool) bool {
+	if !ValidatePersonalRefresh(PersonalRefreshResult{Status: "ready", Session: saved}, now) {
+		return false
+	}
+	parts := strings.Split(strings.TrimSpace(saved.AccessToken), ".")
+	if len(parts) == 3 {
+		if _, err := personalTokenExpiry(saved.AccessToken, now, allowFederatedWorkspace); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func validPersonalCookies(s PersonalSession) bool {

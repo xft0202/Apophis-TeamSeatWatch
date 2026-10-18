@@ -676,7 +676,36 @@ func TestRenewPersonalPreservesFederatedWorkspacePolicyAndRejectsNativeWorkspace
 		t.Fatalf("mother federated free -> team renewal failed: res=%+v err=%v", upgradedRenewed, err)
 	}
 
-	// 3. Target/child account (AllowFederatedWorkspace=false) MUST reject team/business tokens during both initial Cookie login and renewal
+	// 2b. Pointer receiver (*PersonalWebRefresher) also honors AllowFederatedWorkspace during renewal
+	ptrRenewed, err := AcquirePersonal(t.Context(), &refresher, MotherMaterial{Environment: fixtureEnvironment, AllowFederatedWorkspace: true}, oldFreeSaved)
+	if err != nil || ptrRenewed.Status != "ready" || ptrRenewed.Session.AccessToken != freshToken {
+		t.Fatalf("pointer *PersonalWebRefresher renewal failed: res=%+v err=%v", ptrRenewed, err)
+	}
+
+	// 3. Target/child account (AllowFederatedWorkspace=false) MUST reject team/business tokens during initial Cookie login, renewal, AND cached session reuse
+	cachedUnexpiredTeam := PersonalSession{
+		AccessToken:      freshToken,
+		DeviceID:         "saved-device",
+		ExpiresAt:        renewedExpiry,
+		SessionExpiresAt: sessionExpiry,
+		Cookies:          []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: "saved-federated-cookie", Host: "chatgpt.com"}},
+	}
+	if ValidateSavedPersonalPolicy(cachedUnexpiredTeam, now, false) {
+		t.Fatal("ValidateSavedPersonalPolicy allowed cached team-scoped token for child account")
+	}
+	if !ValidateSavedPersonalPolicy(cachedUnexpiredTeam, now, true) {
+		t.Fatal("ValidateSavedPersonalPolicy rejected cached federated team-scoped token for mother account")
+	}
+	childCachedReuse, err := AcquirePersonal(t.Context(), &refresher, MotherMaterial{
+		Environment:             fixtureEnvironment,
+		LoginIdentifier:         "googleuser@gmail.com",
+		Password:                "saved-federated-cookie",
+		TOTPSecret:              "cookie",
+		AllowFederatedWorkspace: false,
+	}, cachedUnexpiredTeam)
+	if err != nil || childCachedReuse.Status == "ready" {
+		t.Fatalf("child account AcquirePersonal reused cached team-scoped session: res=%+v err=%v", childCachedReuse, err)
+	}
 	childInitial, err := refresher.RefreshPersonal(t.Context(), MotherMaterial{
 		Environment:             fixtureEnvironment,
 		LoginIdentifier:         "googleuser@gmail.com",
