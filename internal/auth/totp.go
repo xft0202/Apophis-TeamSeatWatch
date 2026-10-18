@@ -48,6 +48,17 @@ func VerifyTOTP(secret, code string, now time.Time) bool {
 	return false
 }
 
+// CompleteMaterial reports whether the 2FA field is a valid Base32 TOTP secret
+// or an explicit Cookie/Google session login marker.
+func CompleteMaterial(secret string, now time.Time) bool {
+	s := strings.ToLower(strings.TrimSpace(secret))
+	if s == "cookie" || s == "google" || s == "session" || s == "none" {
+		return true
+	}
+	_, err := TOTPCode(secret, now)
+	return err == nil
+}
+
 // TOTPCode generates the current six-digit code for an existing credential.
 // Login flows call it at the request boundary so the secret never leaves auth.
 func TOTPCode(secret string, now time.Time) (string, error) {

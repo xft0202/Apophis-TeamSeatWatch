@@ -79,7 +79,7 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
       const fields = line.replace(/\r$/, '').split('----');
       const identifier = fields[0]?.trim().toLowerCase() ?? '';
       const email = /^[^\s<>@]+@[^\s<>@]+$/.test(identifier) && identifier.length <= 254;
-      const format = fields.length === 3 && email && !!fields[1] && fields[1].length <= 1024 && (fields[2]?.length ?? 0) <= 1024;
+      const format = fields.length === 3 && email && !!fields[1] && fields[1].length <= 16384 && (fields[2]?.length ?? 0) <= 1024;
       const completeTwoFactor = validTwoFactorSecret(fields[2] ?? '');
       const duplicate = format && seen.has(identifier);
       if (format) seen.add(identifier);
@@ -259,7 +259,7 @@ export default function ChildMaterialsView({ active: visible = true }: { active?
     {view === 'import' ? <Paper withBorder radius={12} className="account-import-panel"><Stack gap={24}>
       <Box className="account-import-source">
         <Box className="account-file-zone"><Box className="account-file-icon"><OwnerIcon name="upload" size={24} /></Box><Text fw={600}>TXT 文件</Text><FileInput value={file} onChange={chooseFile} accept=".txt,text/plain" aria-label="选择 TXT 文件" placeholder="选择 TXT 文件" clearable /></Box>
-        <Textarea label="账号----密码----2FA" aria-label="账号资料文本" placeholder="email@example.com----password----2FA" value={text} onChange={(event) => { setText(event.currentTarget.value); setImportPage(1); }} minRows={8} maxRows={14} autosize className="account-import-text" />
+        <Textarea label="账号----密码(或Cookie)----2FA(Google填google)" aria-label="账号资料文本" placeholder="email@example.com----password----2FA 或 user@gmail.com----__Secure-next-auth.session-token值----google" value={text} onChange={(event) => { setText(event.currentTarget.value); setImportPage(1); }} minRows={8} maxRows={14} autosize className="account-import-text" />
       </Box>
       <Group justify="flex-end" className="account-panel-actions"><Button disabled={!text.trim()} rightSection={<OwnerIcon name="arrow-right" size={16} />} onClick={() => { setImportResult(null); setShowImportIssues(false); setImportPage(1); setView('import-preview'); }}>预览导入</Button></Group>
     </Stack></Paper> : null}

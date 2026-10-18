@@ -147,7 +147,7 @@ func (h *OwnerAuthHandler) createMotherAccount(w http.ResponseWriter, r *http.Re
 	}
 	displayName, loginIdentifier := strings.TrimSpace(request.DisplayName), strings.TrimSpace(request.LoginIdentifier)
 	if !validLength(displayName, 1, 120) || !validLength(loginIdentifier, 1, 254) ||
-		!validLength(request.Password, 1, 1024) || !optionalLength(request.PlatformAccountRef, 255) ||
+		!validLength(request.Password, 1, 16384) || !optionalLength(request.PlatformAccountRef, 255) ||
 		!optionalLength(request.TotpSecret, 1024) {
 		h.rejectOwnerMutation(w, r, owner, "mother_account.create", "invalid_request", http.StatusUnprocessableEntity, "invalid_account", "Invalid Account", "Account fields are invalid")
 		return
@@ -165,7 +165,7 @@ func (h *OwnerAuthHandler) createMotherAccount(w http.ResponseWriter, r *http.Re
 	item.MaterialStatus = ownerapi.MotherAccountMaterialStatusComplete
 	if totp := strings.TrimSpace(stringValue(request.TotpSecret)); totp == "" {
 		item.MaterialStatus = ownerapi.MotherAccountMaterialStatusNeedsTotp
-	} else if _, totpErr := auth.TOTPCode(totp, time.Now()); totpErr != nil {
+	} else if !auth.CompleteMaterial(totp, time.Now()) {
 		item.MaterialStatus = ownerapi.MotherAccountMaterialStatusNeedsTotp
 	}
 	if err == nil {
@@ -219,7 +219,7 @@ func (h *OwnerAuthHandler) updateMotherAccount(w http.ResponseWriter, r *http.Re
 	displayName := strings.TrimSpace(request.DisplayName)
 	if !validLength(displayName, 1, 120) ||
 		(string(request.Status) != "active" && string(request.Status) != "disabled") ||
-		(request.Password != nil && !validLength(stringValue(request.Password), 1, 1024)) ||
+		(request.Password != nil && !validLength(stringValue(request.Password), 1, 16384)) ||
 		(request.TotpSecret != nil && !optionalLength(request.TotpSecret, 1024)) {
 
 		h.rejectOwnerMutation(w, r, owner, "mother_account.update", "invalid_request", http.StatusUnprocessableEntity, "invalid_account", "Invalid Account", "Account fields are invalid")

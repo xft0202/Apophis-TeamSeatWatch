@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -101,6 +102,80 @@ func (g personalHostGuard) RoundTrip(req *http.Request) (*http.Response, error) 
 	return g.next.RoundTrip(req)
 }
 
+func isCookieMaterial(password, totp string) bool {
+	s := strings.ToLower(strings.TrimSpace(totp))
+	if s == "cookie" || s == "google" || s == "session" || s == "none" {
+		return true
+	}
+	p := strings.TrimSpace(password)
+	return strings.Contains(p, "__Secure-next-auth.session-token") ||
+		strings.Contains(p, "\"accessToken\"") ||
+		strings.Count(p, ".") == 2 && len(p) > 100
+}
+
+func parseSuppliedSessionMaterial(rawPassword, deviceID string) (PersonalSession, bool) {
+	raw := strings.TrimSpace(rawPassword)
+	if raw == "" {
+		return PersonalSession{}, false
+	}
+	var session PersonalSession
+	session.DeviceID = deviceID
+	// 1. Check if JSON from /api/auth/session or cookie array
+	if strings.HasPrefix(raw, "{") {
+		var snap struct {
+			AccessToken string          `json:"accessToken"`
+			Expires     string          `json:"expires"`
+			Cookies     []SessionCookie `json:"cookies"`
+			SessionToken string         `json:"sessionToken"`
+		}
+		if json.Unmarshal([]byte(raw), &snap) == nil {
+			if len(snap.Cookies) > 0 {
+				session.Cookies = snap.Cookies
+			}
+			if snap.SessionToken != "" {
+				session.Cookies = append(session.Cookies, SessionCookie{Name: "__Secure-next-auth.session-token", Value: snap.SessionToken, Host: "chatgpt.com"})
+			}
+		}
+	}
+	// 2. Check if semicolon-separated cookie header or key=value pairs
+	if len(session.Cookies) == 0 && (strings.Contains(raw, "__Secure-next-auth.session-token=") || strings.Contains(raw, ";")) {
+		for _, part := range strings.Split(raw, ";") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			eq := strings.IndexByte(part, '=')
+			if eq <= 0 {
+				continue
+			}
+			name := strings.TrimSpace(part[:eq])
+			val := strings.TrimSpace(part[eq+1:])
+			if name == "__Secure-next-auth.session-token" || strings.HasPrefix(name, "__Secure-next-auth.session-token.") || name == "_puid" || name == "oai-sc" {
+				session.Cookies = append(session.Cookies, SessionCookie{Name: name, Value: val, Host: "chatgpt.com"})
+			}
+		}
+	}
+	// 3. Otherwise treat raw string as __Secure-next-auth.session-token value directly
+	if len(session.Cookies) == 0 && !strings.ContainsAny(raw, " 	\r\n;") {
+		if len(raw) <= 3900 {
+			session.Cookies = []SessionCookie{{Name: "__Secure-next-auth.session-token", Value: raw, Host: "chatgpt.com"}}
+		} else {
+			for i, start := 0, 0; start < len(raw); i, start = i+1, start+3900 {
+				end := start + 3900
+				if end > len(raw) {
+					end = len(raw)
+				}
+				session.Cookies = append(session.Cookies, SessionCookie{
+					Name:  "__Secure-next-auth.session-token." + strconv.Itoa(i),
+					Value: raw[start:end],
+					Host:  "chatgpt.com",
+				})
+			}
+		}
+	}
+	return session, validPersonalCookies(session)
+}
+
 // RefreshPersonal authenticates a fresh Personal-only session. Its first-party
 // Web authorization never grants a Workspace or delivery OAuth capability.
 // A multi-account login may select its independently identified Personal account.
@@ -111,6 +186,13 @@ func (p PersonalWebRefresher) RefreshPersonal(ctx context.Context, material Moth
 	}
 	if p.Client == nil || strings.TrimSpace(material.LoginIdentifier) == "" || material.Password == "" || material.TOTPSecret == "" {
 		return failed, nil
+	}
+	if isCookieMaterial(material.Password, material.TOTPSecret) {
+		supplied, ok := parseSuppliedSessionMaterial(material.Password, material.Environment.DeviceID)
+		if !ok {
+			return PersonalRefreshResult{Status: "invalid_login"}, nil
+		}
+		return p.renewPersonalWithIdentifier(ctx, supplied, material.Environment, material.LoginIdentifier)
 	}
 	if _, err := auth.TOTPCode(material.TOTPSecret, time.Now()); err != nil {
 		return failed, nil
@@ -240,6 +322,10 @@ func (p PersonalWebRefresher) RefreshPersonal(ctx context.Context, material Moth
 
 // RenewPersonal checks the saved session on the same fixed first-party endpoint.
 func (p PersonalWebRefresher) RenewPersonal(ctx context.Context, saved PersonalSession, environment browserenv.Environment) (PersonalRefreshResult, error) {
+	return p.renewPersonalWithIdentifier(ctx, saved, environment, "")
+}
+
+func (p PersonalWebRefresher) renewPersonalWithIdentifier(ctx context.Context, saved PersonalSession, environment browserenv.Environment, expectedIdentifier string) (PersonalRefreshResult, error) {
 	failed := PersonalRefreshResult{Status: "refresh_failed"}
 	if err := environment.Validate(); err != nil {
 		return failed, err
@@ -279,7 +365,7 @@ func (p PersonalWebRefresher) RenewPersonal(ctx context.Context, saved PersonalS
 	}
 	client.Transport = personalHostGuard{next: transport}
 	client.Jar = jar
-	return (&HTTPReader{client: &client}).readPersonalSession(ctx, jar, environment.DeviceID, true, "")
+	return (&HTTPReader{client: &client}).readPersonalSession(ctx, jar, environment.DeviceID, true, expectedIdentifier)
 }
 
 func personalCookieJar(saved PersonalSession) (http.CookieJar, error) {

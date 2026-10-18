@@ -51,11 +51,19 @@ func NewPersonalBrowser(ctx context.Context, source *http.Client, jar http.Cooki
 		return nil, nil, err
 	}
 	transport.browser = browser
-	initialization, stopInitialization := context.WithTimeout(browser, 35*time.Second)
+	initialization, stopInitialization := context.WithTimeout(browser, 75*time.Second)
 	defer stopInitialization()
 	// Bootstrap before restoring a saved session, so initialization cannot perform
 	// authenticated Workspace operations. All later requests retain this browser.
-	for _, origin := range []string{officialChatBase + "/", officialAuthBase + "/log-in", officialChatBase + "/"} {
+	origins := []string{officialChatBase + "/", officialAuthBase + "/log-in", officialChatBase + "/"}
+	u, _ := url.Parse(officialChatBase + "/")
+	for _, c := range jar.Cookies(u) {
+		if c.Name == "__Secure-next-auth.session-token" || strings.HasPrefix(c.Name, "__Secure-next-auth.session-token.") {
+			origins = []string{officialChatBase + "/"}
+			break
+		}
+	}
+	for _, origin := range origins {
 		response, _, navigateErr := transport.navigate(initialization, origin)
 		err = navigateErr
 		if err == nil {
@@ -445,7 +453,7 @@ func seedBrowserCookies(jar http.CookieJar, cookies []*network.Cookie) {
 			if domain != host && !(domain == "openai.com" && host == "auth.openai.com") {
 				continue
 			}
-			if len(cookie.Name) > 128 || len(cookie.Value) > 16384 {
+			if len(cookie.Name) > 128 || len(cookie.Value) == 0 || len(cookie.Value) > 16384 || strings.ContainsAny(cookie.Name+cookie.Value, "\r\n	;\x00") {
 				continue
 			}
 			candidate := &http.Cookie{Name: cookie.Name, Value: cookie.Value}
@@ -454,6 +462,27 @@ func seedBrowserCookies(jar http.CookieJar, cookies []*network.Cookie) {
 			}
 			if saved := selected[cookie.Name]; saved == nil || len(domain) > len(strings.TrimPrefix(saved.Domain, ".")) {
 				selected[cookie.Name] = cookie
+			}
+		}
+		if host == "chatgpt.com" {
+			const sessionTokenName = "__Secure-next-auth.session-token"
+			hasChunks := false
+			for name := range selected {
+				if strings.HasPrefix(name, sessionTokenName+".") {
+					hasChunks = true
+					break
+				}
+			}
+			if hasChunks && selected[sessionTokenName] != nil {
+				delete(selected, sessionTokenName)
+			}
+			// Clear stale jar session cookies if replaced between whole and chunked
+			for _, existing := range jar.Cookies(origin) {
+				if existing.Name == sessionTokenName || strings.HasPrefix(existing.Name, sessionTokenName+".") {
+					if selected[existing.Name] == nil {
+						jar.SetCookies(origin, []*http.Cookie{{Name: existing.Name, Value: "", Path: "/", MaxAge: -1}})
+					}
+				}
 			}
 		}
 		seed := make([]*http.Cookie, 0, len(selected))

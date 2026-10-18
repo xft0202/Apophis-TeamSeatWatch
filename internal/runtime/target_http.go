@@ -282,7 +282,7 @@ func (h *OwnerAuthHandler) createTargetAccount(w http.ResponseWriter, r *http.Re
 
 func validTargetInput(identifier, display, password, totp, recovery, subject string) bool {
 	return validLength(identifier, 1, 254) && validLength(display, 1, 120) &&
-		validLength(password, 1, 1024) && utf8.RuneCountInString(totp) <= 1024 &&
+		validLength(password, 1, 16384) && utf8.RuneCountInString(totp) <= 1024 &&
 		utf8.RuneCountInString(recovery) <= 4096 && utf8.RuneCountInString(subject) <= 255
 }
 

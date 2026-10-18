@@ -48,7 +48,7 @@ func parseMotherMaterialTXT(content string) ([]parsedMotherMaterial, []ownerapi.
 		}
 		identifier, password, totp := strings.TrimSpace(parts[0]), parts[1], strings.TrimSpace(parts[2])
 		if !validLength(identifier, 1, 254) || strings.ContainsAny(identifier, "\r\n") ||
-			!validLength(password, 1, 1024) {
+			!validLength(password, 1, 16384) {
 			row.Status = ownerapi.MotherAccountImportRowStatusInvalid
 			row.Message = materialString("账号或密码无效")
 			rows = append(rows, row)
@@ -59,7 +59,7 @@ func parseMotherMaterialTXT(content string) ([]parsedMotherMaterial, []ownerapi.
 		if totp == "" {
 			row.Status = ownerapi.MotherAccountImportRowStatusNeedsTotp
 			row.Message = materialString("2FA待补")
-		} else if _, err := auth.TOTPCode(totp, timeNow()); err != nil {
+		} else if !auth.CompleteMaterial(totp, timeNow()) {
 			row.Status = ownerapi.MotherAccountImportRowStatusNeedsTotp
 			row.Message = materialString("2FA格式待修正")
 		} else {

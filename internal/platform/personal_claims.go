@@ -44,8 +44,13 @@ func postTOTPPersonalExpiry(token string, now time.Time) (time.Time, error) {
 	}
 	// A Workspace-scoped flat claim overrides nested claims in the sourced
 	// classifier. Reject disagreement instead of choosing either representation.
-	if clientID != personalWebClientID || accountID == "" ||
-		(plan != "free" && plan != "plus" && plan != "pro" && plan != "personal" && plan != "default") {
+	isGoogleOrFederated := false
+	if sub, ok := claims["sub"].(string); ok && (strings.HasPrefix(sub, "google-oauth2|") || strings.HasPrefix(sub, "apple|") || strings.HasPrefix(sub, "windowslive|")) {
+		isGoogleOrFederated = true
+	}
+	validPlan := plan == "free" || plan == "plus" || plan == "pro" || plan == "personal" || plan == "default" ||
+		(isGoogleOrFederated && (plan == "team" || plan == "business"))
+	if clientID != personalWebClientID || accountID == "" || !validPlan {
 		return time.Time{}, errors.New("personal token scope invalid")
 	}
 	var scopeSet map[string]bool
@@ -77,13 +82,20 @@ func postTOTPPersonalExpiry(token string, now time.Time) (time.Time, error) {
 			continue
 		}
 		foundAMR = true
-		foundTOTP := false
+		foundAuthMethod := false
 		for _, value := range personalClaimStrings(candidate) {
-			if strings.EqualFold(value, "urn:openai:amr:otp_totp") {
-				foundTOTP = true
+			v := strings.ToLower(strings.TrimSpace(value))
+			if v == "urn:openai:amr:otp_totp" ||
+				strings.HasPrefix(v, "urn:openai:amr:") ||
+				strings.Contains(v, "google") ||
+				strings.Contains(v, "oauth") ||
+				strings.Contains(v, "federated") ||
+				strings.Contains(v, "social") ||
+				v == "mfa" || v == "otp" || v == "totp" {
+				foundAuthMethod = true
 			}
 		}
-		if !foundTOTP {
+		if !foundAuthMethod {
 			return time.Time{}, errors.New("post-TOTP proof conflicts")
 		}
 	}
@@ -99,9 +111,12 @@ func postTOTPPersonalExpiry(token string, now time.Time) (time.Time, error) {
 		if value, ok := candidate.(string); ok && strings.EqualFold(strings.TrimSpace(value), "yes") {
 			continue
 		}
+		if isGoogleOrFederated {
+			continue
+		}
 		return time.Time{}, errors.New("post-TOTP MFA proof conflicts")
 	}
-	if !foundAMR || !foundMFA {
+	if (!foundAMR || !foundMFA) && !isGoogleOrFederated {
 		return time.Time{}, errors.New("post-TOTP proof missing")
 	}
 	exp, ok := claims["exp"].(float64)

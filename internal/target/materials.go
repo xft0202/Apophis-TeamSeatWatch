@@ -49,6 +49,5 @@ func CompleteTOTP(value string) bool {
 	if value == "" {
 		return false
 	}
-	_, err := auth.TOTPCode(value, time.Now())
-	return err == nil
+	return auth.CompleteMaterial(value, time.Now())
 }

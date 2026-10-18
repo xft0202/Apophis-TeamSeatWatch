@@ -131,8 +131,7 @@ func (h *OwnerAuthHandler) RefreshMotherPersonalAccess(w http.ResponseWriter, r 
 	status := "missing_credentials"
 	var session platform.PersonalSession
 	var failure []byte
-	_, totpErr := auth.TOTPCode(attempt.material.TOTPSecret, time.Now())
-	if strings.TrimSpace(attempt.material.LoginIdentifier) != "" && attempt.material.Password != "" && totpErr == nil {
+	if strings.TrimSpace(attempt.material.LoginIdentifier) != "" && attempt.material.Password != "" && auth.CompleteMaterial(attempt.material.TOTPSecret, time.Now()) {
 		adapter := h.personalRefresh
 		if adapter == nil {
 			adapter = platform.UnavailablePersonalRefresh{}

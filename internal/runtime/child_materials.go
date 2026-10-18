@@ -36,7 +36,7 @@ func parseChildMaterials(content string) ([]childMaterial, []ownerapi.ChildMater
 		} else {
 			identifier := strings.ToLower(strings.TrimSpace(fields[0]))
 			address, err := mail.ParseAddress(identifier)
-			if err != nil || address.Address != identifier || !validLength(identifier, 1, 254) || !validLength(fields[1], 1, 1024) || len(fields[2]) > 1024 || strings.ContainsAny(fields[1], "\r\n") {
+			if err != nil || address.Address != identifier || !validLength(identifier, 1, 254) || !validLength(fields[1], 1, 16384) || len(fields[2]) > 1024 || strings.ContainsAny(fields[1], "\r\n") {
 				row.Status, row.Message = ownerapi.ChildMaterialsImportRowStatusInvalid, materialString("账号或密码无效")
 			} else {
 				row.Identifier = &identifier
